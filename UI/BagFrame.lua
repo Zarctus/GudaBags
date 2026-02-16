@@ -138,24 +138,27 @@ local function CreateBagFrame()
     f:SetMovable(true)
     f:SetClampedToScreen(true)
     f:SetFrameStrata("HIGH")
-    f:SetFrameLevel(50)
+    f:SetFrameLevel(Constants.FRAME_LEVELS.BASE)
     f:EnableMouse(true)
 
     -- Raise frame above BankFrame when clicked
     f:SetScript("OnMouseDown", function(self)
-        self:SetFrameLevel(60)
+        self:SetFrameLevel(Constants.FRAME_LEVELS.RAISED)
         Theme:SyncBlizzardBgLevel(self)
         -- Keep secure container above frame backdrop
         if self.container then
-            self.container:SetFrameLevel(61)
+            self.container:SetFrameLevel(Constants.FRAME_LEVELS.RAISED + Constants.FRAME_LEVELS.CONTAINER)
+            ItemButton:SyncFrameLevels(self.container)
         end
 
         local BankFrameModule = ns:GetModule("BankFrame")
         if BankFrameModule and BankFrameModule:GetFrame() then
-            BankFrameModule:GetFrame():SetFrameLevel(50)
-            Theme:SyncBlizzardBgLevel(BankFrameModule:GetFrame())
-            if BankFrameModule:GetFrame().container then
-                BankFrameModule:GetFrame().container:SetFrameLevel(51)
+            local bankFrame = BankFrameModule:GetFrame()
+            bankFrame:SetFrameLevel(Constants.FRAME_LEVELS.BASE)
+            Theme:SyncBlizzardBgLevel(bankFrame)
+            if bankFrame.container then
+                bankFrame.container:SetFrameLevel(Constants.FRAME_LEVELS.BASE + Constants.FRAME_LEVELS.CONTAINER)
+                ItemButton:SyncFrameLevels(bankFrame.container)
             end
         end
     end)
@@ -163,8 +166,7 @@ local function CreateBagFrame()
     -- Ensure container stays above frame backdrop when mouse enters
     f:SetScript("OnEnter", function(self)
         if self.container then
-            local frameLevel = self:GetFrameLevel()
-            self.container:SetFrameLevel(frameLevel + 1)
+            self.container:SetFrameLevel(self:GetFrameLevel() + Constants.FRAME_LEVELS.CONTAINER)
         end
     end)
     local backdrop = Theme:GetValue("backdrop")
@@ -183,7 +185,7 @@ local function CreateBagFrame()
     if not secureButtonContainer then
         secureButtonContainer = CreateFrame("Frame", "GudaBagsSecureContainer", UIParent)
         secureButtonContainer:SetFrameStrata("HIGH")
-        secureButtonContainer:SetFrameLevel(51)  -- Above the bag frame
+        secureButtonContainer:SetFrameLevel(Constants.FRAME_LEVELS.BASE + Constants.FRAME_LEVELS.CONTAINER)
         secureButtonContainer:Hide()  -- Start hidden
     end
 

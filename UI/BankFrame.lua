@@ -177,20 +177,25 @@ local function CreateBankFrame()
     f:SetMovable(true)
     f:SetClampedToScreen(true)
     f:SetFrameStrata("HIGH")
-    f:SetFrameLevel(50)
+    f:SetFrameLevel(Constants.FRAME_LEVELS.BASE)
     f:EnableMouse(true)
 
     -- Raise frame above BagFrame when clicked
     f:SetScript("OnMouseDown", function(self)
-        self:SetFrameLevel(60)
+        self:SetFrameLevel(Constants.FRAME_LEVELS.RAISED)
         Theme:SyncBlizzardBgLevel(self)
+        if self.container then
+            ItemButton:SyncFrameLevels(self.container)
+        end
         local BagFrameModule = ns:GetModule("BagFrame")
         if BagFrameModule and BagFrameModule:GetFrame() then
-            BagFrameModule:GetFrame():SetFrameLevel(50)
-            Theme:SyncBlizzardBgLevel(BagFrameModule:GetFrame())
+            local bagFrame = BagFrameModule:GetFrame()
+            bagFrame:SetFrameLevel(Constants.FRAME_LEVELS.BASE)
+            Theme:SyncBlizzardBgLevel(bagFrame)
             -- Also lower BagFrame's secure container (it's parented to UIParent, not BagFrame)
-            if BagFrameModule:GetFrame().container then
-                BagFrameModule:GetFrame().container:SetFrameLevel(51)
+            if bagFrame.container then
+                bagFrame.container:SetFrameLevel(Constants.FRAME_LEVELS.BASE + Constants.FRAME_LEVELS.CONTAINER)
+                ItemButton:SyncFrameLevels(bagFrame.container)
             end
         end
     end)

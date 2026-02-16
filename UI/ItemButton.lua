@@ -167,7 +167,7 @@ local function CreateBorder(button)
     local borderFrame = CreateFrame("Frame", nil, button, "BackdropTemplate")
     borderFrame:SetPoint("TOPLEFT", button, "TOPLEFT", -BORDER_THICKNESS, BORDER_THICKNESS)
     borderFrame:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", BORDER_THICKNESS, -BORDER_THICKNESS)
-    borderFrame:SetFrameLevel(button:GetFrameLevel() + 1)
+    borderFrame:SetFrameLevel(button:GetFrameLevel() + Constants.FRAME_LEVELS.BORDER)
 
     borderFrame:SetBackdrop({
         edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
@@ -307,7 +307,14 @@ local function CreateButton(parent)
     if button.icon then button.icon:SetDrawLayer("ARTWORK", 0) end
 
     -- Ensure the button is the topmost interactive element
-    button:SetFrameLevel(button:GetParent():GetFrameLevel() + 5)
+    button:SetFrameLevel(button:GetParent():GetFrameLevel() + Constants.FRAME_LEVELS.BUTTON)
+
+    -- Sync child frame levels to match the (potentially new) button level
+    local btnLvl = button:GetFrameLevel()
+    if button.border then button.border:SetFrameLevel(btnLvl + Constants.FRAME_LEVELS.BORDER) end
+    if button.cooldown then button.cooldown:SetFrameLevel(btnLvl + Constants.FRAME_LEVELS.COOLDOWN) end
+    if button.questStarterIcon then button.questStarterIcon:SetFrameLevel(btnLvl + Constants.FRAME_LEVELS.QUEST_ICON) end
+    if button.questIcon then button.questIcon:SetFrameLevel(btnLvl + Constants.FRAME_LEVELS.QUEST_ICON) end
 
     -- Reset hit rect to cover the full button (template might shrink it)
     button:SetHitRectInsets(0, 0, 0, 0)
@@ -389,7 +396,7 @@ local function CreateButton(parent)
     local cooldown = CreateFrame("Cooldown", name .. "Cooldown", button, "CooldownFrameTemplate")
     cooldown:SetAllPoints()
     cooldown:SetDrawEdge(false)
-    cooldown:SetFrameLevel(button:GetFrameLevel() + 2)
+    cooldown:SetFrameLevel(button:GetFrameLevel() + Constants.FRAME_LEVELS.COOLDOWN)
     if cooldown.SetHideCountdownNumbers then
         cooldown:SetHideCountdownNumbers(false)
     end
@@ -464,7 +471,7 @@ local function CreateButton(parent)
     -- Quest starter icon (top left corner) - exclamation mark for quest starter items
     -- Use a frame container to ensure it draws above the border
     local questStarterFrame = CreateFrame("Frame", nil, button)
-    questStarterFrame:SetFrameLevel(button:GetFrameLevel() + 3)
+    questStarterFrame:SetFrameLevel(button:GetFrameLevel() + Constants.FRAME_LEVELS.QUEST_ICON)
     questStarterFrame:SetSize(14, 14)
     questStarterFrame:SetPoint("TOPLEFT", button, "TOPLEFT", -4, 2)
     local questStarterIcon = questStarterFrame:CreateTexture(nil, "OVERLAY")
@@ -476,7 +483,7 @@ local function CreateButton(parent)
     -- Quest item icon (top left corner) - question mark for regular quest items
     -- Use a frame container to ensure it draws above the border
     local questIconFrame = CreateFrame("Frame", nil, button)
-    questIconFrame:SetFrameLevel(button:GetFrameLevel() + 3)
+    questIconFrame:SetFrameLevel(button:GetFrameLevel() + Constants.FRAME_LEVELS.QUEST_ICON)
     questIconFrame:SetSize(14, 14)
     questIconFrame:SetPoint("TOPLEFT", button, "TOPLEFT", -4, 2)
     local questIcon = questIconFrame:CreateTexture(nil, "OVERLAY")
@@ -1461,6 +1468,27 @@ function ItemButton:ResetAllAlpha(owner)
             if button.slotBackground then
                 button.slotBackground:SetVertexColor(0.5, 0.5, 0.5, bgAlpha)
             end
+        end
+    end
+end
+
+--- Re-sync frame levels for all active buttons owned by the given container.
+--- Call after changing a container's frame level (e.g. raise/lower on click).
+function ItemButton:SyncFrameLevels(owner)
+    if not buttonPool then return end
+    local ownerLvl = owner and owner:GetFrameLevel() or 0
+    for button in buttonPool:EnumerateActive() do
+        if not owner or button.owner == owner then
+            -- Update wrapper level first (wrapper is parented to owner container)
+            if button.wrapper then
+                button.wrapper:SetFrameLevel(ownerLvl + 1)
+            end
+            local btnLvl = ownerLvl + 1 + Constants.FRAME_LEVELS.BUTTON
+            button:SetFrameLevel(btnLvl)
+            if button.border then button.border:SetFrameLevel(btnLvl + Constants.FRAME_LEVELS.BORDER) end
+            if button.cooldown then button.cooldown:SetFrameLevel(btnLvl + Constants.FRAME_LEVELS.COOLDOWN) end
+            if button.questStarterIcon then button.questStarterIcon:SetFrameLevel(btnLvl + Constants.FRAME_LEVELS.QUEST_ICON) end
+            if button.questIcon then button.questIcon:SetFrameLevel(btnLvl + Constants.FRAME_LEVELS.QUEST_ICON) end
         end
     end
 end

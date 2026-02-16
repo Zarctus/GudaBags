@@ -7,6 +7,7 @@ local Constants = ns.Constants
 local L = ns.L
 local Database = ns:GetModule("Database")
 local IconButton = ns:GetModule("IconButton")
+local ItemButton = ns:GetModule("ItemButton")
 local Theme = ns:GetModule("Theme")
 
 local frame = nil
@@ -22,21 +23,29 @@ local function CreateHeader(parent)
 
     titleBar:SetScript("OnMouseDown", function(self, button)
         -- Raise parent frame above other frames when clicked
-        parent:SetFrameLevel(60)
+        parent:SetFrameLevel(Constants.FRAME_LEVELS.RAISED)
         Theme:SyncBlizzardBgLevel(parent)
+        if parent.container then
+            ItemButton:SyncFrameLevels(parent.container)
+        end
         local BagFrameModule = ns:GetModule("BagFrame")
         if BagFrameModule and BagFrameModule:GetFrame() then
-            BagFrameModule:GetFrame():SetFrameLevel(50)
-            Theme:SyncBlizzardBgLevel(BagFrameModule:GetFrame())
-            -- Also lower BagFrame's secure container (it's parented to UIParent, not BagFrame)
-            if BagFrameModule:GetFrame().container then
-                BagFrameModule:GetFrame().container:SetFrameLevel(51)
+            local bagFrame = BagFrameModule:GetFrame()
+            bagFrame:SetFrameLevel(Constants.FRAME_LEVELS.BASE)
+            Theme:SyncBlizzardBgLevel(bagFrame)
+            if bagFrame.container then
+                bagFrame.container:SetFrameLevel(Constants.FRAME_LEVELS.BASE + Constants.FRAME_LEVELS.CONTAINER)
+                ItemButton:SyncFrameLevels(bagFrame.container)
             end
         end
         local BankFrameModule = ns:GetModule("BankFrame")
         if BankFrameModule and BankFrameModule:GetFrame() then
-            BankFrameModule:GetFrame():SetFrameLevel(50)
-            Theme:SyncBlizzardBgLevel(BankFrameModule:GetFrame())
+            local bankFrame = BankFrameModule:GetFrame()
+            bankFrame:SetFrameLevel(Constants.FRAME_LEVELS.BASE)
+            Theme:SyncBlizzardBgLevel(bankFrame)
+            if bankFrame.container then
+                ItemButton:SyncFrameLevels(bankFrame.container)
+            end
         end
     end)
 
@@ -133,7 +142,7 @@ function GuildBankHeader:SetBackdropAlpha(alpha)
         -- Raise header above blizzardBg's NineSlice on retail
         local parent = frame:GetParent()
         if parent.blizzardBg then
-            frame:SetFrameLevel(parent:GetFrameLevel() + 5)
+            frame:SetFrameLevel(parent:GetFrameLevel() + Constants.FRAME_LEVELS.HEADER)
         end
     end
     Theme:ApplyHeaderButtons(

@@ -39,7 +39,7 @@ local function CreateBorder(button)
     local borderFrame = CreateFrame("Frame", nil, button, "BackdropTemplate")
     borderFrame:SetPoint("TOPLEFT", button, "TOPLEFT", -BORDER_THICKNESS, BORDER_THICKNESS)
     borderFrame:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", BORDER_THICKNESS, -BORDER_THICKNESS)
-    borderFrame:SetFrameLevel(button:GetFrameLevel() + 1)
+    borderFrame:SetFrameLevel(button:GetFrameLevel() + Constants.FRAME_LEVELS.BORDER)
 
     borderFrame:SetBackdrop({
         edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
@@ -146,7 +146,7 @@ local function CreateItemButton(parent, index)
     -- Quest starter icon (top left corner) - exclamation mark for quest starter items
     -- Use a frame container to ensure it draws above the border
     local questStarterFrame = CreateFrame("Frame", nil, button)
-    questStarterFrame:SetFrameLevel(button:GetFrameLevel() + 5)
+    questStarterFrame:SetFrameLevel(button:GetFrameLevel() + Constants.FRAME_LEVELS.QUEST_ICON)
     questStarterFrame:SetSize(14, 14)
     questStarterFrame:SetPoint("TOPLEFT", button, "TOPLEFT", -4, 2)
     local questStarterIcon = questStarterFrame:CreateTexture(nil, "OVERLAY")
@@ -158,7 +158,7 @@ local function CreateItemButton(parent, index)
     -- Quest item icon (top left corner) - question mark for regular quest items
     -- Use a frame container to ensure it draws above the border
     local questIconFrame = CreateFrame("Frame", nil, button)
-    questIconFrame:SetFrameLevel(button:GetFrameLevel() + 5)
+    questIconFrame:SetFrameLevel(button:GetFrameLevel() + Constants.FRAME_LEVELS.QUEST_ICON)
     questIconFrame:SetSize(14, 14)
     questIconFrame:SetPoint("TOPLEFT", button, "TOPLEFT", -4, 2)
     local questIcon = questIconFrame:CreateTexture(nil, "OVERLAY")
@@ -252,7 +252,7 @@ local function CreateTrackedBarFrame()
     f:SetMovable(true)
     f:SetClampedToScreen(true)
     f:SetFrameStrata("MEDIUM")
-    f:SetFrameLevel(50)
+    f:SetFrameLevel(Constants.FRAME_LEVELS.BASE)
 
     f:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8x8",

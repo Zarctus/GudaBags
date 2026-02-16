@@ -7,6 +7,7 @@ local Constants = ns.Constants
 local L = ns.L
 local Database = ns:GetModule("Database")
 local IconButton = ns:GetModule("IconButton")
+local ItemButton = ns:GetModule("ItemButton")
 local Theme = ns:GetModule("Theme")
 
 local frame = nil
@@ -38,26 +39,31 @@ local function CreateHeader(parent)
     titleBar:SetScript("OnMouseDown", function(self, button)
         -- Raise parent frame above other bag/bank frames when clicked
         -- BUT keep secure container above the frame backdrop
-        parent:SetFrameLevel(60)
+        parent:SetFrameLevel(Constants.FRAME_LEVELS.RAISED)
         Theme:SyncBlizzardBgLevel(parent)
         if parent.container then
-            parent.container:SetFrameLevel(61)
+            parent.container:SetFrameLevel(Constants.FRAME_LEVELS.RAISED + Constants.FRAME_LEVELS.CONTAINER)
+            ItemButton:SyncFrameLevels(parent.container)
         end
 
         local BankFrameModule = ns:GetModule("BankFrame")
         if BankFrameModule and BankFrameModule:GetFrame() and BankFrameModule:GetFrame() ~= parent then
-            BankFrameModule:GetFrame():SetFrameLevel(50)
-            Theme:SyncBlizzardBgLevel(BankFrameModule:GetFrame())
-            if BankFrameModule:GetFrame().container then
-                BankFrameModule:GetFrame().container:SetFrameLevel(51)
+            local bankFrame = BankFrameModule:GetFrame()
+            bankFrame:SetFrameLevel(Constants.FRAME_LEVELS.BASE)
+            Theme:SyncBlizzardBgLevel(bankFrame)
+            if bankFrame.container then
+                bankFrame.container:SetFrameLevel(Constants.FRAME_LEVELS.BASE + Constants.FRAME_LEVELS.CONTAINER)
+                ItemButton:SyncFrameLevels(bankFrame.container)
             end
         end
         local BagFrameModule = ns:GetModule("BagFrame")
         if BagFrameModule and BagFrameModule:GetFrame() and BagFrameModule:GetFrame() ~= parent then
-            BagFrameModule:GetFrame():SetFrameLevel(50)
-            Theme:SyncBlizzardBgLevel(BagFrameModule:GetFrame())
-            if BagFrameModule:GetFrame().container then
-                BagFrameModule:GetFrame().container:SetFrameLevel(51)
+            local bagFrame = BagFrameModule:GetFrame()
+            bagFrame:SetFrameLevel(Constants.FRAME_LEVELS.BASE)
+            Theme:SyncBlizzardBgLevel(bagFrame)
+            if bagFrame.container then
+                bagFrame.container:SetFrameLevel(Constants.FRAME_LEVELS.BASE + Constants.FRAME_LEVELS.CONTAINER)
+                ItemButton:SyncFrameLevels(bagFrame.container)
             end
         end
     end)
@@ -78,8 +84,7 @@ local function CreateHeader(parent)
     -- Ensure container stays above frame backdrop when mouse enters header
     titleBar:SetScript("OnEnter", function()
         if parent.container then
-            local frameLevel = parent:GetFrameLevel()
-            parent.container:SetFrameLevel(frameLevel + 1)
+            parent.container:SetFrameLevel(parent:GetFrameLevel() + Constants.FRAME_LEVELS.CONTAINER)
         end
     end)
 
@@ -296,7 +301,7 @@ function Header:SetBackdropAlpha(alpha)
         -- Raise header above blizzardBg's NineSlice on retail
         local parent = frame:GetParent()
         if parent.blizzardBg then
-            frame:SetFrameLevel(parent:GetFrameLevel() + 5)
+            frame:SetFrameLevel(parent:GetFrameLevel() + Constants.FRAME_LEVELS.HEADER)
         end
     end
     Theme:ApplyHeaderButtons(

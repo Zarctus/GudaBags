@@ -39,6 +39,7 @@ local function CreateHeader(parent)
         -- Raise parent frame above other bag/bank frames when clicked
         -- BUT keep secure container above the frame backdrop
         parent:SetFrameLevel(60)
+        Theme:SyncBlizzardBgLevel(parent)
         if parent.container then
             parent.container:SetFrameLevel(61)
         end
@@ -46,6 +47,7 @@ local function CreateHeader(parent)
         local BankFrameModule = ns:GetModule("BankFrame")
         if BankFrameModule and BankFrameModule:GetFrame() and BankFrameModule:GetFrame() ~= parent then
             BankFrameModule:GetFrame():SetFrameLevel(50)
+            Theme:SyncBlizzardBgLevel(BankFrameModule:GetFrame())
             if BankFrameModule:GetFrame().container then
                 BankFrameModule:GetFrame().container:SetFrameLevel(51)
             end
@@ -53,6 +55,7 @@ local function CreateHeader(parent)
         local BagFrameModule = ns:GetModule("BagFrame")
         if BagFrameModule and BagFrameModule:GetFrame() and BagFrameModule:GetFrame() ~= parent then
             BagFrameModule:GetFrame():SetFrameLevel(50)
+            Theme:SyncBlizzardBgLevel(BagFrameModule:GetFrame())
             if BagFrameModule:GetFrame().container then
                 BagFrameModule:GetFrame().container:SetFrameLevel(51)
             end

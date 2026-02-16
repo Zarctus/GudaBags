@@ -23,9 +23,11 @@ local function CreateHeader(parent)
     titleBar:SetScript("OnMouseDown", function(self, button)
         -- Raise parent frame above other frames when clicked
         parent:SetFrameLevel(60)
+        Theme:SyncBlizzardBgLevel(parent)
         local BagFrameModule = ns:GetModule("BagFrame")
         if BagFrameModule and BagFrameModule:GetFrame() then
             BagFrameModule:GetFrame():SetFrameLevel(50)
+            Theme:SyncBlizzardBgLevel(BagFrameModule:GetFrame())
             -- Also lower BagFrame's secure container (it's parented to UIParent, not BagFrame)
             if BagFrameModule:GetFrame().container then
                 BagFrameModule:GetFrame().container:SetFrameLevel(51)
@@ -34,6 +36,7 @@ local function CreateHeader(parent)
         local BankFrameModule = ns:GetModule("BankFrame")
         if BankFrameModule and BankFrameModule:GetFrame() then
             BankFrameModule:GetFrame():SetFrameLevel(50)
+            Theme:SyncBlizzardBgLevel(BankFrameModule:GetFrame())
         end
     end)
 

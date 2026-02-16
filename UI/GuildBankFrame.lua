@@ -594,9 +594,11 @@ local function CreateGuildBankFrame()
     -- Raise frame above others when clicked
     f:SetScript("OnMouseDown", function(self)
         self:SetFrameLevel(60)
+        Theme:SyncBlizzardBgLevel(self)
         local BagFrameModule = ns:GetModule("BagFrame")
         if BagFrameModule and BagFrameModule:GetFrame() then
             BagFrameModule:GetFrame():SetFrameLevel(50)
+            Theme:SyncBlizzardBgLevel(BagFrameModule:GetFrame())
             -- Also lower BagFrame's secure container (it's parented to UIParent, not BagFrame)
             if BagFrameModule:GetFrame().container then
                 BagFrameModule:GetFrame().container:SetFrameLevel(51)
@@ -605,6 +607,7 @@ local function CreateGuildBankFrame()
         local BankFrameModule = ns:GetModule("BankFrame")
         if BankFrameModule and BankFrameModule:GetFrame() then
             BankFrameModule:GetFrame():SetFrameLevel(50)
+            Theme:SyncBlizzardBgLevel(BankFrameModule:GetFrame())
         end
     end)
 

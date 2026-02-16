@@ -144,6 +144,7 @@ local function CreateBagFrame()
     -- Raise frame above BankFrame when clicked
     f:SetScript("OnMouseDown", function(self)
         self:SetFrameLevel(60)
+        Theme:SyncBlizzardBgLevel(self)
         -- Keep secure container above frame backdrop
         if self.container then
             self.container:SetFrameLevel(61)
@@ -152,6 +153,7 @@ local function CreateBagFrame()
         local BankFrameModule = ns:GetModule("BankFrame")
         if BankFrameModule and BankFrameModule:GetFrame() then
             BankFrameModule:GetFrame():SetFrameLevel(50)
+            Theme:SyncBlizzardBgLevel(BankFrameModule:GetFrame())
             if BankFrameModule:GetFrame().container then
                 BankFrameModule:GetFrame().container:SetFrameLevel(51)
             end

@@ -165,6 +165,25 @@ Constants.FRAME = {
     MAX_HEIGHT = 600,
 }
 
+-- Frame level hierarchy for z-ordering between bag/bank frames.
+-- The gap between BASE and RAISED must exceed the total child offset
+-- (CONTAINER + BUTTON + highest button child) so the inactive frame's
+-- content never bleeds through the active frame's background.
+-- Total child depth from container: wrapper(1) + BUTTON + max(BORDER,COOLDOWN,QUEST_ICON)
+-- Must be strictly less than RAISED - BASE - CONTAINER so the inactive
+-- frame's content never bleeds through the active frame's background.
+Constants.FRAME_LEVELS = {
+    BASE            = 50,  -- Inactive bag/bank frame
+    CONTAINER       = 1,   -- Secure container / scroll child above its frame
+    RAISED          = 60,  -- Active (focused) bag/bank frame
+    -- Offsets relative to parent / button
+    BUTTON          = 2,   -- Item button above its wrapper
+    BORDER          = 1,   -- Quality border above its button
+    COOLDOWN        = 2,   -- Cooldown sweep above border
+    QUEST_ICON      = 3,   -- Quest icon above cooldown
+    HEADER          = 5,   -- Header above blizzardBg NineSlice
+}
+
 Constants.BAG_SLOT_SIZE = 20
 Constants.FLYOUT_BAG_SIZE = 32
 Constants.BANK_BAG_SLOT_SIZE = 24

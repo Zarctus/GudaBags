@@ -144,7 +144,11 @@ function Theme:ApplyFrameBackground(frame, bgAlpha, showBorders)
     if useBlizzard then
         -- Blizzard theme: ButtonFrameTemplate child provides bg + border
         local bliz = EnsureBlizzardBg(frame)
-        local baseLvl = math.max(1, frame:GetFrameLevel() - 5)
+        -- Match the frame's own level so the Blizzard bg covers frames below,
+        -- just like SetBackdrop does for the Guda theme.  The frame's children
+        -- (header, item buttons, scroll child) already have higher explicit
+        -- levels so they render on top.
+        local baseLvl = frame:GetFrameLevel()
         bliz:SetFrameLevel(baseLvl)
         bliz:SetAllPoints(frame)
         bliz:Show()
@@ -213,6 +217,18 @@ function Theme:ApplyFrameBackground(frame, bgAlpha, showBorders)
             frame:SetBackdropBorderColor(border[1], border[2], border[3], border[4])
         else
             frame:SetBackdropBorderColor(0, 0, 0, 0)
+        end
+    end
+end
+
+--- Sync the blizzardBg child frame level after the parent frame level changes.
+--- Call this whenever you SetFrameLevel on a bag/bank frame.
+function Theme:SyncBlizzardBgLevel(frame)
+    if frame and frame.blizzardBg and frame.blizzardBg:IsShown() then
+        local baseLvl = frame:GetFrameLevel()
+        frame.blizzardBg:SetFrameLevel(baseLvl)
+        if frame.blizzardBg.NineSlice then
+            frame.blizzardBg.NineSlice:SetFrameLevel(baseLvl)
         end
     end
 end

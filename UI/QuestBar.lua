@@ -62,7 +62,7 @@ local function CreateBorder(button)
     local borderFrame = CreateFrame("Frame", nil, button, "BackdropTemplate")
     borderFrame:SetPoint("TOPLEFT", button, "TOPLEFT", -BORDER_THICKNESS, BORDER_THICKNESS)
     borderFrame:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", BORDER_THICKNESS, -BORDER_THICKNESS)
-    borderFrame:SetFrameLevel(button:GetFrameLevel() + 1)
+    borderFrame:SetFrameLevel(button:GetFrameLevel() + Constants.FRAME_LEVELS.BORDER)
 
     borderFrame:SetBackdrop({
         edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
@@ -439,7 +439,7 @@ local function CreateQuestBarFrame()
     f:SetMovable(true)
     f:SetClampedToScreen(true)
     f:SetFrameStrata("MEDIUM")
-    f:SetFrameLevel(50)
+    f:SetFrameLevel(Constants.FRAME_LEVELS.BASE)
 
     f:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8x8",

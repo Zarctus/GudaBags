@@ -82,7 +82,7 @@ local function ResetButton(pool, button)
     if button.equipSetIconShadow then button.equipSetIconShadow:Hide() end
     if button.questIcon then button.questIcon:Hide() end
     if button.questStarterIcon then button.questStarterIcon:Hide() end
-    if button.cooldown then button.cooldown:Clear() end
+    if button.cooldown then CooldownFrame_Set(button.cooldown, 0, 0, false) end
 end
 
 local BASE_BUTTON_SIZE = 37
@@ -167,7 +167,7 @@ local function CreateBorder(button)
     local borderFrame = CreateFrame("Frame", nil, button, "BackdropTemplate")
     borderFrame:SetPoint("TOPLEFT", button, "TOPLEFT", -BORDER_THICKNESS, BORDER_THICKNESS)
     borderFrame:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", BORDER_THICKNESS, -BORDER_THICKNESS)
-    borderFrame:SetFrameLevel(button:GetFrameLevel() + 1)
+    borderFrame:SetFrameLevel(button:GetFrameLevel() + Constants.FRAME_LEVELS.BORDER)
 
     borderFrame:SetBackdrop({
         edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
@@ -307,7 +307,14 @@ local function CreateButton(parent)
     if button.icon then button.icon:SetDrawLayer("ARTWORK", 0) end
 
     -- Ensure the button is the topmost interactive element
-    button:SetFrameLevel(button:GetParent():GetFrameLevel() + 5)
+    button:SetFrameLevel(button:GetParent():GetFrameLevel() + Constants.FRAME_LEVELS.BUTTON)
+
+    -- Sync child frame levels to match the (potentially new) button level
+    local btnLvl = button:GetFrameLevel()
+    if button.border then button.border:SetFrameLevel(btnLvl + Constants.FRAME_LEVELS.BORDER) end
+    if button.cooldown then button.cooldown:SetFrameLevel(btnLvl + Constants.FRAME_LEVELS.COOLDOWN) end
+    if button.questStarterIcon then button.questStarterIcon:SetFrameLevel(btnLvl + Constants.FRAME_LEVELS.QUEST_ICON) end
+    if button.questIcon then button.questIcon:SetFrameLevel(btnLvl + Constants.FRAME_LEVELS.QUEST_ICON) end
 
     -- Reset hit rect to cover the full button (template might shrink it)
     button:SetHitRectInsets(0, 0, 0, 0)
@@ -389,6 +396,10 @@ local function CreateButton(parent)
     local cooldown = CreateFrame("Cooldown", name .. "Cooldown", button, "CooldownFrameTemplate")
     cooldown:SetAllPoints()
     cooldown:SetDrawEdge(false)
+    cooldown:SetFrameLevel(button:GetFrameLevel() + Constants.FRAME_LEVELS.COOLDOWN)
+    if cooldown.SetHideCountdownNumbers then
+        cooldown:SetHideCountdownNumbers(false)
+    end
     button.cooldown = cooldown
 
     -- Lock overlay for locked items
@@ -460,7 +471,7 @@ local function CreateButton(parent)
     -- Quest starter icon (top left corner) - exclamation mark for quest starter items
     -- Use a frame container to ensure it draws above the border
     local questStarterFrame = CreateFrame("Frame", nil, button)
-    questStarterFrame:SetFrameLevel(button:GetFrameLevel() + 5)
+    questStarterFrame:SetFrameLevel(button:GetFrameLevel() + Constants.FRAME_LEVELS.QUEST_ICON)
     questStarterFrame:SetSize(14, 14)
     questStarterFrame:SetPoint("TOPLEFT", button, "TOPLEFT", -4, 2)
     local questStarterIcon = questStarterFrame:CreateTexture(nil, "OVERLAY")
@@ -472,7 +483,7 @@ local function CreateButton(parent)
     -- Quest item icon (top left corner) - question mark for regular quest items
     -- Use a frame container to ensure it draws above the border
     local questIconFrame = CreateFrame("Frame", nil, button)
-    questIconFrame:SetFrameLevel(button:GetFrameLevel() + 5)
+    questIconFrame:SetFrameLevel(button:GetFrameLevel() + Constants.FRAME_LEVELS.QUEST_ICON)
     questIconFrame:SetSize(14, 14)
     questIconFrame:SetPoint("TOPLEFT", button, "TOPLEFT", -4, 2)
     local questIcon = questIconFrame:CreateTexture(nil, "OVERLAY")
@@ -1063,7 +1074,7 @@ function ItemButton:SetItem(button, itemData, size, isReadOnly)
         button.unusableOverlay:Hide()
         button.junkOverlay:Hide()
         button.lockOverlay:Hide()
-        if button.cooldown then button.cooldown:Clear() end
+        if button.cooldown then CooldownFrame_Set(button.cooldown, 0, 0, false) end
 
         -- Mark this button as empty slot handler
         button.isEmptySlotButton = true
@@ -1157,18 +1168,20 @@ function ItemButton:SetItem(button, itemData, size, isReadOnly)
         end
 
         -- Update cooldown
+        local isOnCooldown = false
         if button.cooldown and not isReadOnly then
             local start, duration, enable = C_Container.GetContainerItemCooldown(itemData.bagID, itemData.slot)
-            if start and duration and duration > 0 then
-                button.cooldown:SetCooldown(start, duration)
+            if start and duration and enable and enable > 0 and duration > 0 then
+                CooldownFrame_Set(button.cooldown, start, duration, true)
+                isOnCooldown = true
             else
-                button.cooldown:Clear()
+                CooldownFrame_Set(button.cooldown, 0, 0, false)
             end
         elseif button.cooldown then
-            button.cooldown:Clear()
+            CooldownFrame_Set(button.cooldown, 0, 0, false)
         end
 
-        if settings.markUnusableItems and itemData.isUsable == false then
+        if settings.markUnusableItems and itemData.isUsable == false and not isOnCooldown then
             button.unusableOverlay:Show()
         else
             button.unusableOverlay:Hide()
@@ -1288,7 +1301,7 @@ function ItemButton:SetItem(button, itemData, size, isReadOnly)
             button.equipSetIconShadow:Hide()
         end
         if button.cooldown then
-            button.cooldown:Clear()
+            CooldownFrame_Set(button.cooldown, 0, 0, false)
         end
     end
 end
@@ -1365,7 +1378,7 @@ function ItemButton:SetEmpty(button, bagID, slot, size, isReadOnly, isGuildBank)
         button.equipSetIconShadow:Hide()
     end
     if button.cooldown then
-        button.cooldown:Clear()
+        CooldownFrame_Set(button.cooldown, 0, 0, false)
     end
 end
 
@@ -1459,6 +1472,27 @@ function ItemButton:ResetAllAlpha(owner)
     end
 end
 
+--- Re-sync frame levels for all active buttons owned by the given container.
+--- Call after changing a container's frame level (e.g. raise/lower on click).
+function ItemButton:SyncFrameLevels(owner)
+    if not buttonPool then return end
+    local ownerLvl = owner and owner:GetFrameLevel() or 0
+    for button in buttonPool:EnumerateActive() do
+        if not owner or button.owner == owner then
+            -- Update wrapper level first (wrapper is parented to owner container)
+            if button.wrapper then
+                button.wrapper:SetFrameLevel(ownerLvl + 1)
+            end
+            local btnLvl = ownerLvl + 1 + Constants.FRAME_LEVELS.BUTTON
+            button:SetFrameLevel(btnLvl)
+            if button.border then button.border:SetFrameLevel(btnLvl + Constants.FRAME_LEVELS.BORDER) end
+            if button.cooldown then button.cooldown:SetFrameLevel(btnLvl + Constants.FRAME_LEVELS.COOLDOWN) end
+            if button.questStarterIcon then button.questStarterIcon:SetFrameLevel(btnLvl + Constants.FRAME_LEVELS.QUEST_ICON) end
+            if button.questIcon then button.questIcon:SetFrameLevel(btnLvl + Constants.FRAME_LEVELS.QUEST_ICON) end
+        end
+    end
+end
+
 -- Update lock state for a specific item (called on ITEM_LOCK_CHANGED)
 function ItemButton:UpdateLockForItem(bagID, slotID)
     if not buttonPool then return end
@@ -1484,8 +1518,28 @@ function ItemButton:UpdateLockForItem(bagID, slotID)
     end
 end
 
--- Invalidate settings cache when relevant settings change
+-- Update cooldowns on all active buttons when BAG_UPDATE_COOLDOWN fires
+-- Without this, cooldowns (e.g. Hearthstone) only update during full bag refresh
 local Events = ns:GetModule("Events")
+if Events then
+    Events:Register("BAG_UPDATE_COOLDOWN", function()
+        if not buttonPool then return end
+        for button in buttonPool:EnumerateActive() do
+            if button.cooldown and button.itemData and button.itemData.bagID and button.itemData.slot
+                and not button.isReadOnly and not button.isEmptySlotButton
+                and not (button.itemData.isEmptySlots) then
+                local start, duration, enable = C_Container.GetContainerItemCooldown(button.itemData.bagID, button.itemData.slot)
+                if start and duration and enable and enable > 0 and duration > 0 then
+                    CooldownFrame_Set(button.cooldown, start, duration, true)
+                else
+                    CooldownFrame_Set(button.cooldown, 0, 0, false)
+                end
+            end
+        end
+    end, ItemButton)
+end
+
+-- Invalidate settings cache when relevant settings change
 if Events then
     Events:Register("SETTING_CHANGED", function(event, key, value)
         -- Invalidate cache for any setting that affects item buttons

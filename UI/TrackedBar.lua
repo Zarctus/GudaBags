@@ -96,7 +96,7 @@ local function CreateItemButton(parent, index)
     -- Use SecureActionButtonTemplate for protected item usage
     local button = CreateFrame("Button", "GudaTrackedItem" .. index, parent, "SecureActionButtonTemplate")
     button:SetSize(buttonSize, buttonSize)
-    button:RegisterForClicks("AnyDown", "AnyUp")
+    button:RegisterForClicks("AnyDown")
 
     -- Set type to item - attributes will be set in UpdateButton
     button:SetAttribute("type", "item")

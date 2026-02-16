@@ -1161,23 +1161,17 @@ function ItemButton:SetItem(button, itemData, size, isReadOnly)
         end
 
         -- Update cooldown
+        local isOnCooldown = false
         if button.cooldown and not isReadOnly then
             local start, duration, enable = C_Container.GetContainerItemCooldown(itemData.bagID, itemData.slot)
             if start and duration and enable and enable > 0 and duration > 0 then
                 CooldownFrame_Set(button.cooldown, start, duration, true)
+                isOnCooldown = true
             else
                 CooldownFrame_Set(button.cooldown, 0, 0, false)
             end
         elseif button.cooldown then
             CooldownFrame_Set(button.cooldown, 0, 0, false)
-        end
-
-        -- Skip unusable overlay when item is on cooldown — the sweep animation
-        -- already communicates that the item can't be used right now
-        local isOnCooldown = false
-        if button.cooldown and not isReadOnly and itemData.bagID and itemData.slot then
-            local start, duration, enable = C_Container.GetContainerItemCooldown(itemData.bagID, itemData.slot)
-            isOnCooldown = (start and duration and enable and enable > 0 and duration > 0)
         end
 
         if settings.markUnusableItems and itemData.isUsable == false and not isOnCooldown then

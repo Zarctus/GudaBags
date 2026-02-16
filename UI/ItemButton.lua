@@ -82,7 +82,7 @@ local function ResetButton(pool, button)
     if button.equipSetIconShadow then button.equipSetIconShadow:Hide() end
     if button.questIcon then button.questIcon:Hide() end
     if button.questStarterIcon then button.questStarterIcon:Hide() end
-    if button.cooldown then button.cooldown:Clear() end
+    if button.cooldown then CooldownFrame_Set(button.cooldown, 0, 0, false) end
 end
 
 local BASE_BUTTON_SIZE = 37
@@ -389,6 +389,10 @@ local function CreateButton(parent)
     local cooldown = CreateFrame("Cooldown", name .. "Cooldown", button, "CooldownFrameTemplate")
     cooldown:SetAllPoints()
     cooldown:SetDrawEdge(false)
+    cooldown:SetFrameLevel(button:GetFrameLevel() + 3)
+    if cooldown.SetHideCountdownNumbers then
+        cooldown:SetHideCountdownNumbers(false)
+    end
     button.cooldown = cooldown
 
     -- Lock overlay for locked items
@@ -1063,7 +1067,7 @@ function ItemButton:SetItem(button, itemData, size, isReadOnly)
         button.unusableOverlay:Hide()
         button.junkOverlay:Hide()
         button.lockOverlay:Hide()
-        if button.cooldown then button.cooldown:Clear() end
+        if button.cooldown then CooldownFrame_Set(button.cooldown, 0, 0, false) end
 
         -- Mark this button as empty slot handler
         button.isEmptySlotButton = true
@@ -1159,16 +1163,24 @@ function ItemButton:SetItem(button, itemData, size, isReadOnly)
         -- Update cooldown
         if button.cooldown and not isReadOnly then
             local start, duration, enable = C_Container.GetContainerItemCooldown(itemData.bagID, itemData.slot)
-            if start and duration and duration > 0 then
-                button.cooldown:SetCooldown(start, duration)
+            if start and duration and enable and enable > 0 and duration > 0 then
+                CooldownFrame_Set(button.cooldown, start, duration, true)
             else
-                button.cooldown:Clear()
+                CooldownFrame_Set(button.cooldown, 0, 0, false)
             end
         elseif button.cooldown then
-            button.cooldown:Clear()
+            CooldownFrame_Set(button.cooldown, 0, 0, false)
         end
 
-        if settings.markUnusableItems and itemData.isUsable == false then
+        -- Skip unusable overlay when item is on cooldown — the sweep animation
+        -- already communicates that the item can't be used right now
+        local isOnCooldown = false
+        if button.cooldown and not isReadOnly and itemData.bagID and itemData.slot then
+            local start, duration, enable = C_Container.GetContainerItemCooldown(itemData.bagID, itemData.slot)
+            isOnCooldown = (start and duration and enable and enable > 0 and duration > 0)
+        end
+
+        if settings.markUnusableItems and itemData.isUsable == false and not isOnCooldown then
             button.unusableOverlay:Show()
         else
             button.unusableOverlay:Hide()
@@ -1288,7 +1300,7 @@ function ItemButton:SetItem(button, itemData, size, isReadOnly)
             button.equipSetIconShadow:Hide()
         end
         if button.cooldown then
-            button.cooldown:Clear()
+            CooldownFrame_Set(button.cooldown, 0, 0, false)
         end
     end
 end
@@ -1365,7 +1377,7 @@ function ItemButton:SetEmpty(button, bagID, slot, size, isReadOnly, isGuildBank)
         button.equipSetIconShadow:Hide()
     end
     if button.cooldown then
-        button.cooldown:Clear()
+        CooldownFrame_Set(button.cooldown, 0, 0, false)
     end
 end
 
@@ -1484,8 +1496,28 @@ function ItemButton:UpdateLockForItem(bagID, slotID)
     end
 end
 
--- Invalidate settings cache when relevant settings change
+-- Update cooldowns on all active buttons when BAG_UPDATE_COOLDOWN fires
+-- Without this, cooldowns (e.g. Hearthstone) only update during full bag refresh
 local Events = ns:GetModule("Events")
+if Events then
+    Events:Register("BAG_UPDATE_COOLDOWN", function()
+        if not buttonPool then return end
+        for button in buttonPool:EnumerateActive() do
+            if button.cooldown and button.itemData and button.itemData.bagID and button.itemData.slot
+                and not button.isReadOnly and not button.isEmptySlotButton
+                and not (button.itemData.isEmptySlots) then
+                local start, duration, enable = C_Container.GetContainerItemCooldown(button.itemData.bagID, button.itemData.slot)
+                if start and duration and enable and enable > 0 and duration > 0 then
+                    CooldownFrame_Set(button.cooldown, start, duration, true)
+                else
+                    CooldownFrame_Set(button.cooldown, 0, 0, false)
+                end
+            end
+        end
+    end, ItemButton)
+end
+
+-- Invalidate settings cache when relevant settings change
 if Events then
     Events:Register("SETTING_CHANGED", function(event, key, value)
         -- Invalidate cache for any setting that affects item buttons

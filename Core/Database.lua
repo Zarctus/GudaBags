@@ -353,6 +353,33 @@ function Database:GetMailbox(fullName)
 end
 
 -------------------------------------------------
+-- Equipment
+-------------------------------------------------
+
+function Database:ScanAndSaveEquipment()
+    local charData = self:GetCurrentCharacter()
+    if not charData then return end
+
+    local equipped = {}
+    for slot = 1, 19 do
+        local itemID = GetInventoryItemID("player", slot)
+        if itemID then
+            equipped[slot] = itemID
+        end
+    end
+    charData.equipped = equipped
+end
+
+function Database:GetEquipment(fullName)
+    fullName = fullName or GetPlayerFullName()
+    local charData = GudaBags_DB.characters[fullName]
+    if charData then
+        return charData.equipped or {}
+    end
+    return {}
+end
+
+-------------------------------------------------
 -- Guild Bank (TBC and later)
 -------------------------------------------------
 
@@ -514,11 +541,17 @@ function Database:CountItemAcrossCharacters(itemID)
             end
         end
 
-        -- Count equipped items (current character only, live scan)
+        -- Count equipped items (live scan for current char, cached for others)
         local equippedCount = 0
         if fullName == currentFullName then
             for slot = 1, 19 do
                 if GetInventoryItemID("player", slot) == itemID then
+                    equippedCount = equippedCount + 1
+                end
+            end
+        elseif charData.equipped then
+            for _, equippedItemID in pairs(charData.equipped) do
+                if equippedItemID == itemID then
                     equippedCount = equippedCount + 1
                 end
             end
@@ -626,4 +659,10 @@ end, Database)
 -- Initialize character data on PLAYER_LOGIN when player name is reliable
 Events:OnPlayerLogin(function()
     Database:InitializeCharacter()
+    Database:ScanAndSaveEquipment()
+end, Database)
+
+-- Update cached equipment when gear changes
+Events:Register("PLAYER_EQUIPMENT_CHANGED", function()
+    Database:ScanAndSaveEquipment()
 end, Database)

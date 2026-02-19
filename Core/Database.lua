@@ -477,6 +477,8 @@ function Database:GetAllCharacters(sameFactionOnly, sameRealmOnly)
                 name = data.name,
                 realm = data.realm,
                 class = data.class,
+                race = data.race,
+                sex = data.sex,
                 faction = data.faction,
                 level = data.level,
                 money = data.money or 0,

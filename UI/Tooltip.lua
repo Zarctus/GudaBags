@@ -67,6 +67,9 @@ local function AddInventorySection(tooltip, itemID, skipReadyCheck)
         if charInfo.bankCount and charInfo.bankCount > 0 then
             table.insert(countParts, white .. charInfo.bankCount .. " " .. cyan .. L["TOOLTIP_BANK_LOWER"] .. "|r")
         end
+        if charInfo.mailCount and charInfo.mailCount > 0 then
+            table.insert(countParts, white .. charInfo.mailCount .. " " .. cyan .. L["TOOLTIP_MAIL_LOWER"] .. "|r")
+        end
         local countStr = table.concat(countParts, white .. ", ")
 
         tooltip:AddDoubleLine(displayName, countStr, r, g, b, 1, 1, 1)

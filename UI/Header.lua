@@ -181,7 +181,10 @@ local function CreateHeader(parent)
         local envelopeButton = IconButton:Create(titleBar, "envelope", {
             tooltip = L["TOOLTIP_MAIL"],
             onClick = function()
-                -- TODO: Toggle mail view
+                local MailFrameModule = ns:GetModule("MailFrame")
+                if MailFrameModule then
+                    MailFrameModule:Toggle()
+                end
             end,
         })
         if lastLeftButton then

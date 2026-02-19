@@ -149,6 +149,10 @@ local function InitializeCharacterData()
         charData.money = GetMoney()
     end
 
+    if not charData.mailbox then
+        charData.mailbox = {}
+    end
+
     ns:Debug("Character data initialized for", fullName)
     return true
 end
@@ -327,6 +331,26 @@ function Database:GetWarbandBankTabs()
 end
 
 -------------------------------------------------
+-- Mailbox
+-------------------------------------------------
+
+function Database:SaveMailbox(mailData)
+    local charData = self:GetCurrentCharacter()
+    if not charData then return end
+    charData.mailbox = mailData
+    charData.lastUpdate = time()
+end
+
+function Database:GetMailbox(fullName)
+    fullName = fullName or GetPlayerFullName()
+    local charData = GudaBags_DB.characters[fullName]
+    if charData then
+        return charData.mailbox or {}
+    end
+    return {}
+end
+
+-------------------------------------------------
 -- Guild Bank (TBC and later)
 -------------------------------------------------
 
@@ -478,7 +502,17 @@ function Database:CountItemAcrossCharacters(itemID)
     for fullName, charData in pairs(GudaBags_DB.characters) do
         local bagCount = CountItemsInContainers(charData.bags, itemID)
         local bankCount = CountItemsInContainers(charData.bank, itemID)
-        local charCount = bagCount + bankCount
+
+        local mailCount = 0
+        if charData.mailbox then
+            for _, row in ipairs(charData.mailbox) do
+                if row.itemID == itemID then
+                    mailCount = mailCount + (row.count or 1)
+                end
+            end
+        end
+
+        local charCount = bagCount + bankCount + mailCount
 
         if charCount > 0 then
             table.insert(characterCounts, {
@@ -488,6 +522,7 @@ function Database:CountItemAcrossCharacters(itemID)
                 count = charCount,
                 bagCount = bagCount,
                 bankCount = bankCount,
+                mailCount = mailCount,
                 isCurrent = (fullName == currentFullName),
             })
             totalCount = totalCount + charCount

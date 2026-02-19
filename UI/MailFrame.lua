@@ -8,6 +8,7 @@ local L = ns.L
 local Database = ns:GetModule("Database")
 local Events = ns:GetModule("Events")
 local Theme = ns:GetModule("Theme")
+local Utils = ns:GetModule("Utils")
 
 local MailHeader = nil
 local MailFooter = nil
@@ -76,6 +77,39 @@ local function UpdateFrameAppearance()
     if MailHeader then
         MailHeader:SetBackdropAlpha(bgAlpha)
     end
+
+    local showSearchBar = Database:GetSetting("showSearchBar")
+    local showFooter = Database:GetSetting("showFooter")
+
+    -- Update search bar visibility
+    local SearchBar = ns:GetModule("SearchBar")
+    if SearchBar then
+        if showSearchBar then
+            SearchBar:Show(frame)
+        else
+            SearchBar:Hide(frame)
+        end
+    end
+
+    -- Update scroll frame positioning
+    local topOffset = showSearchBar
+        and (Constants.FRAME.TITLE_HEIGHT + Constants.FRAME.SEARCH_BAR_HEIGHT + Constants.FRAME.PADDING + 6)
+        or (Constants.FRAME.TITLE_HEIGHT + Constants.FRAME.PADDING + 2)
+    local bottomOffset = showFooter
+        and (Constants.FRAME.FOOTER_HEIGHT + Constants.FRAME.PADDING)
+        or Constants.FRAME.PADDING
+
+    if frame.scrollFrame then
+        frame.scrollFrame:SetPoint("TOPLEFT", frame, "TOPLEFT", Constants.FRAME.PADDING, -topOffset)
+        frame.scrollFrame:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -Constants.FRAME.PADDING - 20, bottomOffset)
+    end
+
+    -- Update footer visibility
+    if showFooter then
+        MailFooter:Show()
+    else
+        MailFooter:Hide()
+    end
 end
 
 -------------------------------------------------
@@ -92,26 +126,6 @@ local function FormatDaysLeft(daysLeft)
     end
 
     return string.format(L["MAIL_EXPIRES_DAYS"], math.floor(daysLeft))
-end
-
-local GOLD_ICON = "|TInterface\\MoneyFrame\\UI-GoldIcon:12|t"
-local SILVER_ICON = "|TInterface\\MoneyFrame\\UI-SilverIcon:12|t"
-
-local function FormatMoneyShort(amount)
-    if not amount or amount == 0 then return "" end
-
-    local gold = math.floor(amount / 10000)
-    local silver = math.floor((amount % 10000) / 100)
-
-    local result = ""
-    if gold > 0 then
-        result = string.format("%d%s", gold, GOLD_ICON)
-    end
-    if silver > 0 then
-        if result ~= "" then result = result .. " " end
-        result = result .. string.format("%d%s", silver, SILVER_ICON)
-    end
-    return result
 end
 
 local function CreateMailRow(parent, index)
@@ -177,13 +191,21 @@ local function CreateMailRow(parent, index)
 
     -- Tooltip on hover
     row:SetScript("OnEnter", function(self)
-        if self.mailData and self.mailData.link then
+        if not self.mailData then return end
+        local link = self.mailData.link
+        local itemID = self.mailData.itemID
+        if link or itemID then
             GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-            GameTooltip:SetHyperlink(self.mailData.link)
-            GameTooltip:Show()
-        elseif self.mailData and self.mailData.itemID then
-            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-            GameTooltip:SetHyperlink("item:" .. self.mailData.itemID)
+            if link then
+                GameTooltip:SetHyperlink(link)
+            else
+                GameTooltip:SetHyperlink("item:" .. itemID)
+            end
+            -- Explicitly add inventory counts (hooks may not fire for cached data)
+            local TooltipModule = ns:GetModule("Tooltip")
+            if TooltipModule and itemID then
+                TooltipModule:AddInventorySection(GameTooltip, itemID)
+            end
             GameTooltip:Show()
         end
     end)
@@ -267,7 +289,7 @@ local function UpdateMailRow(row, data, index)
 
     -- Money
     if data.money and data.money > 0 then
-        row.moneyText:SetText(FormatMoneyShort(data.money))
+        row.moneyText:SetText(Utils:FormatMoneyShort(data.money))
     else
         row.moneyText:SetText("")
     end
@@ -309,16 +331,6 @@ local function CreateMailFrame()
         end
     end)
 
-    -- Initial backdrop (will be properly set by UpdateFrameAppearance)
-    local backdrop = Theme:GetValue("backdrop")
-    if backdrop then
-        f:SetBackdrop(backdrop)
-        local bgAlpha = Database:GetSetting("bgAlpha") / 100
-        local bg = Theme:GetValue("frameBg")
-        f:SetBackdropColor(bg[1], bg[2], bg[3], bgAlpha)
-        local border = Theme:GetValue("frameBorder")
-        f:SetBackdropBorderColor(border[1], border[2], border[3], border[4])
-    end
     f:Hide()
 
     -- Register for Escape key
@@ -564,5 +576,8 @@ Events:Register("SETTING_CHANGED", function(event, key, value)
 
     if key == "bgAlpha" or key == "showBorders" or key == "theme" then
         UpdateFrameAppearance()
+    elseif key == "showFooter" or key == "showSearchBar" then
+        UpdateFrameAppearance()
+        MailFrame:Refresh()
     end
 end, MailFrame)

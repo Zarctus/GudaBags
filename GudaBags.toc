@@ -78,6 +78,7 @@ UI\IconButton.lua
 UI\Tooltip.lua
 UI\CategoryHeaderPool.lua
 UI\ItemButton.lua
+UI\CharacterDropdown.lua
 
 # Header Components
 UI\Header\Characters.lua

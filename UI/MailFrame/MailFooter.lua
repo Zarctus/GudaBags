@@ -5,48 +5,13 @@ ns:RegisterModule("MailFrame.MailFooter", MailFooter)
 
 local Constants = ns.Constants
 local L = ns.L
+local Utils = ns:GetModule("Utils")
 
 local frame = nil
 local backButton = nil
 local onBackCallback = nil
 
-local Money = nil
-local Database = nil
-
-local function LoadComponents()
-    Money = ns:GetModule("Footer.Money")
-    Database = ns:GetModule("Database")
-end
-
-local GOLD_ICON = "|TInterface\\MoneyFrame\\UI-GoldIcon:12|t"
-local SILVER_ICON = "|TInterface\\MoneyFrame\\UI-SilverIcon:12|t"
-local COPPER_ICON = "|TInterface\\MoneyFrame\\UI-CopperIcon:12|t"
-
-local function FormatMoney(amount)
-    if not amount or amount == 0 then return "" end
-
-    local gold = math.floor(amount / 10000)
-    local silver = math.floor((amount % 10000) / 100)
-    local copper = amount % 100
-
-    local result = ""
-    if gold > 0 then
-        result = string.format("%d%s", gold, GOLD_ICON)
-    end
-    if silver > 0 then
-        if result ~= "" then result = result .. " " end
-        result = result .. string.format("%d%s", silver, SILVER_ICON)
-    end
-    if copper > 0 or result == "" then
-        if result ~= "" then result = result .. " " end
-        result = result .. string.format("%d%s", copper, COPPER_ICON)
-    end
-    return result
-end
-
 function MailFooter:Init(parent)
-    LoadComponents()
-
     frame = CreateFrame("Frame", "GudaMailFooter", parent)
     frame:SetHeight(Constants.FRAME.FOOTER_HEIGHT)
     frame:SetPoint("BOTTOMLEFT", parent, "BOTTOMLEFT", Constants.FRAME.PADDING, Constants.FRAME.PADDING - 2)
@@ -116,28 +81,30 @@ function MailFooter:Update(mailData)
 
     mailData = mailData or {}
 
-    -- Count items and mails
+    -- Count items and mails (track money per mail to avoid double-counting)
     local itemCount = 0
     local mailIndices = {}
-    local totalMoney = 0
 
     for _, row in ipairs(mailData) do
         if row.hasItem then
             itemCount = itemCount + 1
         end
-        mailIndices[row.mailIndex] = true
-        totalMoney = totalMoney + (row.money or 0)
+        if not mailIndices[row.mailIndex] then
+            mailIndices[row.mailIndex] = row.money or 0
+        end
     end
 
     local mailCount = 0
-    for _ in pairs(mailIndices) do
+    local totalMoney = 0
+    for _, money in pairs(mailIndices) do
         mailCount = mailCount + 1
+        totalMoney = totalMoney + money
     end
 
     frame.countText:SetText(string.format(L["MAIL_ITEMS_COUNT"], itemCount, mailCount))
 
     if totalMoney > 0 then
-        frame.moneyText:SetText(FormatMoney(totalMoney))
+        frame.moneyText:SetText(Utils:FormatMoneyFull(totalMoney))
     else
         frame.moneyText:SetText("")
     end

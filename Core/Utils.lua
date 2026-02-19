@@ -67,6 +67,34 @@ function Utils:IsTableEmpty(tbl)
 end
 
 -------------------------------------------------
+-- Race Icons
+-------------------------------------------------
+
+local raceCorrections = {
+    ["scourge"] = "undead",
+    ["zandalaritroll"] = "zandalari",
+    ["highmountaintauren"] = "highmountain",
+    ["lightforgeddraenei"] = "lightforged",
+    ["earthendwarf"] = "earthen",
+}
+
+local genders = {"unknown", "male", "female"}
+
+-- Get inline race icon atlas string for use in text
+-- race: internal race token from select(2, UnitRace("player"))
+-- sex: gender index from UnitSex("player") (1=unknown, 2=male, 3=female)
+function Utils:GetRaceIcon(race, sex)
+    if not race then return "" end
+
+    local raceLower = race:lower()
+    raceLower = raceCorrections[raceLower] or raceLower
+    local gender = genders[sex or 2] or "male"
+    local prefix = ns.IsRetail and "raceicon128" or "raceicon"
+
+    return "|A:" .. prefix .. "-" .. raceLower .. "-" .. gender .. ":13:13|a"
+end
+
+-------------------------------------------------
 -- Money Formatting
 -------------------------------------------------
 

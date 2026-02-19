@@ -135,6 +135,8 @@ local function InitializeCharacterData()
     charData.class = classToken
     charData.faction = faction
     charData.level = UnitLevel("player")
+    charData.race = select(2, UnitRace("player"))
+    charData.sex = UnitSex("player")
     charData.lastUpdate = time()
 
     if not charData.bags then
@@ -512,17 +514,30 @@ function Database:CountItemAcrossCharacters(itemID)
             end
         end
 
-        local charCount = bagCount + bankCount + mailCount
+        -- Count equipped items (current character only, live scan)
+        local equippedCount = 0
+        if fullName == currentFullName then
+            for slot = 1, 19 do
+                if GetInventoryItemID("player", slot) == itemID then
+                    equippedCount = equippedCount + 1
+                end
+            end
+        end
+
+        local charCount = bagCount + bankCount + mailCount + equippedCount
 
         if charCount > 0 then
             table.insert(characterCounts, {
                 fullName = fullName,
                 name = charData.name,
                 class = charData.class,
+                race = charData.race,
+                sex = charData.sex,
                 count = charCount,
                 bagCount = bagCount,
                 bankCount = bankCount,
                 mailCount = mailCount,
+                equippedCount = equippedCount,
                 isCurrent = (fullName == currentFullName),
             })
             totalCount = totalCount + charCount

@@ -242,7 +242,23 @@ local function InitializeAHHooks()
         -- Classic: PlaceAuctionBid hook
         if PlaceAuctionBid then
             hooksecurefunc("PlaceAuctionBid", function(listType, index, bid)
-                local name, texture, count, quality, _, _, _, _, buyoutPrice, _, _, _, _, _, _, _, itemID = GetAuctionItemInfo(listType, index)
+                -- GetAuctionItemInfo returns differ by version:
+                -- Classic Era: name, texture, count, quality, canUse, level, minBid, minIncrement, buyoutPrice, ..., itemId (17 returns)
+                -- TBC+:       name, texture, count, quality, canUse, level, levelColHeader, minBid, minIncrement, buyoutPrice, ..., itemId (18 returns)
+                local info = {GetAuctionItemInfo(listType, index)}
+                local name = info[1]
+                local texture = info[2]
+                local count = info[3]
+                local quality = info[4]
+                local buyoutPrice, itemID
+                if ns.IsClassicEra then
+                    buyoutPrice = info[9]
+                    itemID = info[16]
+                else
+                    -- TBC and later Classic versions have extra levelColHeader field
+                    buyoutPrice = info[10]
+                    itemID = info[17]
+                end
                 -- Only track buyouts (bid == buyout price)
                 if buyoutPrice and buyoutPrice > 0 and bid >= buyoutPrice and itemID then
                     local link = GetAuctionItemLink(listType, index)

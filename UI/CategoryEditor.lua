@@ -384,17 +384,18 @@ local function UpdateRuleRowValue(row, ruleType, ruleValue)
         else
             editBox:SetText("")
         end
+        local slot
         editBox:SetScript("OnTextChanged", function(self)
             local num = tonumber(self:GetText())
             if num then
                 currentRules[row.index].value = num
-                slot:SetItem(num)
+                if slot then slot:SetItem(num) end
             end
         end)
         editBox:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
         editBox:SetScript("OnEnterPressed", function(self) self:ClearFocus() end)
 
-        local slot = CreateItemDropSlot(container, function(itemID, itemName)
+        slot = CreateItemDropSlot(container, function(itemID, itemName)
             if itemID then
                 editBox:SetText(tostring(itemID))
                 currentRules[row.index].value = itemID

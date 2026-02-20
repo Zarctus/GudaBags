@@ -3,6 +3,8 @@ local addonName, ns = ...
 local Money = {}
 ns:RegisterModule("Footer.Money", Money)
 
+local Utils = ns:GetModule("Utils")
+
 local function GetDatabase()
     return ns:GetModule("Database")
 end
@@ -65,7 +67,8 @@ local function ShowMoneyTooltip(frame)
             colorR, colorG, colorB = classColor.r, classColor.g, classColor.b
         end
 
-        local name = char.name
+        local raceIcon = Utils:GetRaceIcon(char.race, char.sex)
+        local name = raceIcon .. " " .. char.name
         local money = FormatMoney(char.money)
         GameTooltip:AddDoubleLine(name, money, colorR, colorG, colorB, 1, 1, 1)
     end

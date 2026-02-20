@@ -2,7 +2,7 @@
 ## Title: GudaBags
 ## Notes: Clean, unified bag management for all WoW versions
 ## Author: Vati
-## Version: 1.3.1
+## Version: 1.3.2
 ## SavedVariables: GudaBags_DB
 ## SavedVariablesPerCharacter: GudaBags_CharDB
 ## IconTexture: Interface\AddOns\GudaBags\Assets\bags.png
@@ -78,6 +78,7 @@ UI\IconButton.lua
 UI\Tooltip.lua
 UI\CategoryHeaderPool.lua
 UI\ItemButton.lua
+UI\CharacterDropdown.lua
 
 # Header Components
 UI\Header\Characters.lua
@@ -109,6 +110,13 @@ Data\GuildBankScanner.lua
 UI\GuildBankFrame\GuildBankHeader.lua
 UI\GuildBankFrame\GuildBankFooter.lua
 UI\GuildBankFrame.lua
+
+# MailFrame Components
+Data\MailScanner.lua
+UI\MailFrame\MailCharacters.lua
+UI\MailFrame\MailHeader.lua
+UI\MailFrame\MailFooter.lua
+UI\MailFrame.lua
 
 # Tracked Item Bar
 UI\TrackedBar.lua

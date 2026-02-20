@@ -88,9 +88,9 @@ local function CreateBagSlotButton(parent, bagID, bagSlotSize)
             GameTooltip:SetInventoryItem("player", C_Container.ContainerIDToInventoryID(self.bagID))
         end
 
-        -- Show right-click hint for hiding bags (only in single view mode)
+        -- Show right-click hint for hiding bags (only in single view mode, not backpack)
         local viewType = GetDatabase():GetSetting("bagViewType") or "single"
-        if viewType == "single" and not viewingCharacter then
+        if viewType == "single" and not viewingCharacter and self.bagID ~= 0 then
             local isHidden = IsBagHidden(self.bagID)
             if isHidden then
                 GameTooltip:AddLine(ns.L["RIGHT_CLICK_SHOW_BAG"] or "Right-click to show bag", 0.7, 0.7, 0.7)
@@ -119,7 +119,7 @@ local function CreateBagSlotButton(parent, bagID, bagSlotSize)
         -- Right-click to toggle bag visibility (only in single view mode, not for backpack)
         if button == "RightButton" then
             local viewType = GetDatabase():GetSetting("bagViewType") or "single"
-            if viewType == "single" and not viewingCharacter then
+            if viewType == "single" and not viewingCharacter and self.bagID ~= 0 then
                 ToggleBagVisibility(self.bagID)
                 BagSlots:UpdateBagVisualState(self)
 
@@ -226,6 +226,13 @@ end
 function BagSlots:Init(parent)
     -- Store reference to main BagFrame (parent's parent is the main frame)
     mainBagFrame = parent:GetParent()
+
+    -- Clean up stale backpack hide entry (backpack should never be hidden)
+    local hiddenBags = GetHiddenBags()
+    if hiddenBags[0] then
+        hiddenBags[0] = nil
+        SetHiddenBags(hiddenBags)
+    end
 
     frame = CreateFrame("Frame", "GudaBagsBagSlotsFrame", parent)
     frame:SetSize(Constants.BAG_SLOT_SIZE * #Constants.BAG_IDS, Constants.BAG_SLOT_SIZE)
@@ -341,9 +348,10 @@ function BagSlots:Update()
         self:UpdateBagVisualState(bagSlot)
     end
 
-    -- Update main bag slot icon
+    -- Update main bag slot icon and visual state
     if frame.mainBagSlot then
         frame.mainBagSlot.icon:SetTexture("Interface\\AddOns\\GudaBags\\Assets\\bags.png")
+        self:UpdateBagVisualState(frame.mainBagSlot)
     end
 
     -- Also update flyout bag slots if visible

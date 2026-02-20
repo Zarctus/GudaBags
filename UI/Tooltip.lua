@@ -6,6 +6,7 @@ ns:RegisterModule("Tooltip", Tooltip)
 local L = ns.L
 local Database = ns:GetModule("Database")
 local Events = ns:GetModule("Events")
+local Utils = ns:GetModule("Utils")
 
 -- Track if we've already added inventory section to prevent duplicates
 local tooltipReady = true
@@ -37,8 +38,9 @@ local function AddInventorySection(tooltip, itemID, skipReadyCheck)
 
     local totalCount, characterCounts = Database:CountItemAcrossCharacters(itemID)
 
-    -- Don't show if only 1 item on current character
-    if #characterCounts == 1 and characterCounts[1].isCurrent and characterCounts[1].count == 1 then
+    -- Don't show if only 1 item in current character's bags (no useful cross-location info)
+    if #characterCounts == 1 and characterCounts[1].isCurrent and characterCounts[1].count == 1
+        and (characterCounts[1].equippedCount or 0) == 0 then
         return
     end
 
@@ -55,17 +57,24 @@ local function AddInventorySection(tooltip, itemID, skipReadyCheck)
             r, g, b = classColor.r, classColor.g, classColor.b
         end
 
-        local displayName = charInfo.isCurrent and (charInfo.name .. L["TOOLTIP_YOU"]) or charInfo.name
+        local raceIcon = Utils:GetRaceIcon(charInfo.race, charInfo.sex)
+        local displayName = raceIcon .. " " .. (charInfo.isCurrent and (charInfo.name .. L["TOOLTIP_YOU"]) or charInfo.name)
 
-        -- Build count string with bags/bank breakdown (cyan color for labels)
+        -- Build count string with label: count format
         local cyan = "|cFF00CCCC"
         local white = "|cFFFFFFFF"
         local countParts = {}
         if charInfo.bagCount and charInfo.bagCount > 0 then
-            table.insert(countParts, white .. charInfo.bagCount .. " " .. cyan .. L["TOOLTIP_BAGS"] .. "|r")
+            table.insert(countParts, cyan .. L["TOOLTIP_BAGS"] .. ": " .. white .. charInfo.bagCount .. "|r")
         end
         if charInfo.bankCount and charInfo.bankCount > 0 then
-            table.insert(countParts, white .. charInfo.bankCount .. " " .. cyan .. L["TOOLTIP_BANK_LOWER"] .. "|r")
+            table.insert(countParts, cyan .. L["TOOLTIP_BANK_LOWER"] .. ": " .. white .. charInfo.bankCount .. "|r")
+        end
+        if charInfo.mailCount and charInfo.mailCount > 0 then
+            table.insert(countParts, cyan .. L["TOOLTIP_MAIL_LOWER"] .. ": " .. white .. charInfo.mailCount .. "|r")
+        end
+        if charInfo.equippedCount and charInfo.equippedCount > 0 then
+            table.insert(countParts, cyan .. L["TOOLTIP_EQUIPPED"] .. ": " .. white .. charInfo.equippedCount .. "|r")
         end
         local countStr = table.concat(countParts, white .. ", ")
 

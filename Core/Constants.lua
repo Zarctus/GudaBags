@@ -21,7 +21,7 @@ end
 Constants.FEATURES = {
     BANK = true,
     GUILD_BANK = isGuildBankSupported,
-    MAIL = false,
+    MAIL = true,
     CHARACTERS = true,
     SEARCH = true,
     SORT = true,

@@ -277,6 +277,105 @@ local function InitializeAHHooks()
 end
 
 -------------------------------------------------
+-- SendMail Hook (track mail to alts)
+-------------------------------------------------
+
+local function InitializeSendMailHook()
+    if not SendMail then return end
+
+    hooksecurefunc("SendMail", function(recipient, subject, body)
+        if not recipient or recipient == "" then return end
+
+        -- Normalize recipient: add realm if not present
+        local realm = GetRealmName()
+        local recipientFullName = recipient
+        if not recipient:find("-") then
+            recipientFullName = recipient .. "-" .. realm
+        end
+
+        -- Check if recipient is a known alt
+        local charData = GudaBags_DB and GudaBags_DB.characters and GudaBags_DB.characters[recipientFullName]
+        if not charData then return end
+
+        -- Don't track mail to self
+        local playerName = UnitName("player")
+        if recipient == playerName or recipientFullName == (playerName .. "-" .. realm) then return end
+
+        ns:Debug("MailScanner: SendMail to known alt", recipientFullName)
+
+        local senderName = playerName
+        local rows = {}
+
+        -- Scan send mail attachments (slots 1-ATTACHMENTS_MAX_SEND)
+        local maxSlots = ATTACHMENTS_MAX_SEND or 12
+        for i = 1, maxSlots do
+            local name, itemID, texture, count, quality = GetSendMailItem(i)
+            if itemID then
+                local link = GetSendMailItemLink(i)
+                table.insert(rows, {
+                    mailIndex = -1,
+                    attachmentIndex = i,
+                    sender = senderName,
+                    subject = subject or "",
+                    money = 0,
+                    CODAmount = GetSendMailCOD() or 0,
+                    daysLeft = PREDICTED_MAIL_EXPIRY_DAYS,
+                    wasRead = false,
+                    hasItem = true,
+                    itemID = itemID,
+                    link = link,
+                    name = name or "",
+                    texture = texture,
+                    count = count or 1,
+                    quality = quality or 0,
+                    predicted = true,
+                })
+            end
+        end
+
+        -- Check if sending money
+        local money = GetSendMailMoney() or 0
+        if #rows == 0 and money > 0 then
+            table.insert(rows, {
+                mailIndex = -1,
+                attachmentIndex = 0,
+                sender = senderName,
+                subject = subject or "",
+                money = money,
+                CODAmount = 0,
+                daysLeft = PREDICTED_MAIL_EXPIRY_DAYS,
+                wasRead = false,
+                hasItem = false,
+                predicted = true,
+            })
+        elseif #rows > 0 then
+            -- Attach money to the first row
+            rows[1].money = money
+        end
+
+        if #rows == 0 then return end
+
+        -- Add predicted rows to recipient's mailbox data
+        local recipientMailbox = Database:GetMailbox(recipientFullName)
+        -- Copy to avoid modifying the original reference if empty
+        local updatedMailbox = {}
+        for _, existingRow in ipairs(recipientMailbox) do
+            table.insert(updatedMailbox, existingRow)
+        end
+        -- Insert new rows at the beginning
+        for i = #rows, 1, -1 do
+            table.insert(updatedMailbox, 1, rows[i])
+        end
+
+        -- Save directly to recipient's character data
+        if GudaBags_DB.characters[recipientFullName] then
+            GudaBags_DB.characters[recipientFullName].mailbox = updatedMailbox
+            ns:Debug("MailScanner: Added", #rows, "predicted mail rows to", recipientFullName)
+        end
+    end)
+end
+
+-------------------------------------------------
 -- Hooks
 -------------------------------------------------
 
@@ -387,6 +486,7 @@ Events:OnPlayerLogin(function()
         hooksInitialized = true
         InitializeHooks()
         InitializeAHHooks()
+        InitializeSendMailHook()
     end
 
     -- Load cached mail from database

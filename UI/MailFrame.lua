@@ -195,7 +195,7 @@ local function CreateMailRow(parent, index)
         local link = self.mailData.link
         local itemID = self.mailData.itemID
         if link or itemID then
-            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+            GameTooltip:SetOwner(self, "ANCHOR_LEFT")
             if link then
                 GameTooltip:SetHyperlink(link)
             else

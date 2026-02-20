@@ -245,15 +245,10 @@ local function InitializeAHHooks()
             local texture = info[2]
             local count = info[3]
             local quality = info[4]
-            local buyoutPrice, itemID
-            if ns.IsClassicEra then
-                buyoutPrice = info[9]
-                itemID = info[16]
-            else
-                -- TBC and later Classic versions have extra levelColHeader field
-                buyoutPrice = info[10]
-                itemID = info[17]
-            end
+            -- All Classic versions (Era, TBC, etc.) share the same return layout:
+            -- name, texture, count, quality, canUse, level, levelColHeader, minBid, minIncrement, buyoutPrice, ..., itemId
+            local buyoutPrice = info[10]
+            local itemID = info[17]
             -- Only track buyouts (bid == buyout price)
             if buyoutPrice and buyoutPrice > 0 and bid >= buyoutPrice and itemID then
                 local link = GetAuctionItemLink(listType, index)

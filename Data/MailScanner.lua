@@ -209,86 +209,75 @@ end
 -------------------------------------------------
 
 local function InitializeAHHooks()
-    if ns.IsRetail then
-        -- Retail: C_AuctionHouse API
-        if C_AuctionHouse then
-            -- Single item purchase
-            if C_AuctionHouse.PlaceBid then
-                hooksecurefunc(C_AuctionHouse, "PlaceBid", function(auctionID, bidAmount)
-                    -- Store pending purchase info
-                    local info = C_AuctionHouse.GetAuctionInfoByID(auctionID)
-                    if info and info.buyoutAmount and bidAmount >= info.buyoutAmount then
-                        pendingAHPurchase = {
-                            itemID = info.itemKey and info.itemKey.itemID,
-                            count = info.quantity or 1,
-                        }
-                        ns:Debug("MailScanner: AH PlaceBid (buyout) for", pendingAHPurchase.itemID)
-                    end
-                end)
+    -- C_AuctionHouse is available on Retail and MoP Classic
+    if C_AuctionHouse and C_AuctionHouse.PlaceBid then
+        -- Single item purchase
+        hooksecurefunc(C_AuctionHouse, "PlaceBid", function(auctionID, bidAmount)
+            -- Store pending purchase info
+            local info = C_AuctionHouse.GetAuctionInfoByID(auctionID)
+            if info and info.buyoutAmount and bidAmount >= info.buyoutAmount then
+                pendingAHPurchase = {
+                    itemID = info.itemKey and info.itemKey.itemID,
+                    count = info.quantity or 1,
+                }
+                ns:Debug("MailScanner: AH PlaceBid (buyout) for", pendingAHPurchase.itemID)
             end
+        end)
 
-            -- Commodity purchase
-            if C_AuctionHouse.ConfirmCommoditiesPurchase then
-                hooksecurefunc(C_AuctionHouse, "ConfirmCommoditiesPurchase", function(itemID, quantity)
-                    pendingAHPurchase = {
-                        itemID = itemID,
-                        count = quantity or 1,
-                    }
-                    ns:Debug("MailScanner: AH ConfirmCommoditiesPurchase for", itemID, "x" .. (quantity or 1))
-                end)
-            end
-        end
-    else
-        -- Classic: PlaceAuctionBid hook
-        if PlaceAuctionBid then
-            hooksecurefunc("PlaceAuctionBid", function(listType, index, bid)
-                -- GetAuctionItemInfo returns differ by version:
-                -- Classic Era: name, texture, count, quality, canUse, level, minBid, minIncrement, buyoutPrice, ..., itemId (17 returns)
-                -- TBC+:       name, texture, count, quality, canUse, level, levelColHeader, minBid, minIncrement, buyoutPrice, ..., itemId (18 returns)
-                local info = {GetAuctionItemInfo(listType, index)}
-                local name = info[1]
-                local texture = info[2]
-                local count = info[3]
-                local quality = info[4]
-                local buyoutPrice, itemID
-                if ns.IsClassicEra then
-                    buyoutPrice = info[9]
-                    itemID = info[16]
-                else
-                    -- TBC and later Classic versions have extra levelColHeader field
-                    buyoutPrice = info[10]
-                    itemID = info[17]
-                end
-                -- Only track buyouts (bid == buyout price)
-                if buyoutPrice and buyoutPrice > 0 and bid >= buyoutPrice and itemID then
-                    local link = GetAuctionItemLink(listType, index)
-                    local row = {
-                        mailIndex = -1,
-                        attachmentIndex = 1,
-                        sender = AUCTION_HOUSE or "Auction House",
-                        subject = name or ("Item " .. itemID),
-                        money = 0,
-                        CODAmount = 0,
-                        daysLeft = PREDICTED_MAIL_EXPIRY_DAYS,
-                        wasRead = false,
-                        hasItem = true,
-                        itemID = itemID,
-                        link = link,
-                        name = name or "",
-                        texture = texture,
-                        count = count or 1,
-                        quality = quality or 0,
-                        predicted = true,
-                    }
-                    table.insert(cachedMail, 1, row)
-                    ns:Debug("MailScanner: Classic AH buyout for", name or itemID, "x" .. (count or 1))
-                    ScheduleDeferredSave()
-                    if ns.OnMailUpdated then
-                        ns.OnMailUpdated()
-                    end
-                end
+        -- Commodity purchase
+        if C_AuctionHouse.ConfirmCommoditiesPurchase then
+            hooksecurefunc(C_AuctionHouse, "ConfirmCommoditiesPurchase", function(itemID, quantity)
+                pendingAHPurchase = {
+                    itemID = itemID,
+                    count = quantity or 1,
+                }
+                ns:Debug("MailScanner: AH ConfirmCommoditiesPurchase for", itemID, "x" .. (quantity or 1))
             end)
         end
+    elseif PlaceAuctionBid then
+        -- Classic Era / TBC: legacy PlaceAuctionBid hook
+        hooksecurefunc("PlaceAuctionBid", function(listType, index, bid)
+            -- GetAuctionItemInfo returns differ by version:
+            -- Classic Era: name, texture, count, quality, canUse, level, minBid, minIncrement, buyoutPrice, ..., itemId (17 returns)
+            -- TBC+:       name, texture, count, quality, canUse, level, levelColHeader, minBid, minIncrement, buyoutPrice, ..., itemId (18 returns)
+            local info = {GetAuctionItemInfo(listType, index)}
+            local name = info[1]
+            local texture = info[2]
+            local count = info[3]
+            local quality = info[4]
+            -- All Classic versions (Era, TBC, etc.) share the same return layout:
+            -- name, texture, count, quality, canUse, level, levelColHeader, minBid, minIncrement, buyoutPrice, ..., itemId
+            local buyoutPrice = info[10]
+            local itemID = info[17]
+            -- Only track buyouts (bid == buyout price)
+            if buyoutPrice and buyoutPrice > 0 and bid >= buyoutPrice and itemID then
+                local link = GetAuctionItemLink(listType, index)
+                local row = {
+                    mailIndex = -1,
+                    attachmentIndex = 1,
+                    sender = AUCTION_HOUSE or "Auction House",
+                    subject = name or ("Item " .. itemID),
+                    money = 0,
+                    CODAmount = 0,
+                    daysLeft = PREDICTED_MAIL_EXPIRY_DAYS,
+                    wasRead = false,
+                    hasItem = true,
+                    itemID = itemID,
+                    link = link,
+                    name = name or "",
+                    texture = texture,
+                    count = count or 1,
+                    quality = quality or 0,
+                    predicted = true,
+                }
+                table.insert(cachedMail, 1, row)
+                ns:Debug("MailScanner: Classic AH buyout for", name or itemID, "x" .. (count or 1))
+                ScheduleDeferredSave()
+                if ns.OnMailUpdated then
+                    ns.OnMailUpdated()
+                end
+            end
+        end)
     end
 end
 
@@ -474,8 +463,8 @@ Events:Register("MAIL_INBOX_UPDATE", function()
     ScheduleRescan()
 end, MailScanner)
 
--- Retail AH purchase confirmation events
-if ns.IsRetail then
+-- Modern AH purchase confirmation events (Retail + MoP Classic)
+if C_AuctionHouse then
     Events:Register("AUCTION_HOUSE_PURCHASE_COMPLETED", function()
         if pendingAHPurchase and pendingAHPurchase.itemID then
             AddPredictedMail(pendingAHPurchase.itemID, pendingAHPurchase.count)

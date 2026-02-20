@@ -235,6 +235,7 @@ Constants.DEFAULTS = {
     otherBorders = true,
     markUnusableItems = true,
     markEquipmentSets = true,
+    showItemLevel = true,
     reverseStackSort = false,
     sortRightToLeft = false,
 

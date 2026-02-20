@@ -103,6 +103,11 @@ function SettingsSchema.GetIcons()
             { type = "checkbox", key = "whiteItemsJunk", label = L["SETTINGS_WHITE_JUNK"], tooltip = L["SETTINGS_WHITE_JUNK_TIP"] },
             { type = "checkbox", key = "markEquipmentSets", label = L["SETTINGS_MARK_EQUIP_SETS"], tooltip = L["SETTINGS_MARK_EQUIP_SETS_TIP"] },
         }},
+
+        -- Row 4 - Item level
+        { type = "row", children = {
+            { type = "checkbox", key = "showItemLevel", label = L["SETTINGS_SHOW_ITEM_LEVEL"], tooltip = L["SETTINGS_SHOW_ITEM_LEVEL_TIP"] },
+        }},
     }
 end
 

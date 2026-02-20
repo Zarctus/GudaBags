@@ -80,6 +80,7 @@ local function ResetButton(pool, button)
     if button.trackedIconShadow then button.trackedIconShadow:Hide() end
     if button.equipSetIcon then button.equipSetIcon:Hide() end
     if button.equipSetIconShadow then button.equipSetIconShadow:Hide() end
+    if button.itemLevelText then button.itemLevelText:Hide() end
     if button.questIcon then button.questIcon:Hide() end
     if button.questStarterIcon then button.questStarterIcon:Hide() end
     if button.cooldown then CooldownFrame_Set(button.cooldown, 0, 0, false) end
@@ -94,6 +95,9 @@ local function ApplyFontSize(button, fontSize)
         button.Count:ClearAllPoints()
         button.Count:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", 0, 1)
         button.Count:SetJustifyH("RIGHT")
+    end
+    if button.itemLevelText then
+        button.itemLevelText:SetFont(Constants.FONTS.DEFAULT, fontSize, "OUTLINE")
     end
 end
 
@@ -467,6 +471,14 @@ local function CreateButton(parent)
     equipSetIcon:SetTexture("Interface\\AddOns\\GudaBags\\Assets\\equipment.png")
     equipSetIcon:Hide()
     button.equipSetIcon = equipSetIcon
+
+    -- Item level text (top-left corner)
+    local itemLevelText = button:CreateFontString(nil, "OVERLAY", nil)
+    itemLevelText:SetFont(Constants.FONTS.DEFAULT, 12, "OUTLINE")
+    itemLevelText:SetPoint("TOPLEFT", button, "TOPLEFT", 2, -2)
+    itemLevelText:SetJustifyH("LEFT")
+    itemLevelText:Hide()
+    button.itemLevelText = itemLevelText
 
     -- Quest starter icon (top left corner) - exclamation mark for quest starter items
     -- Use a frame container to ensure it draws above the border
@@ -1010,6 +1022,7 @@ local function GetCachedSettings()
             otherBorders = Database:GetSetting("otherBorders"),
             markUnusableItems = Database:GetSetting("markUnusableItems"),
             markEquipmentSets = Database:GetSetting("markEquipmentSets"),
+            showItemLevel = Database:GetSetting("showItemLevel"),
         }
         cachedSettingsFrame = currentFrame
     end
@@ -1074,6 +1087,7 @@ function ItemButton:SetItem(button, itemData, size, isReadOnly)
         button.unusableOverlay:Hide()
         button.junkOverlay:Hide()
         button.lockOverlay:Hide()
+        if button.itemLevelText then button.itemLevelText:Hide() end
         if button.cooldown then CooldownFrame_Set(button.cooldown, 0, 0, false) end
 
         -- Mark this button as empty slot handler
@@ -1263,6 +1277,17 @@ function ItemButton:SetItem(button, itemData, size, isReadOnly)
                 if button.equipSetIconShadow then button.equipSetIconShadow:Hide() end
             end
         end
+
+        -- Item level display (Weapon classID=2, Armor classID=4)
+        if button.itemLevelText then
+            local isEquip = itemData.classID and (itemData.classID == 2 or itemData.classID == 4)
+            if settings.showItemLevel and isEquip and itemData.itemLevel and itemData.itemLevel > 0 then
+                button.itemLevelText:SetText(itemData.itemLevel)
+                button.itemLevelText:Show()
+            else
+                button.itemLevelText:Hide()
+            end
+        end
     else
         button.wrapper:SetID(0)
         button:SetID(0)
@@ -1299,6 +1324,9 @@ function ItemButton:SetItem(button, itemData, size, isReadOnly)
         end
         if button.equipSetIconShadow then
             button.equipSetIconShadow:Hide()
+        end
+        if button.itemLevelText then
+            button.itemLevelText:Hide()
         end
         if button.cooldown then
             CooldownFrame_Set(button.cooldown, 0, 0, false)
@@ -1376,6 +1404,9 @@ function ItemButton:SetEmpty(button, bagID, slot, size, isReadOnly, isGuildBank)
     end
     if button.equipSetIconShadow then
         button.equipSetIconShadow:Hide()
+    end
+    if button.itemLevelText then
+        button.itemLevelText:Hide()
     end
     if button.cooldown then
         CooldownFrame_Set(button.cooldown, 0, 0, false)
@@ -1546,7 +1577,8 @@ if Events then
         if key == "iconSize" or key == "bgAlpha" or key == "iconFontSize"
             or key == "grayoutJunk" or key == "equipmentBorders"
             or key == "otherBorders" or key == "markUnusableItems"
-            or key == "markEquipmentSets" then
+            or key == "markEquipmentSets"
+            or key == "showItemLevel" then
             ItemButton:InvalidateSettingsCache()
         end
     end, ItemButton)

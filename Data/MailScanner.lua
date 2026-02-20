@@ -195,7 +195,7 @@ local function AddPredictedMail(itemID, count, sender)
         predicted = true,
     }
 
-    table.insert(cachedMail, row)
+    table.insert(cachedMail, 1, row)
     ns:Debug("MailScanner: Added predicted mail for", name or itemID, "x" .. (count or 1))
     ScheduleDeferredSave()
 
@@ -264,7 +264,7 @@ local function InitializeAHHooks()
                         quality = quality or 0,
                         predicted = true,
                     }
-                    table.insert(cachedMail, row)
+                    table.insert(cachedMail, 1, row)
                     ns:Debug("MailScanner: Classic AH buyout for", name or itemID, "x" .. (count or 1))
                     ScheduleDeferredSave()
                     if ns.OnMailUpdated then

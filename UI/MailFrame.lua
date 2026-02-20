@@ -263,13 +263,18 @@ local function UpdateMailRow(row, data, index)
         end
         row.nameText:SetText(name)
     else
-        -- Money-only or empty mail
-        row.icon:SetTexture("Interface\\Icons\\INV_Misc_Coin_01")
+        -- Money-only or text-only mail
+        if data.money and data.money > 0 then
+            row.icon:SetTexture("Interface\\Icons\\INV_Misc_Coin_01")
+            row.nameText:SetTextColor(1, 0.82, 0)
+        else
+            row.icon:SetTexture("Interface\\Icons\\INV_Letter_15")
+            row.nameText:SetTextColor(0.8, 0.8, 0.8)
+        end
         row.icon:Show()
         row.iconBorder:Hide()
 
         row.nameText:SetText(data.subject or L["MAIL_MONEY_ONLY"])
-        row.nameText:SetTextColor(1, 0.82, 0)
     end
 
     -- Sender

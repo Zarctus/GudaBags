@@ -33,6 +33,11 @@ function SettingsSchema.GetGeneral()
               hidden = function() local Expansion = ns:GetModule("Expansion") return Expansion and Expansion.IsRetail end },
             { type = "checkbox", key = "reverseStackSort", label = L["SETTINGS_REVERSE_STACK"], tooltip = L["SETTINGS_REVERSE_STACK_TIP"] },
         }},
+
+        { type = "separator", label = L["SETTINGS_SECTION_AUTOMATION"] },
+        { type = "row", children = {
+            { type = "checkbox", key = "autoVendorJunk", label = L["SETTINGS_AUTO_VENDOR_JUNK"], tooltip = L["SETTINGS_AUTO_VENDOR_JUNK_TIP"] },
+        }},
     }
 end
 

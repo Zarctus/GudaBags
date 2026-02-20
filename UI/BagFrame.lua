@@ -1668,6 +1668,34 @@ Events:Register("MAIL_CLOSED", RefreshForInteractionWindow, BagFrame)
 Events:Register("MERCHANT_SHOW", RefreshForInteractionWindow, BagFrame)
 Events:Register("MERCHANT_CLOSED", RefreshForInteractionWindow, BagFrame)
 
+-- Auto-vendor gray items at merchant
+local function AutoVendorJunk()
+    if not Database:GetSetting("autoVendorJunk") then return end
+
+    local totalPrice = 0
+    local itemsSold = 0
+
+    for bagID = Constants.PLAYER_BAG_MIN, Constants.PLAYER_BAG_MAX do
+        local numSlots = C_Container.GetContainerNumSlots(bagID)
+        for slot = 1, numSlots do
+            local itemInfo = C_Container.GetContainerItemInfo(bagID, slot)
+            if itemInfo and itemInfo.quality == 0 then
+                local _, _, _, _, _, _, _, _, _, _, sellPrice = GetItemInfo(itemInfo.hyperlink)
+                if sellPrice and sellPrice > 0 then
+                    C_Container.UseContainerItem(bagID, slot)
+                    totalPrice = totalPrice + sellPrice * itemInfo.stackCount
+                    itemsSold = itemsSold + 1
+                end
+            end
+        end
+    end
+
+    if itemsSold > 0 then
+        ns:Print(string.format(L["AUTO_VENDOR_SOLD"], itemsSold, GetCoinTextureString(totalPrice)))
+    end
+end
+Events:Register("MERCHANT_SHOW", AutoVendorJunk, "AutoVendor")
+
 -- Auction house
 Events:Register("AUCTION_HOUSE_SHOW", RefreshForInteractionWindow, BagFrame)
 Events:Register("AUCTION_HOUSE_CLOSED", RefreshForInteractionWindow, BagFrame)

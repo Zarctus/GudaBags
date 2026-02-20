@@ -307,10 +307,21 @@ function Header:SetBackdropAlpha(alpha)
             frame:SetFrameLevel(parent:GetFrameLevel() + Constants.FRAME_LEVELS.HEADER)
         end
     end
+    -- Build left buttons array without nil holes (ipairs stops at first nil)
+    local leftButtons = {}
+    if frame.charactersButton then leftButtons[#leftButtons + 1] = frame.charactersButton end
+    if frame.chestButton then leftButtons[#leftButtons + 1] = frame.chestButton end
+    if frame.guildButton then leftButtons[#leftButtons + 1] = frame.guildButton end
+    if frame.envelopeButton then leftButtons[#leftButtons + 1] = frame.envelopeButton end
+
+    local rightButtons = {}
+    if frame.settingsButton then rightButtons[#rightButtons + 1] = frame.settingsButton end
+    if frame.sortButton then rightButtons[#rightButtons + 1] = frame.sortButton end
+
     Theme:ApplyHeaderButtons(
         frame,
-        {frame.charactersButton, frame.chestButton, frame.guildButton, frame.envelopeButton},
-        {frame.settingsButton, frame.sortButton},
+        leftButtons,
+        rightButtons,
         frame.closeButton
     )
 end

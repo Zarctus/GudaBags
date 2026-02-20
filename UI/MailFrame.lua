@@ -306,7 +306,7 @@ local function CreateMailFrame()
 
     local f = CreateFrame("Frame", "GudaMailFrame", UIParent, "BackdropTemplate")
     f:SetSize(420, 400)
-    f:SetPoint("CENTER", UIParent, "CENTER", 200, 0)
+    f:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
     f:SetMovable(true)
     f:SetClampedToScreen(true)
     f:SetFrameStrata("HIGH")

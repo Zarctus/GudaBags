@@ -14,6 +14,10 @@ local scanTimer = nil
 local SAVE_DELAY = 1.0
 local SCAN_DELAY = 0.5
 local RESCAN_DEBOUNCE = 0.3
+local PREDICTED_MAIL_EXPIRY_DAYS = 30
+
+-- AH purchase tracking state
+local pendingAHPurchase = nil  -- Retail: stores item info between hook and event
 
 -------------------------------------------------
 -- Public State
@@ -163,6 +167,116 @@ local function ScheduleRescan()
 end
 
 -------------------------------------------------
+-- Predicted Mail (AH purchases)
+-------------------------------------------------
+
+local function AddPredictedMail(itemID, count, sender)
+    local name, link, quality, _, _, itemType, itemSubType, _, equipSlot, texture = GetItemInfo(itemID)
+
+    local row = {
+        mailIndex = -1,  -- Negative index = predicted
+        attachmentIndex = 1,
+        sender = sender or AUCTION_HOUSE or "Auction House",
+        subject = name or ("Item " .. itemID),
+        money = 0,
+        CODAmount = 0,
+        daysLeft = PREDICTED_MAIL_EXPIRY_DAYS,
+        wasRead = false,
+        hasItem = true,
+        itemID = itemID,
+        link = link,
+        name = name or "",
+        texture = texture,
+        count = count or 1,
+        quality = quality or 0,
+        itemType = itemType,
+        itemSubType = itemSubType,
+        equipSlot = equipSlot,
+        predicted = true,
+    }
+
+    table.insert(cachedMail, row)
+    ns:Debug("MailScanner: Added predicted mail for", name or itemID, "x" .. (count or 1))
+    ScheduleDeferredSave()
+
+    if ns.OnMailUpdated then
+        ns.OnMailUpdated()
+    end
+end
+
+-------------------------------------------------
+-- AH Purchase Hooks
+-------------------------------------------------
+
+local function InitializeAHHooks()
+    if ns.IsRetail then
+        -- Retail: C_AuctionHouse API
+        if C_AuctionHouse then
+            -- Single item purchase
+            if C_AuctionHouse.PlaceBid then
+                hooksecurefunc(C_AuctionHouse, "PlaceBid", function(auctionID, bidAmount)
+                    -- Store pending purchase info
+                    local info = C_AuctionHouse.GetAuctionInfoByID(auctionID)
+                    if info and info.buyoutAmount and bidAmount >= info.buyoutAmount then
+                        pendingAHPurchase = {
+                            itemID = info.itemKey and info.itemKey.itemID,
+                            count = info.quantity or 1,
+                        }
+                        ns:Debug("MailScanner: AH PlaceBid (buyout) for", pendingAHPurchase.itemID)
+                    end
+                end)
+            end
+
+            -- Commodity purchase
+            if C_AuctionHouse.ConfirmCommoditiesPurchase then
+                hooksecurefunc(C_AuctionHouse, "ConfirmCommoditiesPurchase", function(itemID, quantity)
+                    pendingAHPurchase = {
+                        itemID = itemID,
+                        count = quantity or 1,
+                    }
+                    ns:Debug("MailScanner: AH ConfirmCommoditiesPurchase for", itemID, "x" .. (quantity or 1))
+                end)
+            end
+        end
+    else
+        -- Classic: PlaceAuctionBid hook
+        if PlaceAuctionBid then
+            hooksecurefunc("PlaceAuctionBid", function(listType, index, bid)
+                local name, texture, count, quality, _, _, _, _, buyoutPrice, _, _, _, _, _, _, _, itemID = GetAuctionItemInfo(listType, index)
+                -- Only track buyouts (bid == buyout price)
+                if buyoutPrice and buyoutPrice > 0 and bid >= buyoutPrice and itemID then
+                    local link = GetAuctionItemLink(listType, index)
+                    local row = {
+                        mailIndex = -1,
+                        attachmentIndex = 1,
+                        sender = AUCTION_HOUSE or "Auction House",
+                        subject = name or ("Item " .. itemID),
+                        money = 0,
+                        CODAmount = 0,
+                        daysLeft = PREDICTED_MAIL_EXPIRY_DAYS,
+                        wasRead = false,
+                        hasItem = true,
+                        itemID = itemID,
+                        link = link,
+                        name = name or "",
+                        texture = texture,
+                        count = count or 1,
+                        quality = quality or 0,
+                        predicted = true,
+                    }
+                    table.insert(cachedMail, row)
+                    ns:Debug("MailScanner: Classic AH buyout for", name or itemID, "x" .. (count or 1))
+                    ScheduleDeferredSave()
+                    if ns.OnMailUpdated then
+                        ns.OnMailUpdated()
+                    end
+                end
+            end)
+        end
+    end
+end
+
+-------------------------------------------------
 -- Hooks
 -------------------------------------------------
 
@@ -245,6 +359,23 @@ Events:Register("MAIL_INBOX_UPDATE", function()
     ScheduleRescan()
 end, MailScanner)
 
+-- Retail AH purchase confirmation events
+if ns.IsRetail then
+    Events:Register("AUCTION_HOUSE_PURCHASE_COMPLETED", function()
+        if pendingAHPurchase and pendingAHPurchase.itemID then
+            AddPredictedMail(pendingAHPurchase.itemID, pendingAHPurchase.count)
+            pendingAHPurchase = nil
+        end
+    end, MailScanner)
+
+    Events:Register("COMMODITY_PURCHASE_SUCCEEDED", function()
+        if pendingAHPurchase and pendingAHPurchase.itemID then
+            AddPredictedMail(pendingAHPurchase.itemID, pendingAHPurchase.count)
+            pendingAHPurchase = nil
+        end
+    end, MailScanner)
+end
+
 -------------------------------------------------
 -- Initialization
 -------------------------------------------------
@@ -255,6 +386,7 @@ Events:OnPlayerLogin(function()
     if not hooksInitialized then
         hooksInitialized = true
         InitializeHooks()
+        InitializeAHHooks()
     end
 
     -- Load cached mail from database

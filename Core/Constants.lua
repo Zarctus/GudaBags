@@ -220,6 +220,7 @@ Constants.DEFAULTS = {
     mergedGroups = {},  -- Per-group merge settings: { ["Main"] = true, ["Other"] = false }
     recentDuration = 15,  -- Minutes items stay in Recent category
     showSoulBag = true,  -- Show soul bag in single view (Warlock only)
+    autoVendorJunk = true,  -- Auto sell gray items at merchants
 
     -- Icons
     iconSize = 37,

@@ -31,10 +31,18 @@ local function CreateSearchOverlay()
         end
     end
 
-    overlay:SetScript("OnClick", function()
+    -- Allow clicks and drags to pass through to item buttons below
+    if overlay.SetPropagateMouseClicks then
+        overlay:SetPropagateMouseClicks(true)
+    end
+
+    -- Use OnMouseDown instead of OnClick: with propagated clicks,
+    -- OnClick won't fire but OnMouseDown still fires as a notification.
+    -- Only clear focus (not search text) so the propagated click can
+    -- still interact with the item below without a UI refresh disrupting it.
+    overlay:SetScript("OnMouseDown", function()
         for _, instance in pairs(instances) do
             if instance.searchBox then
-                instance.searchBox:SetText("")
                 instance.searchBox:ClearFocus()
             end
         end

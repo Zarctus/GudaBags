@@ -43,6 +43,7 @@ Core\Rules\BooleanRule.lua
 Core\Rules\RecentRule.lua
 Core\CategoryManager.lua
 Core\CategoryService.lua
+Core\SearchParser.lua
 
 # Config
 Config\SettingsSchema.lua

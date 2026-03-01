@@ -306,6 +306,7 @@ function LayoutEngine:CalculateFrameSize(allSlots, settings)
     local iconSize = settings.iconSize
     local spacing = settings.spacing
     local showSearchBar = settings.showSearchBar
+    local showFilterChips = settings.showFilterChips
     local showFooter = settings.showFooter
 
     -- Calculate actual row count and section count for spacing
@@ -338,7 +339,8 @@ function LayoutEngine:CalculateFrameSize(allSlots, settings)
     local contentWidth = (iconSize * columns) + (spacing * (columns - 1))
     local contentHeight = (iconSize * totalRows) + (spacing * (totalRows - 1)) + (Constants.SECTION_SPACING * sectionCount)
 
-    local searchBarHeight = showSearchBar and (Constants.FRAME.SEARCH_BAR_HEIGHT + 4) or 0
+    local chipHeight = (showSearchBar and showFilterChips) and (Constants.FRAME.CHIP_STRIP_HEIGHT + 1) or 0
+    local searchBarHeight = showSearchBar and (Constants.FRAME.SEARCH_BAR_HEIGHT + chipHeight + 4) or 0
     local footerHeight = showFooter and (Constants.FRAME.FOOTER_HEIGHT + 6) or Constants.FRAME.PADDING
 
     local frameWidth = math.max(contentWidth + (Constants.FRAME.PADDING * 2), Constants.FRAME.MIN_WIDTH)
@@ -927,6 +929,7 @@ function LayoutEngine:CalculateCategoryFrameSize(sections, settings)
     local iconSize = settings.iconSize
     local spacing = settings.spacing
     local showSearchBar = settings.showSearchBar
+    local showFilterChips = settings.showFilterChips
     local showFooter = settings.showFooter
     local blockGap = GetCategoryBlockGap(iconSize)
 
@@ -981,7 +984,8 @@ function LayoutEngine:CalculateCategoryFrameSize(sections, settings)
     local contentHeight = currentY + rowMaxHeight
     if contentHeight < iconSize then contentHeight = iconSize end
 
-    local searchBarHeight = showSearchBar and (Constants.FRAME.SEARCH_BAR_HEIGHT + 4) or 0
+    local chipHeight = (showSearchBar and showFilterChips) and (Constants.FRAME.CHIP_STRIP_HEIGHT + 1) or 0
+    local searchBarHeight = showSearchBar and (Constants.FRAME.SEARCH_BAR_HEIGHT + chipHeight + 4) or 0
     local footerHeight = showFooter and (Constants.FRAME.FOOTER_HEIGHT + 6) or Constants.FRAME.PADDING
 
     local frameWidth = math.max(totalWidth + (Constants.FRAME.PADDING * 2), Constants.FRAME.MIN_WIDTH)

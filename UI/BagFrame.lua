@@ -201,7 +201,7 @@ local function CreateBagFrame()
 
     -- Use the separate secure button container instead of creating one as child of f
     -- This keeps f unprotected so it can be shown during combat
-    secureButtonContainer:SetPoint("TOPLEFT", f, "TOPLEFT", Constants.FRAME.PADDING, -(Constants.FRAME.TITLE_HEIGHT + Constants.FRAME.SEARCH_BAR_HEIGHT + Constants.FRAME.PADDING + 6))
+    secureButtonContainer:SetPoint("TOPLEFT", f, "TOPLEFT", Constants.FRAME.PADDING, -(Constants.FRAME.TITLE_HEIGHT + SearchBar:GetTotalHeight(f) + Constants.FRAME.PADDING + 6))
     secureButtonContainer:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -Constants.FRAME.PADDING, Constants.FRAME.FOOTER_HEIGHT + Constants.FRAME.PADDING + 6)
     f.container = secureButtonContainer
 
@@ -320,7 +320,7 @@ function BagFrame:Refresh()
     local iconSize = Database:GetSetting("iconSize")
     local spacing = Database:GetSetting("iconSpacing")
     local columns = Database:GetSetting("bagColumns")
-    local searchText = SearchBar:GetSearchText(frame)
+    local hasSearch = SearchBar:HasActiveFilters(frame)
     -- viewType already declared at top of function
 
     -- Calculate common settings
@@ -329,11 +329,14 @@ function BagFrame:Refresh()
     local showFooter = showFooterSetting or isViewingCached
     local showCategoryCount = Database:GetSetting("showCategoryCount")
 
+    local showFilterChips = Database:GetSetting("showFilterChips")
+
     local settings = {
         columns = columns,
         iconSize = iconSize,
         spacing = spacing,
         showSearchBar = showSearchBar,
+        showFilterChips = showFilterChips,
         showFooter = showFooter,
         showCategoryCount = showCategoryCount,
     }
@@ -362,9 +365,9 @@ function BagFrame:Refresh()
     end
 
     if viewType == "category" then
-        self:RefreshCategoryView(bags, bagsToShow, settings, searchText, isViewingCached)
+        self:RefreshCategoryView(bags, bagsToShow, settings, hasSearch, isViewingCached)
     else
-        self:RefreshSingleView(bags, bagsToShow, settings, searchText, isViewingCached)
+        self:RefreshSingleView(bags, bagsToShow, settings, hasSearch, isViewingCached)
     end
 
     -- Update slot info (show regular bags only, special bags in tooltip)
@@ -393,7 +396,7 @@ function BagFrame:Refresh()
     lastLayoutSettings = { viewType = viewType }
 end
 
-function BagFrame:RefreshSingleView(bags, bagsToShow, settings, searchText, isViewingCached)
+function BagFrame:RefreshSingleView(bags, bagsToShow, settings, hasSearch, isViewingCached)
     local iconSize = settings.iconSize
 
     -- Collect all slots
@@ -416,7 +419,7 @@ function BagFrame:RefreshSingleView(bags, bagsToShow, settings, searchText, isVi
 
         if slotInfo.itemData then
             ItemButton:SetItem(button, slotInfo.itemData, iconSize, isViewingCached)
-            if searchText ~= "" and not SearchBar:ItemMatchesSearch(slotInfo.itemData, searchText) then
+            if hasSearch and not SearchBar:ItemMatchesFilters(frame, slotInfo.itemData) then
                 button:SetAlpha(0.3)
             else
                 button:SetAlpha(1)
@@ -426,7 +429,7 @@ function BagFrame:RefreshSingleView(bags, bagsToShow, settings, searchText, isVi
             cachedItemCount[slotKey] = slotInfo.itemData.count
         else
             ItemButton:SetEmpty(button, slotInfo.bagID, slotInfo.slot, iconSize, isViewingCached)
-            if searchText ~= "" then
+            if hasSearch then
                 button:SetAlpha(0.3)
             else
                 button:SetAlpha(1)
@@ -455,7 +458,7 @@ function BagFrame:RefreshSingleView(bags, bagsToShow, settings, searchText, isVi
     layoutCached = true
 end
 
-function BagFrame:RefreshCategoryView(bags, bagsToShow, settings, searchText, isViewingCached)
+function BagFrame:RefreshCategoryView(bags, bagsToShow, settings, hasSearch, isViewingCached)
     local iconSize = settings.iconSize
 
     -- Collect items and count empty slots (including soul bag slots)
@@ -683,7 +686,7 @@ function BagFrame:RefreshCategoryView(bags, bagsToShow, settings, searchText, is
         ItemButton:SetItem(button, itemData, iconSize, isViewingCached)
 
         -- Apply search highlighting (dim non-matching items)
-        if searchText ~= "" and not SearchBar:ItemMatchesSearch(itemData, searchText) then
+        if hasSearch and not SearchBar:ItemMatchesFilters(frame, itemData) then
             button:SetAlpha(0.3)
         else
             button:SetAlpha(1)
@@ -914,8 +917,7 @@ function BagFrame:IncrementalUpdate(dirtyBags)
     local bags = BagScanner:GetCachedBags()
     -- Cache settings once at start (avoid repeated GetSetting calls)
     local iconSize = Database:GetSetting("iconSize")
-    local searchText = SearchBar:GetSearchText(frame)
-    local hasSearch = searchText ~= ""
+    local hasSearch = SearchBar:HasActiveFilters(frame)
     local viewType = Database:GetSetting("bagViewType") or "single"
     local isCategoryView = viewType == "category"
 
@@ -1170,7 +1172,7 @@ function BagFrame:IncrementalUpdate(dirtyBags)
                     cachedItemCategory[slotKey] = currentSlot.category
                     ghostsReused = ghostsReused + 1
 
-                    if hasSearch and not SearchBar:ItemMatchesSearch(newItemData, searchText) then
+                    if hasSearch and not SearchBar:ItemMatchesFilters(frame, newItemData) then
                         button:SetAlpha(0.3)
                     else
                         button:SetAlpha(1)
@@ -1183,7 +1185,7 @@ function BagFrame:IncrementalUpdate(dirtyBags)
                     cachedItemCategory[slotKey] = currentSlot.category
                     buttonsUpdated = buttonsUpdated + 1
 
-                    if hasSearch and not SearchBar:ItemMatchesSearch(newItemData, searchText) then
+                    if hasSearch and not SearchBar:ItemMatchesFilters(frame, newItemData) then
                         button:SetAlpha(0.3)
                     else
                         button:SetAlpha(1)
@@ -1262,7 +1264,7 @@ function BagFrame:IncrementalUpdate(dirtyBags)
                         ItemButton:SetItem(button, newItemData, iconSize, false)
                         cachedItemData[slotKey] = newItemID
                         cachedItemCount[slotKey] = newItemData.count
-                        if hasSearch and not SearchBar:ItemMatchesSearch(newItemData, searchText) then
+                        if hasSearch and not SearchBar:ItemMatchesFilters(frame, newItemData) then
                             button:SetAlpha(0.3)
                         else
                             button:SetAlpha(1)
@@ -1301,7 +1303,7 @@ function BagFrame:IncrementalUpdate(dirtyBags)
                             ItemButton:SetItem(button, newItemData, iconSize, false)
                             cachedItemData[slotKey] = newItemID
                             cachedItemCount[slotKey] = newItemData.count
-                            if hasSearch and not SearchBar:ItemMatchesSearch(newItemData, searchText) then
+                            if hasSearch and not SearchBar:ItemMatchesFilters(frame, newItemData) then
                                 button:SetAlpha(0.3)
                             else
                                 button:SetAlpha(1)
@@ -1390,7 +1392,7 @@ UpdateFrameAppearance = function()
     frame.container:ClearAllPoints()
     if showSearchBar then
         SearchBar:Show(frame)
-        frame.container:SetPoint("TOPLEFT", frame, "TOPLEFT", Constants.FRAME.PADDING, -(Constants.FRAME.TITLE_HEIGHT + Constants.FRAME.SEARCH_BAR_HEIGHT + Constants.FRAME.PADDING + 6))
+        frame.container:SetPoint("TOPLEFT", frame, "TOPLEFT", Constants.FRAME.PADDING, -(Constants.FRAME.TITLE_HEIGHT + SearchBar:GetTotalHeight(frame) + Constants.FRAME.PADDING + 6))
     else
         SearchBar:Hide(frame)
         frame.container:SetPoint("TOPLEFT", frame, "TOPLEFT", Constants.FRAME.PADDING, -(Constants.FRAME.TITLE_HEIGHT + Constants.FRAME.PADDING + 2))
@@ -1424,6 +1426,7 @@ local appearanceSettings = {
 local resizeSettings = {
     showFooter = true,
     showSearchBar = true,
+    showFilterChips = true,
 }
 
 -- Debounce state for QuestBar toggle

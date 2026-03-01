@@ -103,6 +103,7 @@ local function UpdateFrameAppearance()
     GuildBankHeader:SetBackdropAlpha(bgAlpha)
 
     local showSearchBar = Database:GetSetting("showSearchBar")
+    local showFilterChips = Database:GetSetting("showFilterChips")
     local showFooter = Database:GetSetting("showFooter")
 
     -- Update search bar visibility
@@ -117,8 +118,9 @@ local function UpdateFrameAppearance()
     end
 
     -- Update scroll frame positioning
+    local chipHeight = (showSearchBar and showFilterChips) and (Constants.FRAME.CHIP_STRIP_HEIGHT + 1) or 0
     local topOffset = showSearchBar
-        and (Constants.FRAME.TITLE_HEIGHT + Constants.FRAME.SEARCH_BAR_HEIGHT + Constants.FRAME.PADDING + 6)
+        and (Constants.FRAME.TITLE_HEIGHT + Constants.FRAME.SEARCH_BAR_HEIGHT + chipHeight + Constants.FRAME.PADDING + 6)
         or (Constants.FRAME.TITLE_HEIGHT + Constants.FRAME.PADDING + 2)
     local bottomOffset = showFooter
         and (Constants.FRAME.FOOTER_HEIGHT + Constants.FRAME.PADDING + 6)
@@ -676,7 +678,7 @@ local function CreateGuildBankFrame()
 
     -- Scroll frame
     local scrollFrame = CreateFrame("ScrollFrame", "GudaGuildBankScrollFrame", f, "UIPanelScrollFrameTemplate")
-    scrollFrame:SetPoint("TOPLEFT", f, "TOPLEFT", Constants.FRAME.PADDING, -(Constants.FRAME.TITLE_HEIGHT + Constants.FRAME.SEARCH_BAR_HEIGHT + Constants.FRAME.PADDING + 6))
+    scrollFrame:SetPoint("TOPLEFT", f, "TOPLEFT", Constants.FRAME.PADDING, -(Constants.FRAME.TITLE_HEIGHT + SearchBar:GetTotalHeight(f) + Constants.FRAME.PADDING + 6))
     scrollFrame:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -Constants.FRAME.PADDING - 20, Constants.FRAME.FOOTER_HEIGHT + Constants.FRAME.PADDING + 6)
     f.scrollFrame = scrollFrame
 
@@ -958,7 +960,7 @@ function GuildBankFrame:Refresh()
     local iconSize = Database:GetSetting("iconSize")
     local spacing = Database:GetSetting("iconSpacing")
     local columns = Database:GetSetting("guildBankColumns")
-    local searchText = SearchBar:GetSearchText(frame)
+    local hasSearch = SearchBar:HasActiveFilters(frame)
     local selectedTab = GuildBankScanner and GuildBankScanner:GetSelectedTab() or 0
 
     -- Collect all slots from guild bank
@@ -1021,9 +1023,11 @@ function GuildBankFrame:Refresh()
 
     -- Calculate frame dimensions
     local showSearchBar = Database:GetSetting("showSearchBar")
+    local showFilterChips = Database:GetSetting("showFilterChips")
     local showFooter = Database:GetSetting("showFooter")
+    local chipHeight = (showSearchBar and showFilterChips) and (Constants.FRAME.CHIP_STRIP_HEIGHT + 1) or 0
     local topOffset = showSearchBar
-        and (Constants.FRAME.TITLE_HEIGHT + Constants.FRAME.SEARCH_BAR_HEIGHT + Constants.FRAME.PADDING + 6)
+        and (Constants.FRAME.TITLE_HEIGHT + Constants.FRAME.SEARCH_BAR_HEIGHT + chipHeight + Constants.FRAME.PADDING + 6)
         or (Constants.FRAME.TITLE_HEIGHT + Constants.FRAME.PADDING + 2)
     local bottomOffset = showFooter
         and (Constants.FRAME.FOOTER_HEIGHT + Constants.FRAME.PADDING + 6)
@@ -1128,7 +1132,7 @@ function GuildBankFrame:Refresh()
 
                 ItemButton:SetItem(button, adaptedData, iconSize, isReadOnly)
 
-                if searchText ~= "" and not SearchBar:ItemMatchesSearch(slotInfo.itemData, searchText) then
+                if hasSearch and not SearchBar:ItemMatchesFilters(frame, slotInfo.itemData) then
                     button:SetAlpha(0.3)
                 else
                     button:SetAlpha(1)
@@ -1139,7 +1143,7 @@ function GuildBankFrame:Refresh()
             else
                 -- Empty slot - pass isGuildBank flag for depositing
                 ItemButton:SetEmpty(button, slotInfo.tabIndex, slotInfo.slot, iconSize, isReadOnly, true)
-                if searchText ~= "" then
+                if hasSearch then
                     button:SetAlpha(0.3)
                 else
                     button:SetAlpha(1)
@@ -1337,7 +1341,7 @@ local function OnSettingChanged(event, key, value)
         -- Column/size changes need full refresh
         UpdateFrameAppearance()
         GuildBankFrame:Refresh()
-    elseif key == "showFooter" or key == "showSearchBar" then
+    elseif key == "showFooter" or key == "showSearchBar" or key == "showFilterChips" then
         UpdateFrameAppearance()
         GuildBankFrame:Refresh()
     end

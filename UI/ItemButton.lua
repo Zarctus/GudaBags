@@ -1460,13 +1460,13 @@ end
 function ItemButton:ClearHighlightedSlots(parentFrame)
     if not buttonPool then return end
     local SearchBar = ns:GetModule("SearchBar")
-    local searchText = (SearchBar and parentFrame) and SearchBar:GetSearchText(parentFrame) or ""
+    local hasSearch = (SearchBar and parentFrame) and SearchBar:HasActiveFilters(parentFrame) or false
     local bgAlpha = Database:GetSetting("bgAlpha") / 100
 
     for button in buttonPool:EnumerateActive() do
-        if searchText ~= "" then
+        if hasSearch then
             -- Respect search filter
-            if button.itemData and SearchBar:ItemMatchesSearch(button.itemData, searchText) then
+            if button.itemData and SearchBar:ItemMatchesFilters(parentFrame, button.itemData) then
                 button:SetAlpha(1.0)
                 if button.slotBackground then
                     button.slotBackground:SetVertexColor(0.5, 0.5, 0.5, bgAlpha)

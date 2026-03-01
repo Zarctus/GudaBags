@@ -247,7 +247,7 @@ local function CreateBankFrame()
 
     -- Create scroll frame for large bank contents
     local scrollFrame = CreateFrame("ScrollFrame", "GudaBankScrollFrame", f, "UIPanelScrollFrameTemplate")
-    scrollFrame:SetPoint("TOPLEFT", f, "TOPLEFT", Constants.FRAME.PADDING, -(Constants.FRAME.TITLE_HEIGHT + Constants.FRAME.SEARCH_BAR_HEIGHT + Constants.FRAME.PADDING + 6))
+    scrollFrame:SetPoint("TOPLEFT", f, "TOPLEFT", Constants.FRAME.PADDING, -(Constants.FRAME.TITLE_HEIGHT + SearchBar:GetTotalHeight(f) + Constants.FRAME.PADDING + 6))
     scrollFrame:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -Constants.FRAME.PADDING - 20, Constants.FRAME.FOOTER_HEIGHT + Constants.FRAME.PADDING)
     f.scrollFrame = scrollFrame
 
@@ -1069,7 +1069,7 @@ function BankFrame:Refresh()
     local iconSize = Database:GetSetting("iconSize")
     local spacing = Database:GetSetting("iconSpacing")
     local columns = Database:GetSetting("bankColumns")
-    local searchText = SearchBar:GetSearchText(frame)
+    local hasSearch = SearchBar:HasActiveFilters(frame)
     local viewType = Database:GetSetting("bankViewType") or "single"
 
     -- Use appropriate bag IDs for classification
@@ -1078,6 +1078,7 @@ function BankFrame:Refresh()
     local bagsToShow = LayoutEngine:BuildDisplayOrder(classifiedBags, false)
 
     local showSearchBar = Database:GetSetting("showSearchBar")
+    local showFilterChips = Database:GetSetting("showFilterChips")
     local showFooterSetting = Database:GetSetting("showFooter")
     local showFooter = showFooterSetting or isViewingCached or not isBankOpen
     local showCategoryCount = Database:GetSetting("showCategoryCount")
@@ -1088,14 +1089,15 @@ function BankFrame:Refresh()
         iconSize = iconSize,
         spacing = spacing,
         showSearchBar = showSearchBar,
+        showFilterChips = showFilterChips,
         showFooter = showFooter,
         showCategoryCount = showCategoryCount,
     }
 
     if viewType == "category" then
-        self:RefreshCategoryView(bank, bagsToShow, settings, searchText, isReadOnly)
+        self:RefreshCategoryView(bank, bagsToShow, settings, hasSearch, isReadOnly)
     else
-        self:RefreshSingleView(bank, bagsToShow, settings, searchText, isReadOnly)
+        self:RefreshSingleView(bank, bagsToShow, settings, hasSearch, isReadOnly)
     end
 
     if isViewingCached or not isBankOpen then
@@ -1130,7 +1132,7 @@ function BankFrame:Refresh()
     end
 end
 
-function BankFrame:RefreshSingleView(bank, bagsToShow, settings, searchText, isReadOnly)
+function BankFrame:RefreshSingleView(bank, bagsToShow, settings, hasSearch, isReadOnly)
     local iconSize = settings.iconSize
     local spacing = settings.spacing
     local columns = settings.columns
@@ -1151,7 +1153,7 @@ function BankFrame:RefreshSingleView(bank, bagsToShow, settings, searchText, isR
 
     if showTabSections and tabContainerIDs and #tabContainerIDs > 1 then
         -- Render with tab sections
-        self:RefreshSingleViewWithTabs(bank, settings, searchText, isReadOnly, tabContainerIDs, cachedTabs, isWarbandView)
+        self:RefreshSingleViewWithTabs(bank, settings, hasSearch, isReadOnly, tabContainerIDs, cachedTabs, isWarbandView)
         return
     end
 
@@ -1192,10 +1194,12 @@ function BankFrame:RefreshSingleView(bank, bagsToShow, settings, searchText, isR
 
     -- Calculate frame chrome heights (must match scroll frame positioning in UpdateFrameAppearance)
     local showSearchBar = settings.showSearchBar
+    local showFilterChips = settings.showFilterChips
     local showFooter = settings.showFooter
+    local chipHeight = (showSearchBar and showFilterChips) and (Constants.FRAME.CHIP_STRIP_HEIGHT + 1) or 0
     -- Top offset: same as scroll frame SetPoint TOPLEFT
     local topOffset = showSearchBar
-        and (Constants.FRAME.TITLE_HEIGHT + Constants.FRAME.SEARCH_BAR_HEIGHT + Constants.FRAME.PADDING + 6)
+        and (Constants.FRAME.TITLE_HEIGHT + Constants.FRAME.SEARCH_BAR_HEIGHT + chipHeight + Constants.FRAME.PADDING + 6)
         or (Constants.FRAME.TITLE_HEIGHT + Constants.FRAME.PADDING + 2)
     -- Bottom offset: same as scroll frame SetPoint BOTTOMRIGHT
     -- Footer is at PADDING-2 from bottom with height FOOTER_HEIGHT, so top is at (PADDING-2)+FOOTER_HEIGHT
@@ -1265,7 +1269,7 @@ function BankFrame:RefreshSingleView(bank, bagsToShow, settings, searchText, isR
 
         if slotInfo.itemData then
             ItemButton:SetItem(button, slotInfo.itemData, iconSize, isReadOnly)
-            if searchText ~= "" and not SearchBar:ItemMatchesSearch(slotInfo.itemData, searchText) then
+            if hasSearch and not SearchBar:ItemMatchesFilters(frame, slotInfo.itemData) then
                 button:SetAlpha(0.3)
             else
                 button:SetAlpha(1)
@@ -1275,7 +1279,7 @@ function BankFrame:RefreshSingleView(bank, bagsToShow, settings, searchText, isR
             cachedItemCount[slotKey] = slotInfo.itemData.count
         else
             ItemButton:SetEmpty(button, slotInfo.bagID, slotInfo.slot, iconSize, isReadOnly)
-            if searchText ~= "" then
+            if hasSearch then
                 button:SetAlpha(0.3)
             else
                 button:SetAlpha(1)
@@ -1304,7 +1308,7 @@ function BankFrame:RefreshSingleView(bank, bagsToShow, settings, searchText, isR
 end
 
 -- Render single view with tab sections (headers and spacing between tabs)
-function BankFrame:RefreshSingleViewWithTabs(bank, settings, searchText, isReadOnly, tabContainerIDs, cachedTabs, isWarbandView)
+function BankFrame:RefreshSingleViewWithTabs(bank, settings, hasSearch, isReadOnly, tabContainerIDs, cachedTabs, isWarbandView)
     local iconSize = settings.iconSize
     local spacing = settings.spacing
     local columns = settings.columns
@@ -1370,7 +1374,9 @@ function BankFrame:RefreshSingleViewWithTabs(bank, settings, searchText, isReadO
 
     -- Calculate chrome heights (must match scroll frame positioning)
     -- For tab sections view, search bar and footer are always shown
-    local topOffset = Constants.FRAME.TITLE_HEIGHT + Constants.FRAME.SEARCH_BAR_HEIGHT + Constants.FRAME.PADDING + 6
+    local showFilterChips = settings.showFilterChips
+    local chipHeight = showFilterChips and (Constants.FRAME.CHIP_STRIP_HEIGHT + 1) or 0
+    local topOffset = Constants.FRAME.TITLE_HEIGHT + Constants.FRAME.SEARCH_BAR_HEIGHT + chipHeight + Constants.FRAME.PADDING + 6
     local bottomOffset = Constants.FRAME.FOOTER_HEIGHT + Constants.FRAME.PADDING
     local chromeHeight = topOffset + bottomOffset
     local frameHeightNeeded = containerHeight + chromeHeight
@@ -1460,7 +1466,7 @@ function BankFrame:RefreshSingleViewWithTabs(bank, settings, searchText, isReadO
 
             if slotInfo.itemData then
                 ItemButton:SetItem(button, slotInfo.itemData, iconSize, isReadOnly)
-                if searchText ~= "" and not SearchBar:ItemMatchesSearch(slotInfo.itemData, searchText) then
+                if hasSearch and not SearchBar:ItemMatchesFilters(frame, slotInfo.itemData) then
                     button:SetAlpha(0.3)
                 else
                     button:SetAlpha(1)
@@ -1469,7 +1475,7 @@ function BankFrame:RefreshSingleViewWithTabs(bank, settings, searchText, isReadO
                 cachedItemCount[slotKey] = slotInfo.itemData.count
             else
                 ItemButton:SetEmpty(button, slotInfo.bagID, slotInfo.slot, iconSize, isReadOnly)
-                if searchText ~= "" then
+                if hasSearch then
                     button:SetAlpha(0.3)
                 else
                     button:SetAlpha(1)
@@ -1500,15 +1506,15 @@ function BankFrame:RefreshSingleViewWithTabs(bank, settings, searchText, isReadO
     layoutCached = true
 end
 
-function BankFrame:RefreshCategoryView(bank, bagsToShow, settings, searchText, isReadOnly)
+function BankFrame:RefreshCategoryView(bank, bagsToShow, settings, hasSearch, isReadOnly)
     local iconSize = settings.iconSize
 
     local items, emptyCount, firstEmptySlot, soulEmptyCount, firstSoulEmptySlot = LayoutEngine:CollectItemsForCategoryView(bagsToShow, bank, isReadOnly)
 
-    if searchText ~= "" then
+    if hasSearch then
         local filteredItems = {}
         for _, item in ipairs(items) do
-            if SearchBar:ItemMatchesSearch(item.itemData, searchText) then
+            if SearchBar:ItemMatchesFilters(frame, item.itemData) then
                 table.insert(filteredItems, item)
             end
         end
@@ -1521,9 +1527,11 @@ function BankFrame:RefreshCategoryView(bank, bagsToShow, settings, searchText, i
 
     -- Calculate chrome heights for scroll frame positioning
     local showSearchBar = settings.showSearchBar
+    local showFilterChips = settings.showFilterChips
     local showFooter = settings.showFooter
+    local chipHeight = (showSearchBar and showFilterChips) and (Constants.FRAME.CHIP_STRIP_HEIGHT + 1) or 0
     local topOffset = showSearchBar
-        and (Constants.FRAME.TITLE_HEIGHT + Constants.FRAME.SEARCH_BAR_HEIGHT + Constants.FRAME.PADDING + 6)
+        and (Constants.FRAME.TITLE_HEIGHT + Constants.FRAME.SEARCH_BAR_HEIGHT + chipHeight + Constants.FRAME.PADDING + 6)
         or (Constants.FRAME.TITLE_HEIGHT + Constants.FRAME.PADDING + 2)
     -- Footer is at PADDING-2 from bottom with height FOOTER_HEIGHT
     -- Add extra padding (10) above footer for clearance
@@ -1533,7 +1541,7 @@ function BankFrame:RefreshCategoryView(bank, bagsToShow, settings, searchText, i
     local chromeHeight = topOffset + bottomOffset
 
     -- Derive actual content height using LayoutEngine's chrome calculation (different from scroll positioning)
-    local layoutSearchBarHeight = showSearchBar and (Constants.FRAME.SEARCH_BAR_HEIGHT + 4) or 0
+    local layoutSearchBarHeight = showSearchBar and (Constants.FRAME.SEARCH_BAR_HEIGHT + chipHeight + 4) or 0
     local layoutFooterHeight = showFooter and (Constants.FRAME.FOOTER_HEIGHT + 6) or Constants.FRAME.PADDING
     local layoutChrome = Constants.FRAME.TITLE_HEIGHT + layoutSearchBarHeight + layoutFooterHeight + Constants.FRAME.PADDING + 4
     local contentHeight = frameHeight - layoutChrome
@@ -1891,8 +1899,7 @@ function BankFrame:IncrementalUpdate(dirtyBags)
     local bank = BankScanner:GetCachedBank()
     -- Cache settings once at start (avoid repeated GetSetting calls)
     local iconSize = Database:GetSetting("iconSize")
-    local searchText = SearchBar:GetSearchText(frame)
-    local hasSearch = searchText ~= ""
+    local hasSearch = SearchBar:HasActiveFilters(frame)
     local isReadOnly = viewingCharacter ~= nil or not BankScanner:IsBankOpen()
     local viewType = Database:GetSetting("bankViewType") or "single"
     local isCategoryView = viewType == "category"
@@ -2023,7 +2030,7 @@ function BankFrame:IncrementalUpdate(dirtyBags)
             cachedItemData[slotKey] = update.itemData.itemID
             cachedItemCount[slotKey] = update.itemData.count
             cachedItemCategory[slotKey] = update.category
-            if hasSearch and not SearchBar:ItemMatchesSearch(update.itemData, searchText) then
+            if hasSearch and not SearchBar:ItemMatchesFilters(frame, update.itemData) then
                 update.button:SetAlpha(0.3)
             else
                 update.button:SetAlpha(1)
@@ -2140,7 +2147,7 @@ function BankFrame:IncrementalUpdate(dirtyBags)
                         ItemButton:SetItem(button, newItemData, iconSize, isReadOnly)
                         cachedItemData[slotKey] = newItemID
                         cachedItemCount[slotKey] = newItemData.count
-                        if hasSearch and not SearchBar:ItemMatchesSearch(newItemData, searchText) then
+                        if hasSearch and not SearchBar:ItemMatchesFilters(frame, newItemData) then
                             button:SetAlpha(0.3)
                         else
                             button:SetAlpha(1)
@@ -2178,7 +2185,7 @@ function BankFrame:IncrementalUpdate(dirtyBags)
                             ItemButton:SetItem(button, newItemData, iconSize, isReadOnly)
                             cachedItemData[slotKey] = newItemID
                             cachedItemCount[slotKey] = newItemData.count
-                            if hasSearch and not SearchBar:ItemMatchesSearch(newItemData, searchText) then
+                            if hasSearch and not SearchBar:ItemMatchesFilters(frame, newItemData) then
                                 button:SetAlpha(0.3)
                             else
                                 button:SetAlpha(1)
@@ -2349,6 +2356,7 @@ local appearanceSettings = {
 local resizeSettings = {
     showFooter = true,
     showSearchBar = true,
+    showFilterChips = true,
 }
 
 local function OnSettingChanged(event, key, value)

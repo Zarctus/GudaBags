@@ -199,9 +199,34 @@ local function CreateBagFrame()
         BagFrame:Refresh()
     end)
 
+    -- Transfer button callbacks
+    SearchBar:SetTransferTargetCallback(f, function()
+        local GuildBankScanner = ns:GetModule("GuildBankScanner")
+        if GuildBankScanner and GuildBankScanner:IsGuildBankOpen() then
+            return {type = "guildbank", label = L["TRANSFER_TO_GUILD_BANK"]}
+        end
+        local BankScannerModule = ns:GetModule("BankScanner")
+        if BankScannerModule and BankScannerModule:IsBankOpen() then
+            -- Check if warband view is active (Retail only)
+            local BankFooter = ns:GetModule("BankFrame.BankFooter")
+            if ns.IsRetail and BankFooter then
+                local bankType = BankFooter:GetCurrentBankType()
+                if bankType == "warband" then
+                    return {type = "warband", label = L["TRANSFER_TO_WARBAND"]}
+                end
+            end
+            return {type = "bank", label = L["TRANSFER_TO_BANK"]}
+        end
+        return nil
+    end)
+
+    SearchBar:SetTransferCallback(f, function()
+        BagFrame:TransferMatchedItems()
+    end)
+
     -- Use the separate secure button container instead of creating one as child of f
     -- This keeps f unprotected so it can be shown during combat
-    secureButtonContainer:SetPoint("TOPLEFT", f, "TOPLEFT", Constants.FRAME.PADDING, -(Constants.FRAME.TITLE_HEIGHT + Constants.FRAME.SEARCH_BAR_HEIGHT + Constants.FRAME.PADDING + 6))
+    secureButtonContainer:SetPoint("TOPLEFT", f, "TOPLEFT", Constants.FRAME.PADDING, -(Constants.FRAME.TITLE_HEIGHT + SearchBar:GetTotalHeight(f) + Constants.FRAME.PADDING + 6))
     secureButtonContainer:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -Constants.FRAME.PADDING, Constants.FRAME.FOOTER_HEIGHT + Constants.FRAME.PADDING + 6)
     f.container = secureButtonContainer
 
@@ -320,7 +345,7 @@ function BagFrame:Refresh()
     local iconSize = Database:GetSetting("iconSize")
     local spacing = Database:GetSetting("iconSpacing")
     local columns = Database:GetSetting("bagColumns")
-    local searchText = SearchBar:GetSearchText(frame)
+    local hasSearch = SearchBar:HasActiveFilters(frame)
     -- viewType already declared at top of function
 
     -- Calculate common settings
@@ -329,11 +354,14 @@ function BagFrame:Refresh()
     local showFooter = showFooterSetting or isViewingCached
     local showCategoryCount = Database:GetSetting("showCategoryCount")
 
+    local showFilterChips = Database:GetSetting("showFilterChips")
+
     local settings = {
         columns = columns,
         iconSize = iconSize,
         spacing = spacing,
         showSearchBar = showSearchBar,
+        showFilterChips = showFilterChips,
         showFooter = showFooter,
         showCategoryCount = showCategoryCount,
     }
@@ -362,9 +390,9 @@ function BagFrame:Refresh()
     end
 
     if viewType == "category" then
-        self:RefreshCategoryView(bags, bagsToShow, settings, searchText, isViewingCached)
+        self:RefreshCategoryView(bags, bagsToShow, settings, hasSearch, isViewingCached)
     else
-        self:RefreshSingleView(bags, bagsToShow, settings, searchText, isViewingCached)
+        self:RefreshSingleView(bags, bagsToShow, settings, hasSearch, isViewingCached)
     end
 
     -- Update slot info (show regular bags only, special bags in tooltip)
@@ -393,7 +421,7 @@ function BagFrame:Refresh()
     lastLayoutSettings = { viewType = viewType }
 end
 
-function BagFrame:RefreshSingleView(bags, bagsToShow, settings, searchText, isViewingCached)
+function BagFrame:RefreshSingleView(bags, bagsToShow, settings, hasSearch, isViewingCached)
     local iconSize = settings.iconSize
 
     -- Collect all slots
@@ -416,8 +444,8 @@ function BagFrame:RefreshSingleView(bags, bagsToShow, settings, searchText, isVi
 
         if slotInfo.itemData then
             ItemButton:SetItem(button, slotInfo.itemData, iconSize, isViewingCached)
-            if searchText ~= "" and not SearchBar:ItemMatchesSearch(slotInfo.itemData, searchText) then
-                button:SetAlpha(0.3)
+            if hasSearch and not SearchBar:ItemMatchesFilters(frame, slotInfo.itemData) then
+                button:SetAlpha(0.15)
             else
                 button:SetAlpha(1)
             end
@@ -426,8 +454,8 @@ function BagFrame:RefreshSingleView(bags, bagsToShow, settings, searchText, isVi
             cachedItemCount[slotKey] = slotInfo.itemData.count
         else
             ItemButton:SetEmpty(button, slotInfo.bagID, slotInfo.slot, iconSize, isViewingCached)
-            if searchText ~= "" then
-                button:SetAlpha(0.3)
+            if hasSearch then
+                button:SetAlpha(0.15)
             else
                 button:SetAlpha(1)
             end
@@ -455,7 +483,7 @@ function BagFrame:RefreshSingleView(bags, bagsToShow, settings, searchText, isVi
     layoutCached = true
 end
 
-function BagFrame:RefreshCategoryView(bags, bagsToShow, settings, searchText, isViewingCached)
+function BagFrame:RefreshCategoryView(bags, bagsToShow, settings, hasSearch, isViewingCached)
     local iconSize = settings.iconSize
 
     -- Collect items and count empty slots (including soul bag slots)
@@ -683,8 +711,8 @@ function BagFrame:RefreshCategoryView(bags, bagsToShow, settings, searchText, is
         ItemButton:SetItem(button, itemData, iconSize, isViewingCached)
 
         -- Apply search highlighting (dim non-matching items)
-        if searchText ~= "" and not SearchBar:ItemMatchesSearch(itemData, searchText) then
-            button:SetAlpha(0.3)
+        if hasSearch and not SearchBar:ItemMatchesFilters(frame, itemData) then
+            button:SetAlpha(0.15)
         else
             button:SetAlpha(1)
         end
@@ -914,8 +942,7 @@ function BagFrame:IncrementalUpdate(dirtyBags)
     local bags = BagScanner:GetCachedBags()
     -- Cache settings once at start (avoid repeated GetSetting calls)
     local iconSize = Database:GetSetting("iconSize")
-    local searchText = SearchBar:GetSearchText(frame)
-    local hasSearch = searchText ~= ""
+    local hasSearch = SearchBar:HasActiveFilters(frame)
     local viewType = Database:GetSetting("bagViewType") or "single"
     local isCategoryView = viewType == "category"
 
@@ -1170,8 +1197,8 @@ function BagFrame:IncrementalUpdate(dirtyBags)
                     cachedItemCategory[slotKey] = currentSlot.category
                     ghostsReused = ghostsReused + 1
 
-                    if hasSearch and not SearchBar:ItemMatchesSearch(newItemData, searchText) then
-                        button:SetAlpha(0.3)
+                    if hasSearch and not SearchBar:ItemMatchesFilters(frame, newItemData) then
+                        button:SetAlpha(0.15)
                     else
                         button:SetAlpha(1)
                     end
@@ -1183,8 +1210,8 @@ function BagFrame:IncrementalUpdate(dirtyBags)
                     cachedItemCategory[slotKey] = currentSlot.category
                     buttonsUpdated = buttonsUpdated + 1
 
-                    if hasSearch and not SearchBar:ItemMatchesSearch(newItemData, searchText) then
-                        button:SetAlpha(0.3)
+                    if hasSearch and not SearchBar:ItemMatchesFilters(frame, newItemData) then
+                        button:SetAlpha(0.15)
                     else
                         button:SetAlpha(1)
                     end
@@ -1262,8 +1289,8 @@ function BagFrame:IncrementalUpdate(dirtyBags)
                         ItemButton:SetItem(button, newItemData, iconSize, false)
                         cachedItemData[slotKey] = newItemID
                         cachedItemCount[slotKey] = newItemData.count
-                        if hasSearch and not SearchBar:ItemMatchesSearch(newItemData, searchText) then
-                            button:SetAlpha(0.3)
+                        if hasSearch and not SearchBar:ItemMatchesFilters(frame, newItemData) then
+                            button:SetAlpha(0.15)
                         else
                             button:SetAlpha(1)
                         end
@@ -1301,8 +1328,8 @@ function BagFrame:IncrementalUpdate(dirtyBags)
                             ItemButton:SetItem(button, newItemData, iconSize, false)
                             cachedItemData[slotKey] = newItemID
                             cachedItemCount[slotKey] = newItemData.count
-                            if hasSearch and not SearchBar:ItemMatchesSearch(newItemData, searchText) then
-                                button:SetAlpha(0.3)
+                            if hasSearch and not SearchBar:ItemMatchesFilters(frame, newItemData) then
+                                button:SetAlpha(0.15)
                             else
                                 button:SetAlpha(1)
                             end
@@ -1390,7 +1417,7 @@ UpdateFrameAppearance = function()
     frame.container:ClearAllPoints()
     if showSearchBar then
         SearchBar:Show(frame)
-        frame.container:SetPoint("TOPLEFT", frame, "TOPLEFT", Constants.FRAME.PADDING, -(Constants.FRAME.TITLE_HEIGHT + Constants.FRAME.SEARCH_BAR_HEIGHT + Constants.FRAME.PADDING + 6))
+        frame.container:SetPoint("TOPLEFT", frame, "TOPLEFT", Constants.FRAME.PADDING, -(Constants.FRAME.TITLE_HEIGHT + SearchBar:GetTotalHeight(frame) + Constants.FRAME.PADDING + 6))
     else
         SearchBar:Hide(frame)
         frame.container:SetPoint("TOPLEFT", frame, "TOPLEFT", Constants.FRAME.PADDING, -(Constants.FRAME.TITLE_HEIGHT + Constants.FRAME.PADDING + 2))
@@ -1424,6 +1451,7 @@ local appearanceSettings = {
 local resizeSettings = {
     showFooter = true,
     showSearchBar = true,
+    showFilterChips = true,
 }
 
 -- Debounce state for QuestBar toggle
@@ -1598,6 +1626,39 @@ function BagFrame:Clean()
     end
 end
 
+function BagFrame:TransferMatchedItems()
+    if InCombatLockdown() then
+        UIErrorsFrame:AddMessage(L["TRANSFER_COMBAT"], 1.0, 0.1, 0.1, 1.0)
+        return
+    end
+    if not frame then return end
+
+    local bags = BagScanner:GetCachedBags()
+    if not bags then return end
+
+    -- Determine target bank type for UseContainerItem
+    local bankType = nil
+    if ns.IsRetail then
+        local BankFooter = ns:GetModule("BankFrame.BankFooter")
+        if BankFooter then
+            local currentBankType = BankFooter:GetCurrentBankType()
+            if currentBankType == "warband" then
+                bankType = Enum.BankType.Account
+            end
+        end
+    end
+
+    for bagID, bagData in pairs(bags) do
+        if bagData.slots then
+            for slot, itemData in pairs(bagData.slots) do
+                if itemData and itemData.itemID and SearchBar:ItemMatchesFilters(frame, itemData) then
+                    C_Container.UseContainerItem(bagID, slot, nil, bankType)
+                end
+            end
+        end
+    end
+end
+
 Events:Register("SETTING_CHANGED", OnSettingChanged, BagFrame)
 
 -- Refresh when categories are updated (reordered, grouped, etc.)
@@ -1703,9 +1764,15 @@ Events:Register("AUCTION_HOUSE_CLOSED", RefreshForInteractionWindow, BagFrame)
 -- Bank window (our own bank frame showing affects grouping)
 -- Small delay on open to ensure BankFrame is fully shown before checking
 Events:Register("BANKFRAME_OPENED", function()
-    C_Timer.After(0.05, RefreshForInteractionWindow)
+    C_Timer.After(0.05, function()
+        RefreshForInteractionWindow()
+        if frame then SearchBar:UpdateTransferState(frame) end
+    end)
 end, BagFrame)
-Events:Register("BANKFRAME_CLOSED", RefreshForInteractionWindow, BagFrame)
+Events:Register("BANKFRAME_CLOSED", function()
+    RefreshForInteractionWindow()
+    if frame then SearchBar:UpdateTransferState(frame) end
+end, BagFrame)
 
 Events:OnPlayerLogin(function()
     isInitialized = true

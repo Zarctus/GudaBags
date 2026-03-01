@@ -83,6 +83,7 @@ local function ResetButton(pool, button)
     if button.itemLevelText then button.itemLevelText:Hide() end
     if button.questIcon then button.questIcon:Hide() end
     if button.questStarterIcon then button.questStarterIcon:Hide() end
+    if button.craftingQualityIcon then button.craftingQualityIcon:Hide() end
     if button.cooldown then CooldownFrame_Set(button.cooldown, 0, 0, false) end
 end
 
@@ -437,6 +438,13 @@ local function CreateButton(parent)
     junkIcon:SetTexture("Interface\\MoneyFrame\\UI-GoldIcon")
     junkIcon:Hide()
     button.junkIcon = junkIcon
+
+    -- Crafting quality icon (top-left corner, Retail only)
+    local craftingQualityIcon = button:CreateTexture(nil, "OVERLAY", nil, 3)
+    craftingQualityIcon:SetSize(20, 20)
+    craftingQualityIcon:SetPoint("TOPLEFT", button, "TOPLEFT", -3, 3)
+    craftingQualityIcon:Hide()
+    button.craftingQualityIcon = craftingQualityIcon
 
     -- Tracked/favorite icon shadow (for darker stroke effect)
     local trackedIconShadow = button:CreateTexture(nil, "OVERLAY", nil, 2)
@@ -1052,6 +1060,7 @@ function ItemButton:SetItem(button, itemData, size, isReadOnly)
     if button.questIcon then button.questIcon:Hide() end
     if button.questStarterIcon then button.questStarterIcon:Hide() end
     if button.junkIcon then button.junkIcon:Hide() end
+    if button.craftingQualityIcon then button.craftingQualityIcon:Hide() end
 
     button.itemData = itemData
     button.isReadOnly = isReadOnly or false
@@ -1064,6 +1073,7 @@ function ItemButton:SetItem(button, itemData, size, isReadOnly)
         button:SetSize(size, size)
         button.wrapper:SetSize(size, size)
         button.currentSize = size
+
     end
 
     button.slotBackground:SetVertexColor(0.5, 0.5, 0.5, settings.bgAlpha)
@@ -1225,6 +1235,18 @@ function ItemButton:SetItem(button, itemData, size, isReadOnly)
             end
         end
 
+        -- Crafting quality icon (Retail profession items)
+        if button.craftingQualityIcon then
+            if itemData.craftingQuality and itemData.craftingQuality > 0 then
+                local cqSize = math.max(20, math.floor(size * 0.54))
+                button.craftingQualityIcon:SetSize(cqSize, cqSize)
+                button.craftingQualityIcon:SetAtlas("Professions-Icon-Quality-Tier" .. itemData.craftingQuality, false)
+                button.craftingQualityIcon:Show()
+            else
+                button.craftingQualityIcon:Hide()
+            end
+        end
+
         -- Tracked item icon
         if button.trackedIcon then
             local TrackedBar = ns:GetModule("TrackedBar")
@@ -1281,7 +1303,7 @@ function ItemButton:SetItem(button, itemData, size, isReadOnly)
         -- Item level display (Weapon classID=2, Armor classID=4)
         if button.itemLevelText then
             local isEquip = itemData.classID and (itemData.classID == 2 or itemData.classID == 4)
-            if settings.showItemLevel and isEquip and itemData.itemLevel and itemData.itemLevel > 0 then
+            if settings.showItemLevel and isEquip and itemData.itemLevel and itemData.itemLevel > 0 and (itemData.quality or 0) > 0 then
                 button.itemLevelText:SetText(itemData.itemLevel)
                 button.itemLevelText:Show()
             else
@@ -1405,6 +1427,9 @@ function ItemButton:SetEmpty(button, bagID, slot, size, isReadOnly, isGuildBank)
     if button.equipSetIconShadow then
         button.equipSetIconShadow:Hide()
     end
+    if button.craftingQualityIcon then
+        button.craftingQualityIcon:Hide()
+    end
     if button.itemLevelText then
         button.itemLevelText:Hide()
     end
@@ -1460,21 +1485,21 @@ end
 function ItemButton:ClearHighlightedSlots(parentFrame)
     if not buttonPool then return end
     local SearchBar = ns:GetModule("SearchBar")
-    local searchText = (SearchBar and parentFrame) and SearchBar:GetSearchText(parentFrame) or ""
+    local hasSearch = (SearchBar and parentFrame) and SearchBar:HasActiveFilters(parentFrame) or false
     local bgAlpha = Database:GetSetting("bgAlpha") / 100
 
     for button in buttonPool:EnumerateActive() do
-        if searchText ~= "" then
+        if hasSearch then
             -- Respect search filter
-            if button.itemData and SearchBar:ItemMatchesSearch(button.itemData, searchText) then
+            if button.itemData and SearchBar:ItemMatchesFilters(parentFrame, button.itemData) then
                 button:SetAlpha(1.0)
                 if button.slotBackground then
                     button.slotBackground:SetVertexColor(0.5, 0.5, 0.5, bgAlpha)
                 end
             else
-                button:SetAlpha(0.3)
+                button:SetAlpha(0.15)
                 if button.slotBackground then
-                    button.slotBackground:SetVertexColor(0.5, 0.5, 0.5, bgAlpha * 0.3)
+                    button.slotBackground:SetVertexColor(0.5, 0.5, 0.5, bgAlpha * 0.15)
                 end
             end
         else

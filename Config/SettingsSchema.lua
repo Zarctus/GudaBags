@@ -65,15 +65,15 @@ function SettingsSchema.GetLayout()
         { type = "separator", label = L["SETTINGS_SECTION_OPTIONS"] },
         { type = "row", children = {
             { type = "checkbox", key = "showSearchBar", label = L["SETTINGS_SHOW_SEARCH"], tooltip = L["SETTINGS_SHOW_SEARCH_TIP"] },
+            { type = "checkbox", key = "showFilterChips", label = L["SETTINGS_SHOW_FILTER_CHIPS"], tooltip = L["SETTINGS_SHOW_FILTER_CHIPS_TIP"] },
+        }},
+        { type = "row", children = {
             { type = "checkbox", key = "showFooter", label = L["SETTINGS_SHOW_FOOTER"], tooltip = L["SETTINGS_SHOW_FOOTER_TIP"] },
-        }},
-
-        { type = "row", children = {
             { type = "checkbox", key = "showCategoryCount", label = L["SETTINGS_SHOW_CAT_COUNT"], tooltip = L["SETTINGS_SHOW_CAT_COUNT_TIP"] },
-            { type = "checkbox", key = "groupIdenticalItems", label = L["SETTINGS_GROUP_IDENTICAL"], tooltip = L["SETTINGS_GROUP_IDENTICAL_TIP"] },
         }},
 
         { type = "row", children = {
+            { type = "checkbox", key = "groupIdenticalItems", label = L["SETTINGS_GROUP_IDENTICAL"], tooltip = L["SETTINGS_GROUP_IDENTICAL_TIP"] },
             { type = "checkbox", key = "showEquipSetCategories", label = L["SETTINGS_EQUIP_SET_CATEGORIES"], tooltip = L["SETTINGS_EQUIP_SET_CATEGORIES_TIP"] },
         }},
 

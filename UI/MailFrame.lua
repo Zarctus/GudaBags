@@ -79,21 +79,28 @@ local function UpdateFrameAppearance()
     end
 
     local showSearchBar = Database:GetSetting("showSearchBar")
+    local showFilterChips = Database:GetSetting("showFilterChips")
     local showFooter = Database:GetSetting("showFooter")
 
-    -- Update search bar visibility
+    -- Update search bar visibility (no filter chips in mail view)
     local SearchBar = ns:GetModule("SearchBar")
     if SearchBar then
         if showSearchBar then
             SearchBar:Show(frame)
+            -- Hide chip strip for mail view - only text search is needed
+            local instance = SearchBar:GetInstance(frame)
+            if instance and instance.chipStrip then
+                instance.chipStrip:Hide()
+            end
         else
             SearchBar:Hide(frame)
         end
     end
 
     -- Update scroll frame positioning
+    local chipHeight = 0
     local topOffset = showSearchBar
-        and (Constants.FRAME.TITLE_HEIGHT + Constants.FRAME.SEARCH_BAR_HEIGHT + Constants.FRAME.PADDING + 6)
+        and (Constants.FRAME.TITLE_HEIGHT + Constants.FRAME.SEARCH_BAR_HEIGHT + chipHeight + Constants.FRAME.PADDING + 6)
         or (Constants.FRAME.TITLE_HEIGHT + Constants.FRAME.PADDING + 2)
     local bottomOffset = showFooter
         and (Constants.FRAME.FOOTER_HEIGHT + Constants.FRAME.PADDING)
@@ -581,7 +588,7 @@ Events:Register("SETTING_CHANGED", function(event, key, value)
 
     if key == "bgAlpha" or key == "showBorders" or key == "theme" then
         UpdateFrameAppearance()
-    elseif key == "showFooter" or key == "showSearchBar" then
+    elseif key == "showFooter" or key == "showSearchBar" or key == "showFilterChips" then
         UpdateFrameAppearance()
         MailFrame:Refresh()
     end

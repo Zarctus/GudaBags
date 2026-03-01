@@ -202,6 +202,22 @@ local function ScanTooltipForItem(bagID, slot, itemType, itemID, itemLink, itemQ
     return isUsable, isQuestItem, isQuestStarter, hasSpecialProperties, hasDuration
 end
 
+-- Get crafting quality tier (1-5) for Retail profession items, or nil
+local function GetCraftingQuality(itemLink)
+    if not itemLink or not ns.IsRetail then return nil end
+    if C_TradeSkillUI then
+        if C_TradeSkillUI.GetItemReagentQualityByItemInfo then
+            local quality = C_TradeSkillUI.GetItemReagentQualityByItemInfo(itemLink)
+            if quality then return quality end
+        end
+        if C_TradeSkillUI.GetItemCraftedQualityByItemInfo then
+            local quality = C_TradeSkillUI.GetItemCraftedQualityByItemInfo(itemLink)
+            if quality then return quality end
+        end
+    end
+    return nil
+end
+
 -- Fast scan using cached tooltip data
 -- Used when item moved slots - properties don't change, skip tooltip scan
 function ItemScanner:ScanSlotFast(bagID, slot)
@@ -242,6 +258,7 @@ function ItemScanner:ScanSlotFast(bagID, slot)
             isQuestStarter = cached.isQuestStarter,
             hasSpecialProperties = cached.hasSpecialProperties,
             hasDuration = cached.hasDuration,
+            craftingQuality = GetCraftingQuality(itemLink),
         }
     end
 
@@ -307,6 +324,7 @@ function ItemScanner:ScanSlot(bagID, slot)
         isQuestStarter = isQuestStarter,
         hasSpecialProperties = hasSpecialProperties,
         hasDuration = hasDuration,
+        craftingQuality = GetCraftingQuality(itemLink),
     }
 end
 

@@ -103,6 +103,7 @@ local function UpdateFrameAppearance()
     GuildBankHeader:SetBackdropAlpha(bgAlpha)
 
     local showSearchBar = Database:GetSetting("showSearchBar")
+    local showFilterChips = Database:GetSetting("showFilterChips")
     local showFooter = Database:GetSetting("showFooter")
 
     -- Update search bar visibility
@@ -117,8 +118,9 @@ local function UpdateFrameAppearance()
     end
 
     -- Update scroll frame positioning
+    local chipHeight = (showSearchBar and showFilterChips) and (Constants.FRAME.CHIP_STRIP_HEIGHT + 1) or 0
     local topOffset = showSearchBar
-        and (Constants.FRAME.TITLE_HEIGHT + Constants.FRAME.SEARCH_BAR_HEIGHT + Constants.FRAME.PADDING + 6)
+        and (Constants.FRAME.TITLE_HEIGHT + Constants.FRAME.SEARCH_BAR_HEIGHT + chipHeight + Constants.FRAME.PADDING + 6)
         or (Constants.FRAME.TITLE_HEIGHT + Constants.FRAME.PADDING + 2)
     local bottomOffset = showFooter
         and (Constants.FRAME.FOOTER_HEIGHT + Constants.FRAME.PADDING + 6)
@@ -674,9 +676,21 @@ local function CreateGuildBankFrame()
     end)
     f.searchBar = searchBar
 
+    -- Transfer button callbacks (guild bank → bags)
+    SearchBar:SetTransferTargetCallback(f, function()
+        if GuildBankScanner and GuildBankScanner:IsGuildBankOpen() then
+            return {type = "bags", label = L["TRANSFER_TO_BAGS"]}
+        end
+        return nil
+    end)
+
+    SearchBar:SetTransferCallback(f, function()
+        GuildBankFrame:TransferMatchedItems()
+    end)
+
     -- Scroll frame
     local scrollFrame = CreateFrame("ScrollFrame", "GudaGuildBankScrollFrame", f, "UIPanelScrollFrameTemplate")
-    scrollFrame:SetPoint("TOPLEFT", f, "TOPLEFT", Constants.FRAME.PADDING, -(Constants.FRAME.TITLE_HEIGHT + Constants.FRAME.SEARCH_BAR_HEIGHT + Constants.FRAME.PADDING + 6))
+    scrollFrame:SetPoint("TOPLEFT", f, "TOPLEFT", Constants.FRAME.PADDING, -(Constants.FRAME.TITLE_HEIGHT + SearchBar:GetTotalHeight(f) + Constants.FRAME.PADDING + 6))
     scrollFrame:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -Constants.FRAME.PADDING - 20, Constants.FRAME.FOOTER_HEIGHT + Constants.FRAME.PADDING + 6)
     f.scrollFrame = scrollFrame
 
@@ -958,7 +972,7 @@ function GuildBankFrame:Refresh()
     local iconSize = Database:GetSetting("iconSize")
     local spacing = Database:GetSetting("iconSpacing")
     local columns = Database:GetSetting("guildBankColumns")
-    local searchText = SearchBar:GetSearchText(frame)
+    local hasSearch = SearchBar:HasActiveFilters(frame)
     local selectedTab = GuildBankScanner and GuildBankScanner:GetSelectedTab() or 0
 
     -- Collect all slots from guild bank
@@ -1021,9 +1035,11 @@ function GuildBankFrame:Refresh()
 
     -- Calculate frame dimensions
     local showSearchBar = Database:GetSetting("showSearchBar")
+    local showFilterChips = Database:GetSetting("showFilterChips")
     local showFooter = Database:GetSetting("showFooter")
+    local chipHeight = (showSearchBar and showFilterChips) and (Constants.FRAME.CHIP_STRIP_HEIGHT + 1) or 0
     local topOffset = showSearchBar
-        and (Constants.FRAME.TITLE_HEIGHT + Constants.FRAME.SEARCH_BAR_HEIGHT + Constants.FRAME.PADDING + 6)
+        and (Constants.FRAME.TITLE_HEIGHT + Constants.FRAME.SEARCH_BAR_HEIGHT + chipHeight + Constants.FRAME.PADDING + 6)
         or (Constants.FRAME.TITLE_HEIGHT + Constants.FRAME.PADDING + 2)
     local bottomOffset = showFooter
         and (Constants.FRAME.FOOTER_HEIGHT + Constants.FRAME.PADDING + 6)
@@ -1128,8 +1144,8 @@ function GuildBankFrame:Refresh()
 
                 ItemButton:SetItem(button, adaptedData, iconSize, isReadOnly)
 
-                if searchText ~= "" and not SearchBar:ItemMatchesSearch(slotInfo.itemData, searchText) then
-                    button:SetAlpha(0.3)
+                if hasSearch and not SearchBar:ItemMatchesFilters(frame, slotInfo.itemData) then
+                    button:SetAlpha(0.15)
                 else
                     button:SetAlpha(1)
                 end
@@ -1139,8 +1155,8 @@ function GuildBankFrame:Refresh()
             else
                 -- Empty slot - pass isGuildBank flag for depositing
                 ItemButton:SetEmpty(button, slotInfo.tabIndex, slotInfo.slot, iconSize, isReadOnly, true)
-                if searchText ~= "" then
-                    button:SetAlpha(0.3)
+                if hasSearch then
+                    button:SetAlpha(0.15)
                 else
                     button:SetAlpha(1)
                 end
@@ -1251,6 +1267,27 @@ function GuildBankFrame:GetFrame()
     return frame
 end
 
+function GuildBankFrame:TransferMatchedItems()
+    if InCombatLockdown() then
+        UIErrorsFrame:AddMessage(L["TRANSFER_COMBAT"], 1.0, 0.1, 0.1, 1.0)
+        return
+    end
+    if not frame or not GuildBankScanner or not GuildBankScanner:IsGuildBankOpen() then return end
+
+    local guildBank = GuildBankScanner:GetCachedGuildBank()
+    if not guildBank then return end
+
+    for tabIndex, tabData in pairs(guildBank) do
+        if tabData.slots then
+            for slot, itemData in pairs(tabData.slots) do
+                if itemData and itemData.itemID and SearchBar:ItemMatchesFilters(frame, itemData) then
+                    AutoStoreGuildBankItem(tabIndex, slot)
+                end
+            end
+        end
+    end
+end
+
 -------------------------------------------------
 -- Event Callbacks
 -------------------------------------------------
@@ -1267,6 +1304,10 @@ ns.OnGuildBankOpened = function()
     local BagFrameModule = ns:GetModule("BagFrame")
     if BagFrameModule and BagFrameModule:IsShown() then
         BagFrameModule:Refresh()
+        local bagFrame = BagFrameModule:GetFrame()
+        if bagFrame then
+            SearchBar:UpdateTransferState(bagFrame)
+        end
     end
 end
 
@@ -1280,6 +1321,10 @@ ns.OnGuildBankClosed = function()
     local BagFrameModule = ns:GetModule("BagFrame")
     if BagFrameModule and BagFrameModule:IsShown() then
         BagFrameModule:Refresh()
+        local bagFrame = BagFrameModule:GetFrame()
+        if bagFrame then
+            SearchBar:UpdateTransferState(bagFrame)
+        end
     end
 end
 
@@ -1337,7 +1382,7 @@ local function OnSettingChanged(event, key, value)
         -- Column/size changes need full refresh
         UpdateFrameAppearance()
         GuildBankFrame:Refresh()
-    elseif key == "showFooter" or key == "showSearchBar" then
+    elseif key == "showFooter" or key == "showSearchBar" or key == "showFilterChips" then
         UpdateFrameAppearance()
         GuildBankFrame:Refresh()
     end

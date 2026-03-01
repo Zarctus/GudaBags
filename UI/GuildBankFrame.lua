@@ -676,6 +676,18 @@ local function CreateGuildBankFrame()
     end)
     f.searchBar = searchBar
 
+    -- Transfer button callbacks (guild bank → bags)
+    SearchBar:SetTransferTargetCallback(f, function()
+        if GuildBankScanner and GuildBankScanner:IsGuildBankOpen() then
+            return {type = "bags", label = L["TRANSFER_TO_BAGS"]}
+        end
+        return nil
+    end)
+
+    SearchBar:SetTransferCallback(f, function()
+        GuildBankFrame:TransferMatchedItems()
+    end)
+
     -- Scroll frame
     local scrollFrame = CreateFrame("ScrollFrame", "GudaGuildBankScrollFrame", f, "UIPanelScrollFrameTemplate")
     scrollFrame:SetPoint("TOPLEFT", f, "TOPLEFT", Constants.FRAME.PADDING, -(Constants.FRAME.TITLE_HEIGHT + SearchBar:GetTotalHeight(f) + Constants.FRAME.PADDING + 6))
@@ -1255,6 +1267,27 @@ function GuildBankFrame:GetFrame()
     return frame
 end
 
+function GuildBankFrame:TransferMatchedItems()
+    if InCombatLockdown() then
+        UIErrorsFrame:AddMessage(L["TRANSFER_COMBAT"], 1.0, 0.1, 0.1, 1.0)
+        return
+    end
+    if not frame or not GuildBankScanner or not GuildBankScanner:IsGuildBankOpen() then return end
+
+    local guildBank = GuildBankScanner:GetCachedGuildBank()
+    if not guildBank then return end
+
+    for tabIndex, tabData in pairs(guildBank) do
+        if tabData.slots then
+            for slot, itemData in pairs(tabData.slots) do
+                if itemData and itemData.itemID and SearchBar:ItemMatchesFilters(frame, itemData) then
+                    AutoStoreGuildBankItem(tabIndex, slot)
+                end
+            end
+        end
+    end
+end
+
 -------------------------------------------------
 -- Event Callbacks
 -------------------------------------------------
@@ -1271,6 +1304,10 @@ ns.OnGuildBankOpened = function()
     local BagFrameModule = ns:GetModule("BagFrame")
     if BagFrameModule and BagFrameModule:IsShown() then
         BagFrameModule:Refresh()
+        local bagFrame = BagFrameModule:GetFrame()
+        if bagFrame then
+            SearchBar:UpdateTransferState(bagFrame)
+        end
     end
 end
 
@@ -1284,6 +1321,10 @@ ns.OnGuildBankClosed = function()
     local BagFrameModule = ns:GetModule("BagFrame")
     if BagFrameModule and BagFrameModule:IsShown() then
         BagFrameModule:Refresh()
+        local bagFrame = BagFrameModule:GetFrame()
+        if bagFrame then
+            SearchBar:UpdateTransferState(bagFrame)
+        end
     end
 end
 

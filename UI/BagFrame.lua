@@ -199,6 +199,31 @@ local function CreateBagFrame()
         BagFrame:Refresh()
     end)
 
+    -- Transfer button callbacks
+    SearchBar:SetTransferTargetCallback(f, function()
+        local GuildBankScanner = ns:GetModule("GuildBankScanner")
+        if GuildBankScanner and GuildBankScanner:IsGuildBankOpen() then
+            return {type = "guildbank", label = L["TRANSFER_TO_GUILD_BANK"]}
+        end
+        local BankScannerModule = ns:GetModule("BankScanner")
+        if BankScannerModule and BankScannerModule:IsBankOpen() then
+            -- Check if warband view is active (Retail only)
+            local BankFooter = ns:GetModule("BankFrame.BankFooter")
+            if ns.IsRetail and BankFooter then
+                local bankType = BankFooter:GetCurrentBankType()
+                if bankType == "warband" then
+                    return {type = "warband", label = L["TRANSFER_TO_WARBAND"]}
+                end
+            end
+            return {type = "bank", label = L["TRANSFER_TO_BANK"]}
+        end
+        return nil
+    end)
+
+    SearchBar:SetTransferCallback(f, function()
+        BagFrame:TransferMatchedItems()
+    end)
+
     -- Use the separate secure button container instead of creating one as child of f
     -- This keeps f unprotected so it can be shown during combat
     secureButtonContainer:SetPoint("TOPLEFT", f, "TOPLEFT", Constants.FRAME.PADDING, -(Constants.FRAME.TITLE_HEIGHT + SearchBar:GetTotalHeight(f) + Constants.FRAME.PADDING + 6))
@@ -1601,6 +1626,39 @@ function BagFrame:Clean()
     end
 end
 
+function BagFrame:TransferMatchedItems()
+    if InCombatLockdown() then
+        UIErrorsFrame:AddMessage(L["TRANSFER_COMBAT"], 1.0, 0.1, 0.1, 1.0)
+        return
+    end
+    if not frame then return end
+
+    local bags = BagScanner:GetCachedBags()
+    if not bags then return end
+
+    -- Determine target bank type for UseContainerItem
+    local bankType = nil
+    if ns.IsRetail then
+        local BankFooter = ns:GetModule("BankFrame.BankFooter")
+        if BankFooter then
+            local currentBankType = BankFooter:GetCurrentBankType()
+            if currentBankType == "warband" then
+                bankType = Enum.BankType.Account
+            end
+        end
+    end
+
+    for bagID, bagData in pairs(bags) do
+        if bagData.slots then
+            for slot, itemData in pairs(bagData.slots) do
+                if itemData and itemData.itemID and SearchBar:ItemMatchesFilters(frame, itemData) then
+                    C_Container.UseContainerItem(bagID, slot, nil, bankType)
+                end
+            end
+        end
+    end
+end
+
 Events:Register("SETTING_CHANGED", OnSettingChanged, BagFrame)
 
 -- Refresh when categories are updated (reordered, grouped, etc.)
@@ -1706,9 +1764,15 @@ Events:Register("AUCTION_HOUSE_CLOSED", RefreshForInteractionWindow, BagFrame)
 -- Bank window (our own bank frame showing affects grouping)
 -- Small delay on open to ensure BankFrame is fully shown before checking
 Events:Register("BANKFRAME_OPENED", function()
-    C_Timer.After(0.05, RefreshForInteractionWindow)
+    C_Timer.After(0.05, function()
+        RefreshForInteractionWindow()
+        if frame then SearchBar:UpdateTransferState(frame) end
+    end)
 end, BagFrame)
-Events:Register("BANKFRAME_CLOSED", RefreshForInteractionWindow, BagFrame)
+Events:Register("BANKFRAME_CLOSED", function()
+    RefreshForInteractionWindow()
+    if frame then SearchBar:UpdateTransferState(frame) end
+end, BagFrame)
 
 Events:OnPlayerLogin(function()
     isInitialized = true

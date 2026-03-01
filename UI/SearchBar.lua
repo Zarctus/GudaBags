@@ -125,8 +125,34 @@ local function UpdateChipStripVisibility(searchBar)
     end
 end
 
+local function UpdateTransferButton(searchBar)
+    local btn = searchBar.transferButton
+    if not btn then return end
+
+    local state = searchBar.filterState
+    if not HasAnyFilter(state) then
+        btn:Hide()
+        return
+    end
+
+    if not searchBar.getTransferTarget then
+        btn:Hide()
+        return
+    end
+
+    local target = searchBar.getTransferTarget()
+    if not target then
+        btn:Hide()
+        return
+    end
+
+    searchBar.transferTarget = target
+    btn:Show()
+end
+
 local function NotifyFilterChanged(searchBar)
     UpdateChipStripVisibility(searchBar)
+    UpdateTransferButton(searchBar)
     if searchBar.onSearchChanged then
         searchBar.onSearchChanged(searchBar.searchText or "")
     end
@@ -456,9 +482,44 @@ local function CreateSearchBar(parent)
 
     searchBar.clearButton = clearButton
 
+    -- Transfer button (left of clear button)
+    local transferButton = CreateFrame("Button", nil, searchBar)
+    transferButton:SetSize(12, 12)
+    transferButton:SetPoint("RIGHT", clearButton, "LEFT", -4, 0)
+    transferButton:Hide()
+
+    local transferIcon = transferButton:CreateTexture(nil, "ARTWORK")
+    transferIcon:SetAllPoints()
+    transferIcon:SetTexture("Interface\\AddOns\\GudaBags\\Assets\\sort.png")
+    transferIcon:SetVertexColor(1, 0.82, 0)
+    transferButton.icon = transferIcon
+
+    transferButton:SetScript("OnEnter", function(self)
+        self.icon:SetVertexColor(1, 1, 0.5)
+        if searchBar.transferTarget then
+            GameTooltip:SetOwner(self, "ANCHOR_TOP")
+            GameTooltip:SetText(searchBar.transferTarget.label or "Transfer")
+            GameTooltip:Show()
+        end
+    end)
+    transferButton:SetScript("OnLeave", function(self)
+        self.icon:SetVertexColor(1, 0.82, 0)
+        GameTooltip:Hide()
+    end)
+    transferButton:SetScript("OnClick", function()
+        if searchBar.onTransfer then
+            searchBar.onTransfer()
+        end
+    end)
+
+    searchBar.transferButton = transferButton
+    searchBar.transferTarget = nil
+    searchBar.getTransferTarget = nil
+    searchBar.onTransfer = nil
+
     local searchBox = CreateFrame("EditBox", nil, searchBar)
     searchBox:SetPoint("LEFT", searchIcon, "RIGHT", 6, 0)
-    searchBox:SetPoint("RIGHT", clearButton, "LEFT", -4, 0)
+    searchBox:SetPoint("RIGHT", transferButton, "LEFT", -4, 0)
     searchBox:SetHeight(18)
     searchBox:SetFontObject(GameFontHighlightSmall)
     searchBox:SetAutoFocus(false)
@@ -501,6 +562,8 @@ local function CreateSearchBar(parent)
         else
             searchBar.filterState.parsed = nil
         end
+
+        UpdateTransferButton(searchBar)
 
         if searchBar.onSearchChanged then
             searchBar.onSearchChanged(text)
@@ -694,6 +757,30 @@ function SearchBar:ItemMatchesFilters(parent, itemData)
     end
 
     return true
+end
+
+-- Transfer button: set the callback that determines the transfer target
+function SearchBar:SetTransferTargetCallback(parent, callback)
+    local instance = instances[parent]
+    if instance then
+        instance.getTransferTarget = callback
+    end
+end
+
+-- Transfer button: set the callback that performs the transfer
+function SearchBar:SetTransferCallback(parent, callback)
+    local instance = instances[parent]
+    if instance then
+        instance.onTransfer = callback
+    end
+end
+
+-- Re-evaluate transfer button visibility (call when bank opens/closes)
+function SearchBar:UpdateTransferState(parent)
+    local instance = instances[parent]
+    if instance then
+        UpdateTransferButton(instance)
+    end
 end
 
 -- Legacy compatibility: plain text matching

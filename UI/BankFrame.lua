@@ -245,6 +245,15 @@ local function CreateBankFrame()
     end)
     f.searchBar = searchBar
 
+    -- Transfer button callbacks (bank → bags)
+    SearchBar:SetTransferTargetCallback(f, function()
+        return {type = "bags", label = ns.L["TRANSFER_TO_BAGS"]}
+    end)
+
+    SearchBar:SetTransferCallback(f, function()
+        BankFrame:TransferMatchedItems()
+    end)
+
     -- Create scroll frame for large bank contents
     local scrollFrame = CreateFrame("ScrollFrame", "GudaBankScrollFrame", f, "UIPanelScrollFrameTemplate")
     scrollFrame:SetPoint("TOPLEFT", f, "TOPLEFT", Constants.FRAME.PADDING, -(Constants.FRAME.TITLE_HEIGHT + SearchBar:GetTotalHeight(f) + Constants.FRAME.PADDING + 6))
@@ -2409,6 +2418,39 @@ RestoreFramePosition = function()
     end
 end
 
+function BankFrame:TransferMatchedItems()
+    if InCombatLockdown() then
+        UIErrorsFrame:AddMessage(ns.L["TRANSFER_COMBAT"], 1.0, 0.1, 0.1, 1.0)
+        return
+    end
+    if not frame or not BankScanner:IsBankOpen() then return end
+
+    local currentBankType = BankFooter and BankFooter:GetCurrentBankType() or "character"
+    local isWarbandView = ns.IsRetail and currentBankType == "warband"
+
+    local bank, bagIDs
+    if isWarbandView and RetailBankScanner then
+        bank = RetailBankScanner:GetCachedBank(Enum.BankType.Account) or {}
+        bagIDs = Constants.WARBAND_BANK_TAB_IDS
+    else
+        bank = BankScanner:GetCachedBank()
+        bagIDs = Constants.BANK_BAG_IDS
+    end
+
+    if not bank or not bagIDs then return end
+
+    for _, bagID in ipairs(bagIDs) do
+        local bagData = bank[bagID]
+        if bagData and bagData.slots then
+            for slot, itemData in pairs(bagData.slots) do
+                if itemData and itemData.itemID and SearchBar:ItemMatchesFilters(frame, itemData) then
+                    C_Container.UseContainerItem(bagID, slot)
+                end
+            end
+        end
+    end
+end
+
 function BankFrame:SortBank()
     if not BankScanner:IsBankOpen() then
         ns:Print("Cannot sort bank: not at banker")
@@ -2547,6 +2589,22 @@ ns.OnBankTypeChanged = function(bankType)
 
         -- Refresh the display with the new bank type's data
         BankFrame:Refresh()
+    end
+end
+
+-- Hook UseContainerItem to route items to warband bank when warband tab is active
+if ns.IsRetail then
+    local originalUseContainerItem = C_Container.UseContainerItem
+    C_Container.UseContainerItem = function(containerIndex, slotIndex, unitToken, bankType, ...)
+        -- Only inject bankType when: bank is open, warband tab active, no bankType already specified,
+        -- and item is from a player bag (not from bank bags themselves)
+        if bankType == nil and BankScanner:IsBankOpen() then
+            local currentBankType = BankFooter and BankFooter:GetCurrentBankType()
+            if currentBankType == "warband" and containerIndex >= 0 and containerIndex <= NUM_BAG_SLOTS then
+                return originalUseContainerItem(containerIndex, slotIndex, unitToken, Enum.BankType.Account, ...)
+            end
+        end
+        return originalUseContainerItem(containerIndex, slotIndex, unitToken, bankType, ...)
     end
 end
 

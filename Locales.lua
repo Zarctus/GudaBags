@@ -349,6 +349,13 @@ L["CHIP_SPECIAL_BOE"] = "BoE"
 L["CHIP_SPECIAL_NEW"] = "New"
 L["CHIP_CLEAR_ALL"] = "Clear all filters"
 
+-- Transfer
+L["TRANSFER_TO_BANK"] = "Transfer to Bank"
+L["TRANSFER_TO_BAGS"] = "Transfer to Bags"
+L["TRANSFER_TO_GUILD_BANK"] = "Transfer to Guild Bank"
+L["TRANSFER_TO_WARBAND"] = "Transfer to Warband Bank"
+L["TRANSFER_COMBAT"] = "Cannot transfer in combat"
+
 -- Footer
 L["BACK_BUTTON"] = "<< Back"
 L["HEARTHSTONE"] = "Hearthstone"

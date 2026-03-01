@@ -80,6 +80,7 @@ local function CreateSearchOverlay()
     overlay:SetScript("OnMouseDown", function()
         for _, instance in pairs(instances) do
             if instance.searchBox then
+                instance.searchBox:SetText("")
                 instance.searchBox:ClearFocus()
             end
         end
@@ -584,10 +585,18 @@ local function CreateSearchBar(parent)
     end)
 
     searchBox:HookScript("OnEditFocusLost", function(self)
-        if searchOverlay:IsShown() then
-        else
-        end
         searchOverlay:Hide()
+        -- Clear search text when clicking outside all GudaBags frames
+        local overAnyFrame = false
+        for parent, _ in pairs(instances) do
+            if parent:IsMouseOver() then
+                overAnyFrame = true
+                break
+            end
+        end
+        if not overAnyFrame then
+            self:SetText("")
+        end
     end)
 
     return searchBar
@@ -639,12 +648,22 @@ end
 function SearchBar:Hide(parent)
     local instance = instances[parent]
     if instance then
+        -- Clear search text and filters when hiding
+        if instance.searchBox then
+            instance.searchBox:SetText("")
+            instance.searchBox:ClearFocus()
+        end
+        if instance.filterState then
+            instance.filterState.qualities = {}
+            instance.filterState.types = {}
+            instance.filterState.specials = {}
+            instance.filterState.parsed = nil
+            ResetChipVisuals(instance)
+            UpdateChipStripVisibility(instance)
+        end
         instance:Hide()
         if instance.chipStrip then
             instance.chipStrip:Hide()
-        end
-        if instance.searchBox then
-            instance.searchBox:ClearFocus()
         end
     end
 end

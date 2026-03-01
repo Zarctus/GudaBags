@@ -1279,7 +1279,7 @@ function BankFrame:RefreshSingleView(bank, bagsToShow, settings, hasSearch, isRe
         if slotInfo.itemData then
             ItemButton:SetItem(button, slotInfo.itemData, iconSize, isReadOnly)
             if hasSearch and not SearchBar:ItemMatchesFilters(frame, slotInfo.itemData) then
-                button:SetAlpha(0.3)
+                button:SetAlpha(0.15)
             else
                 button:SetAlpha(1)
             end
@@ -1289,7 +1289,7 @@ function BankFrame:RefreshSingleView(bank, bagsToShow, settings, hasSearch, isRe
         else
             ItemButton:SetEmpty(button, slotInfo.bagID, slotInfo.slot, iconSize, isReadOnly)
             if hasSearch then
-                button:SetAlpha(0.3)
+                button:SetAlpha(0.15)
             else
                 button:SetAlpha(1)
             end
@@ -1476,7 +1476,7 @@ function BankFrame:RefreshSingleViewWithTabs(bank, settings, hasSearch, isReadOn
             if slotInfo.itemData then
                 ItemButton:SetItem(button, slotInfo.itemData, iconSize, isReadOnly)
                 if hasSearch and not SearchBar:ItemMatchesFilters(frame, slotInfo.itemData) then
-                    button:SetAlpha(0.3)
+                    button:SetAlpha(0.15)
                 else
                     button:SetAlpha(1)
                 end
@@ -1485,7 +1485,7 @@ function BankFrame:RefreshSingleViewWithTabs(bank, settings, hasSearch, isReadOn
             else
                 ItemButton:SetEmpty(button, slotInfo.bagID, slotInfo.slot, iconSize, isReadOnly)
                 if hasSearch then
-                    button:SetAlpha(0.3)
+                    button:SetAlpha(0.15)
                 else
                     button:SetAlpha(1)
                 end
@@ -2040,7 +2040,7 @@ function BankFrame:IncrementalUpdate(dirtyBags)
             cachedItemCount[slotKey] = update.itemData.count
             cachedItemCategory[slotKey] = update.category
             if hasSearch and not SearchBar:ItemMatchesFilters(frame, update.itemData) then
-                update.button:SetAlpha(0.3)
+                update.button:SetAlpha(0.15)
             else
                 update.button:SetAlpha(1)
             end
@@ -2157,7 +2157,7 @@ function BankFrame:IncrementalUpdate(dirtyBags)
                         cachedItemData[slotKey] = newItemID
                         cachedItemCount[slotKey] = newItemData.count
                         if hasSearch and not SearchBar:ItemMatchesFilters(frame, newItemData) then
-                            button:SetAlpha(0.3)
+                            button:SetAlpha(0.15)
                         else
                             button:SetAlpha(1)
                         end
@@ -2195,7 +2195,7 @@ function BankFrame:IncrementalUpdate(dirtyBags)
                             cachedItemData[slotKey] = newItemID
                             cachedItemCount[slotKey] = newItemData.count
                             if hasSearch and not SearchBar:ItemMatchesFilters(frame, newItemData) then
-                                button:SetAlpha(0.3)
+                                button:SetAlpha(0.15)
                             else
                                 button:SetAlpha(1)
                             end

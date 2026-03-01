@@ -1145,7 +1145,7 @@ function GuildBankFrame:Refresh()
                 ItemButton:SetItem(button, adaptedData, iconSize, isReadOnly)
 
                 if hasSearch and not SearchBar:ItemMatchesFilters(frame, slotInfo.itemData) then
-                    button:SetAlpha(0.3)
+                    button:SetAlpha(0.15)
                 else
                     button:SetAlpha(1)
                 end
@@ -1156,7 +1156,7 @@ function GuildBankFrame:Refresh()
                 -- Empty slot - pass isGuildBank flag for depositing
                 ItemButton:SetEmpty(button, slotInfo.tabIndex, slotInfo.slot, iconSize, isReadOnly, true)
                 if hasSearch then
-                    button:SetAlpha(0.3)
+                    button:SetAlpha(0.15)
                 else
                     button:SetAlpha(1)
                 end

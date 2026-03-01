@@ -445,7 +445,7 @@ function BagFrame:RefreshSingleView(bags, bagsToShow, settings, hasSearch, isVie
         if slotInfo.itemData then
             ItemButton:SetItem(button, slotInfo.itemData, iconSize, isViewingCached)
             if hasSearch and not SearchBar:ItemMatchesFilters(frame, slotInfo.itemData) then
-                button:SetAlpha(0.3)
+                button:SetAlpha(0.15)
             else
                 button:SetAlpha(1)
             end
@@ -455,7 +455,7 @@ function BagFrame:RefreshSingleView(bags, bagsToShow, settings, hasSearch, isVie
         else
             ItemButton:SetEmpty(button, slotInfo.bagID, slotInfo.slot, iconSize, isViewingCached)
             if hasSearch then
-                button:SetAlpha(0.3)
+                button:SetAlpha(0.15)
             else
                 button:SetAlpha(1)
             end
@@ -712,7 +712,7 @@ function BagFrame:RefreshCategoryView(bags, bagsToShow, settings, hasSearch, isV
 
         -- Apply search highlighting (dim non-matching items)
         if hasSearch and not SearchBar:ItemMatchesFilters(frame, itemData) then
-            button:SetAlpha(0.3)
+            button:SetAlpha(0.15)
         else
             button:SetAlpha(1)
         end
@@ -1198,7 +1198,7 @@ function BagFrame:IncrementalUpdate(dirtyBags)
                     ghostsReused = ghostsReused + 1
 
                     if hasSearch and not SearchBar:ItemMatchesFilters(frame, newItemData) then
-                        button:SetAlpha(0.3)
+                        button:SetAlpha(0.15)
                     else
                         button:SetAlpha(1)
                     end
@@ -1211,7 +1211,7 @@ function BagFrame:IncrementalUpdate(dirtyBags)
                     buttonsUpdated = buttonsUpdated + 1
 
                     if hasSearch and not SearchBar:ItemMatchesFilters(frame, newItemData) then
-                        button:SetAlpha(0.3)
+                        button:SetAlpha(0.15)
                     else
                         button:SetAlpha(1)
                     end
@@ -1290,7 +1290,7 @@ function BagFrame:IncrementalUpdate(dirtyBags)
                         cachedItemData[slotKey] = newItemID
                         cachedItemCount[slotKey] = newItemData.count
                         if hasSearch and not SearchBar:ItemMatchesFilters(frame, newItemData) then
-                            button:SetAlpha(0.3)
+                            button:SetAlpha(0.15)
                         else
                             button:SetAlpha(1)
                         end
@@ -1329,7 +1329,7 @@ function BagFrame:IncrementalUpdate(dirtyBags)
                             cachedItemData[slotKey] = newItemID
                             cachedItemCount[slotKey] = newItemData.count
                             if hasSearch and not SearchBar:ItemMatchesFilters(frame, newItemData) then
-                                button:SetAlpha(0.3)
+                                button:SetAlpha(0.15)
                             else
                                 button:SetAlpha(1)
                             end

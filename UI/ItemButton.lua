@@ -83,6 +83,7 @@ local function ResetButton(pool, button)
     if button.itemLevelText then button.itemLevelText:Hide() end
     if button.questIcon then button.questIcon:Hide() end
     if button.questStarterIcon then button.questStarterIcon:Hide() end
+    if button.craftingQualityIcon then button.craftingQualityIcon:Hide() end
     if button.cooldown then CooldownFrame_Set(button.cooldown, 0, 0, false) end
 end
 
@@ -437,6 +438,13 @@ local function CreateButton(parent)
     junkIcon:SetTexture("Interface\\MoneyFrame\\UI-GoldIcon")
     junkIcon:Hide()
     button.junkIcon = junkIcon
+
+    -- Crafting quality icon (top-left corner, Retail only)
+    local craftingQualityIcon = button:CreateTexture(nil, "OVERLAY", nil, 3)
+    craftingQualityIcon:SetSize(20, 20)
+    craftingQualityIcon:SetPoint("TOPLEFT", button, "TOPLEFT", -3, 3)
+    craftingQualityIcon:Hide()
+    button.craftingQualityIcon = craftingQualityIcon
 
     -- Tracked/favorite icon shadow (for darker stroke effect)
     local trackedIconShadow = button:CreateTexture(nil, "OVERLAY", nil, 2)
@@ -1052,6 +1060,7 @@ function ItemButton:SetItem(button, itemData, size, isReadOnly)
     if button.questIcon then button.questIcon:Hide() end
     if button.questStarterIcon then button.questStarterIcon:Hide() end
     if button.junkIcon then button.junkIcon:Hide() end
+    if button.craftingQualityIcon then button.craftingQualityIcon:Hide() end
 
     button.itemData = itemData
     button.isReadOnly = isReadOnly or false
@@ -1064,6 +1073,7 @@ function ItemButton:SetItem(button, itemData, size, isReadOnly)
         button:SetSize(size, size)
         button.wrapper:SetSize(size, size)
         button.currentSize = size
+
     end
 
     button.slotBackground:SetVertexColor(0.5, 0.5, 0.5, settings.bgAlpha)
@@ -1222,6 +1232,18 @@ function ItemButton:SetItem(button, itemData, size, isReadOnly)
                 button.questIcon:Show()
             else
                 button.questIcon:Hide()
+            end
+        end
+
+        -- Crafting quality icon (Retail profession items)
+        if button.craftingQualityIcon then
+            if itemData.craftingQuality and itemData.craftingQuality > 0 then
+                local cqSize = math.max(20, math.floor(size * 0.54))
+                button.craftingQualityIcon:SetSize(cqSize, cqSize)
+                button.craftingQualityIcon:SetAtlas("Professions-Icon-Quality-Tier" .. itemData.craftingQuality, false)
+                button.craftingQualityIcon:Show()
+            else
+                button.craftingQualityIcon:Hide()
             end
         end
 
@@ -1405,6 +1427,9 @@ function ItemButton:SetEmpty(button, bagID, slot, size, isReadOnly, isGuildBank)
     if button.equipSetIconShadow then
         button.equipSetIconShadow:Hide()
     end
+    if button.craftingQualityIcon then
+        button.craftingQualityIcon:Hide()
+    end
     if button.itemLevelText then
         button.itemLevelText:Hide()
     end
@@ -1472,9 +1497,9 @@ function ItemButton:ClearHighlightedSlots(parentFrame)
                     button.slotBackground:SetVertexColor(0.5, 0.5, 0.5, bgAlpha)
                 end
             else
-                button:SetAlpha(0.3)
+                button:SetAlpha(0.15)
                 if button.slotBackground then
-                    button.slotBackground:SetVertexColor(0.5, 0.5, 0.5, bgAlpha * 0.3)
+                    button.slotBackground:SetVertexColor(0.5, 0.5, 0.5, bgAlpha * 0.15)
                 end
             end
         else

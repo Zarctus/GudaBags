@@ -82,18 +82,23 @@ local function UpdateFrameAppearance()
     local showFilterChips = Database:GetSetting("showFilterChips")
     local showFooter = Database:GetSetting("showFooter")
 
-    -- Update search bar visibility
+    -- Update search bar visibility (no filter chips in mail view)
     local SearchBar = ns:GetModule("SearchBar")
     if SearchBar then
         if showSearchBar then
             SearchBar:Show(frame)
+            -- Hide chip strip for mail view - only text search is needed
+            local instance = SearchBar:GetInstance(frame)
+            if instance and instance.chipStrip then
+                instance.chipStrip:Hide()
+            end
         else
             SearchBar:Hide(frame)
         end
     end
 
     -- Update scroll frame positioning
-    local chipHeight = (showSearchBar and showFilterChips) and (Constants.FRAME.CHIP_STRIP_HEIGHT + 1) or 0
+    local chipHeight = 0
     local topOffset = showSearchBar
         and (Constants.FRAME.TITLE_HEIGHT + Constants.FRAME.SEARCH_BAR_HEIGHT + chipHeight + Constants.FRAME.PADDING + 6)
         or (Constants.FRAME.TITLE_HEIGHT + Constants.FRAME.PADDING + 2)
@@ -372,8 +377,7 @@ local function CreateMailFrame()
 
     -- Scroll frame
     local scrollFrame = CreateFrame("ScrollFrame", "GudaMailScrollFrame", f, "UIPanelScrollFrameTemplate")
-    local SearchBarModule = ns:GetModule("SearchBar")
-    scrollFrame:SetPoint("TOPLEFT", f, "TOPLEFT", Constants.FRAME.PADDING, -(Constants.FRAME.TITLE_HEIGHT + (SearchBarModule and SearchBarModule:GetTotalHeight(f) or Constants.FRAME.SEARCH_BAR_HEIGHT) + Constants.FRAME.PADDING + 6))
+    scrollFrame:SetPoint("TOPLEFT", f, "TOPLEFT", Constants.FRAME.PADDING, -(Constants.FRAME.TITLE_HEIGHT + Constants.FRAME.SEARCH_BAR_HEIGHT + Constants.FRAME.PADDING + 6))
     scrollFrame:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -Constants.FRAME.PADDING - 20, Constants.FRAME.FOOTER_HEIGHT + Constants.FRAME.PADDING)
     f.scrollFrame = scrollFrame
 

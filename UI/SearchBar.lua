@@ -80,7 +80,6 @@ local function CreateSearchOverlay()
     overlay:SetScript("OnMouseDown", function()
         for _, instance in pairs(instances) do
             if instance.searchBox then
-                instance.searchBox:SetText("")
                 instance.searchBox:ClearFocus()
             end
         end
@@ -491,7 +490,7 @@ local function CreateSearchBar(parent)
 
     local transferIcon = transferButton:CreateTexture(nil, "ARTWORK")
     transferIcon:SetAllPoints()
-    transferIcon:SetTexture("Interface\\AddOns\\GudaBags\\Assets\\sort.png")
+    transferIcon:SetTexture("Interface\\AddOns\\GudaBags\\Assets\\transfer.png")
     transferIcon:SetVertexColor(1, 0.82, 0)
     transferButton.icon = transferIcon
 

@@ -1303,7 +1303,7 @@ function ItemButton:SetItem(button, itemData, size, isReadOnly)
         -- Item level display (Weapon classID=2, Armor classID=4)
         if button.itemLevelText then
             local isEquip = itemData.classID and (itemData.classID == 2 or itemData.classID == 4)
-            if settings.showItemLevel and isEquip and itemData.itemLevel and itemData.itemLevel > 0 then
+            if settings.showItemLevel and isEquip and itemData.itemLevel and itemData.itemLevel > 0 and (itemData.quality or 0) > 0 then
                 button.itemLevelText:SetText(itemData.itemLevel)
                 button.itemLevelText:Show()
             else

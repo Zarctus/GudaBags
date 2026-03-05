@@ -127,6 +127,9 @@ Constants.CUSTOM_QUEST_ITEMS = {
     [28132] = true,  -- Area 52 Special
     [25465] = true,  -- Stormcrow Amulet
     [24355] = true,  -- Ironvine Seeds
+    [25658] = true,  -- Damp Woolen Blanket
+    [25555] = true,  -- Kil'sorrow Banner
+    [25552] = true,  -- Warmaul Ogre Banner
 }
 
 Constants.QUALITY_COLORS = {

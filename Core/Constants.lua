@@ -130,6 +130,10 @@ Constants.CUSTOM_QUEST_ITEMS = {
     [25658] = true,  -- Damp Woolen Blanket
     [25555] = true,  -- Kil'sorrow Banner
     [25552] = true,  -- Warmaul Ogre Banner
+    [31310] = true,  -- Wildhammer Flare Gun (Shadowmoon Valley, Alliance)
+    [31108] = true,  -- Kor'kron Flare Gun (Shadowmoon Valley, Horde)
+    [30652] = true,  -- Dertrok's Second Wand (Blade's Edge Mountains)
+    [25853] = true,  -- Pack of Incendiary Bombs (Old Hillsbrad Foothills)
 }
 
 Constants.QUALITY_COLORS = {

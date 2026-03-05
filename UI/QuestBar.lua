@@ -356,33 +356,54 @@ local function CreateFlyout(parent)
         -- On click in flyout, set as active item and save
         button:SetScript("OnClick", function(self, mouseButton)
             if mouseButton == "LeftButton" and self.itemIndex then
-                activeItemIndex = self.itemIndex
-                local activeItem = questItems[activeItemIndex]
-                if activeItem then
-                    Database:SetSetting("questBarActiveItemID", activeItem.itemID)
-                end
-                if InCombatLockdown() then
-                    -- Visual-only update of main button during combat (can't SetAttribute)
-                    if activeItem and mainButton then
-                        local _, _, _, _, _, _, _, _, _, itemTexture = GetItemInfo(activeItem.itemID)
-                        local count = GetItemCount(activeItem.itemID)
-                        mainButton.itemID = activeItem.itemID
-                        mainButton.icon:SetTexture(itemTexture or activeItem.texture)
-                        if count > 1 then
-                            mainButton.count:SetText(count)
-                            mainButton.count:Show()
-                        else
-                            mainButton.count:Hide()
+                local columns = GetColumns()
+
+                if columns > 1 then
+                    -- Grid mode: swap clicked overflow item into the last visible slot
+                    local clickedIndex = self.itemIndex
+                    if clickedIndex > columns and clickedIndex <= #questItems then
+                        questItems[columns], questItems[clickedIndex] = questItems[clickedIndex], questItems[columns]
+                        -- Save visible item IDs so preference persists across refreshes
+                        local pinnedIDs = {}
+                        for i = 1, math.min(columns, #questItems) do
+                            pinnedIDs[i] = questItems[i].itemID
                         end
-                        local bagID, slot = FindItemInBags(activeItem.itemID)
-                        mainButton.bagID = bagID
-                        mainButton.slotID = slot
-                        if bagID and slot then
-                            local start, duration, enable = C_Container.GetContainerItemCooldown(bagID, slot)
-                            if start and duration and duration > 0 then
-                                mainButton.cooldown:SetCooldown(start, duration)
+                        Database:SetSetting("questBarPinnedItemIDs", pinnedIDs)
+                    end
+                else
+                    -- Flyout mode: set as active item
+                    activeItemIndex = self.itemIndex
+                    local activeItem = questItems[activeItemIndex]
+                    if activeItem then
+                        Database:SetSetting("questBarActiveItemID", activeItem.itemID)
+                    end
+                end
+
+                if InCombatLockdown() then
+                    if columns == 1 then
+                        -- Visual-only update of main button during combat (can't SetAttribute)
+                        local activeItem = questItems[activeItemIndex]
+                        if activeItem and mainButton then
+                            local _, _, _, _, _, _, _, _, _, itemTexture = GetItemInfo(activeItem.itemID)
+                            local count = GetItemCount(activeItem.itemID)
+                            mainButton.itemID = activeItem.itemID
+                            mainButton.icon:SetTexture(itemTexture or activeItem.texture)
+                            if count > 1 then
+                                mainButton.count:SetText(count)
+                                mainButton.count:Show()
                             else
-                                mainButton.cooldown:Clear()
+                                mainButton.count:Hide()
+                            end
+                            local bagID, slot = FindItemInBags(activeItem.itemID)
+                            mainButton.bagID = bagID
+                            mainButton.slotID = slot
+                            if bagID and slot then
+                                local start, duration, enable = C_Container.GetContainerItemCooldown(bagID, slot)
+                                if start and duration and duration > 0 then
+                                    mainButton.cooldown:SetCooldown(start, duration)
+                                else
+                                    mainButton.cooldown:Clear()
+                                end
                             end
                         end
                     end
@@ -692,6 +713,33 @@ function QuestBar:Refresh()
     knownItemIDs = {}
     for _, item in ipairs(questItems) do
         knownItemIDs[item.itemID] = true
+    end
+
+    -- Reorder items based on pinned preference (grid mode)
+    local columns = GetColumns()
+    if columns > 1 then
+        local pinnedIDs = Database:GetSetting("questBarPinnedItemIDs")
+        if pinnedIDs and #pinnedIDs > 0 then
+            local reordered = {}
+            local used = {}
+            -- First, add pinned items in their saved order
+            for _, pinnedID in ipairs(pinnedIDs) do
+                for i, item in ipairs(questItems) do
+                    if item.itemID == pinnedID and not used[i] then
+                        table.insert(reordered, item)
+                        used[i] = true
+                        break
+                    end
+                end
+            end
+            -- Then add remaining items in their original order
+            for i, item in ipairs(questItems) do
+                if not used[i] then
+                    table.insert(reordered, item)
+                end
+            end
+            questItems = reordered
+        end
     end
 
     if newItemIndex and initialized then

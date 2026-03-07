@@ -59,14 +59,13 @@ local currentPass = 0
 local maxPasses = 10  -- Increased from 6 to ensure sort completes
 local soundsMuted = false
 
--- Performance: Caches to avoid repeated expensive operations
-local specialPropertiesCache = {}  -- Cache HasSpecialProperties results by itemID
-local sortKeyCache = {}            -- Cache computed sort keys by itemID
+-- Performance: Cache computed sort keys by itemID across passes
+local sortKeyCache = {}
+-- Performance: Cache GetItemInfo results by itemID (static data, never changes)
+local itemInfoCache = {}
 
 -- Performance tracking (debug)
 local perfStats = {
-    tooltipScans = 0,
-    tooltipCacheHits = 0,
     sortKeyComputes = 0,
     sortKeyCacheHits = 0,
 }
@@ -222,94 +221,20 @@ local CONSUMABLE_SUBCLASS_ORDER = {
 -- UTILITY FUNCTIONS
 --===========================================================================
 
--- Tooltip for scanning item properties
-local scanTooltip = CreateFrame("GameTooltip", "GudaBags_SortScanTooltip", nil, "GameTooltipTemplate")
-scanTooltip:SetOwner(WorldFrame, "ANCHOR_NONE")
-
 function SortEngine:ClearCache()
     -- Log performance stats before clearing (if any work was done)
-    if perfStats.tooltipScans > 0 or perfStats.sortKeyComputes > 0 then
-        local tooltipHitRate = perfStats.tooltipScans > 0 and (perfStats.tooltipCacheHits / (perfStats.tooltipScans + perfStats.tooltipCacheHits) * 100) or 0
-        local sortKeyHitRate = perfStats.sortKeyComputes > 0 and (perfStats.sortKeyCacheHits / (perfStats.sortKeyComputes + perfStats.sortKeyCacheHits) * 100) or 0
-        ns:Debug(string.format("Sort cache stats - Tooltip: %d scans, %d hits (%.0f%%) | SortKeys: %d computes, %d hits (%.0f%%)",
-            perfStats.tooltipScans,
-            perfStats.tooltipCacheHits,
-            tooltipHitRate,
+    if perfStats.sortKeyComputes > 0 then
+        local sortKeyHitRate = perfStats.sortKeyCacheHits / (perfStats.sortKeyComputes + perfStats.sortKeyCacheHits) * 100
+        ns:Debug(string.format("Sort cache stats - SortKeys: %d computes, %d hits (%.0f%%)",
             perfStats.sortKeyComputes,
             perfStats.sortKeyCacheHits,
             sortKeyHitRate
         ))
     end
-    -- Clear performance caches
-    wipe(specialPropertiesCache)
     wipe(sortKeyCache)
-    -- Reset stats
-    perfStats.tooltipScans = 0
-    perfStats.tooltipCacheHits = 0
+    wipe(itemInfoCache)
     perfStats.sortKeyComputes = 0
     perfStats.sortKeyCacheHits = 0
-end
-
--------------------------------------------------
--- Check if item has special properties (cached by itemID)
--------------------------------------------------
-local function HasSpecialProperties(bagID, slot, itemID)
-    if not bagID or not slot then return false end
-
-    -- Check cache first (keyed by itemID since properties are inherent to item)
-    if itemID and specialPropertiesCache[itemID] ~= nil then
-        perfStats.tooltipCacheHits = perfStats.tooltipCacheHits + 1
-        return specialPropertiesCache[itemID]
-    end
-
-    perfStats.tooltipScans = perfStats.tooltipScans + 1
-
-    scanTooltip:ClearLines()
-    scanTooltip:SetBagItem(bagID, slot)
-
-    local numLines = scanTooltip:NumLines()
-    if not numLines or numLines == 0 then
-        if itemID then specialPropertiesCache[itemID] = false end
-        return false
-    end
-
-    local hasSpecial = false
-    for i = 1, numLines do
-        local line = _G["GudaBags_SortScanTooltipTextLeft" .. i]
-        if line then
-            local text = line:GetText()
-            if text then
-                local textLower = string_lower(text)
-                if string_find(textLower, "use:") or string_find(textLower, "equip:") then
-                    hasSpecial = true
-                    break
-                end
-                if string_find(textLower, "^unique") or string_find(textLower, "unique%-equipped") then
-                    hasSpecial = true
-                    break
-                end
-            end
-
-            local r, g, b = line:GetTextColor()
-            if r and g and b then
-                if g > 0.9 and r < 0.2 and b < 0.2 then
-                    hasSpecial = true
-                    break
-                end
-                if r > 0.9 and g > 0.7 and b < 0.2 and text and i > 1 then
-                    hasSpecial = true
-                    break
-                end
-            end
-        end
-    end
-
-    -- Cache the result
-    if itemID then
-        specialPropertiesCache[itemID] = hasSpecial
-    end
-
-    return hasSpecial
 end
 
 -------------------------------------------------
@@ -504,15 +429,28 @@ local function RouteSpecializedItems(bagIDs, containers, bagFamilies)
                 end
             end
         end
+        -- Yield between bags if budget exceeded (scan does many nested API calls)
+        if IsFrameBudgetExceeded() then
+            coroutine_yield("budget")
+            StartFrameTimer()
+        end
     end
 
     ClearCursor()
-    for _, move in ipairs(routingPlan) do
+    for idx, move in ipairs(routingPlan) do
         local sourceInfo = C_Container_GetContainerItemInfo(move.fromBag, move.fromSlot)
         if sourceInfo and not sourceInfo.isLocked then
             C_Container_PickupContainerItem(move.fromBag, move.fromSlot)
             C_Container_PickupContainerItem(move.toBag, move.toSlot)
             ClearCursor()
+            if not soundsMuted then
+                MutePickupSounds()
+                soundsMuted = true
+            end
+            if idx % 5 == 0 and IsFrameBudgetExceeded() then
+                coroutine_yield("budget")
+                StartFrameTimer()
+            end
         end
     end
 
@@ -544,14 +482,27 @@ local function ConsolidateStacks(bagIDs, bagFamilies)
         end
     end
 
+    -- Yield after scan if budget exceeded
+    if IsFrameBudgetExceeded() then
+        coroutine_yield("budget")
+        StartFrameTimer()
+    end
+
     local consolidationMoves = 0
     for _, group in pairs(itemGroups) do
         if #group.stacks > 1 then
-            -- GetItemInfo returns: name, link, quality, ilvl, minLevel, type, subType, stackCount, equipLoc, texture, sellPrice
-            -- Can return nil if item data isn't cached
-            local itemInfoResults = {GetItemInfo(group.itemID)}
-            local stackSize = itemInfoResults[8]
-            local maxStack = tonumber(stackSize) or 1
+            local maxStack = 1
+            local cached = itemInfoCache[group.itemID]
+            if cached and cached.maxStack then
+                maxStack = cached.maxStack
+            else
+                local _, _, _, _, _, _, _, stackSize = GetItemInfo(group.itemID)
+                maxStack = tonumber(stackSize) or 1
+                -- Store in cache for reuse
+                if cached then
+                    cached.maxStack = maxStack
+                end
+            end
 
             if maxStack > 1 then
                 table_sort(group.stacks, function(a, b)
@@ -581,9 +532,19 @@ local function ConsolidateStacks(bagIDs, bagFamilies)
                                         end
                                         ClearCursor()
 
+                                        if not soundsMuted then
+                                            MutePickupSounds()
+                                            soundsMuted = true
+                                        end
+
                                         source.count = source.count + amountToMove
                                         target.count = target.count - amountToMove
                                         consolidationMoves = consolidationMoves + 1
+
+                                        if consolidationMoves % 5 == 0 and IsFrameBudgetExceeded() then
+                                            coroutine_yield("budget")
+                                            StartFrameTimer()
+                                        end
 
                                         if source.count >= maxStack then break end
                                     end
@@ -603,144 +564,111 @@ end
 -- PHASE 4: Collect and Sort Items
 --===========================================================================
 
-local function CollectItems(bagIDs)
+-- Combined collect + sort key computation in a single pass
+-- Eliminates double iteration over items (was CollectItems then AddSortKeys)
+local function CollectAndKeyItems(bagIDs)
     local items = {}
     local sequence = 0
+    local whiteItemsJunk = Database:GetSetting("whiteItemsJunk") or false
 
     for _, bagID in ipairs(bagIDs) do
         local numSlots = C_Container_GetContainerNumSlots(bagID)
         for slot = 1, numSlots do
             local itemInfo = C_Container_GetContainerItemInfo(bagID, slot)
             if itemInfo then
-                local itemLink = itemInfo.hyperlink
-                local itemName, _, itemQuality, itemLevel, _, itemType, itemSubType, _, itemEquipLoc, _, _, classID, subClassID = GetItemInfo(itemLink)
-                -- GetItemInfo can return nil if item data isn't cached yet
-                itemName = itemName or ""
-                itemQuality = itemQuality or itemInfo.quality or 0
-                itemLevel = itemLevel or 0
-                itemType = itemType or "Miscellaneous"
-                itemSubType = itemSubType or ""
-                itemEquipLoc = itemEquipLoc or ""
-                classID = classID or 15
-                subClassID = subClassID or 0
+                local itemID = itemInfo.itemID
+                local stackCount = tonumber(itemInfo.stackCount) or 1
+
+                -- Get or compute item info cache
+                local info = itemInfoCache[itemID]
+                if not info then
+                    local itemLink = itemInfo.hyperlink
+                    local itemName, _, itemQuality, itemLevel, _, itemType, itemSubType, _, itemEquipLoc, _, _, classID, subClassID = GetItemInfo(itemLink)
+                    info = {
+                        itemName = itemName or "",
+                        quality = tonumber(itemQuality or itemInfo.quality or 0) or 0,
+                        itemLevel = tonumber(itemLevel or 0) or 0,
+                        itemType = itemType or "Miscellaneous",
+                        itemSubType = itemSubType or "",
+                        equipLoc = itemEquipLoc or "",
+                        classID = classID or 15,
+                        subClassID = subClassID or 0,
+                        itemFamily = C_Item_GetItemFamily(itemID) or 0,
+                    }
+                    itemInfoCache[itemID] = info
+                end
+
+                -- Get or compute sort keys
+                local sk = sortKeyCache[itemID]
+                if not sk then
+                    perfStats.sortKeyComputes = perfStats.sortKeyComputes + 1
+
+                    local sortedClassID = GetSortedClassID(info.classID)
+                    local isEquippable = (info.classID == 2 or info.classID == 4) and
+                                        info.equipLoc ~= "" and info.equipLoc ~= "INVTYPE_BAG"
+
+                    -- Junk detection
+                    local shouldBeJunk = false
+                    local isGrayItem = info.quality == 0
+                    if isGrayItem then
+                        shouldBeJunk = not IsTool(info.itemType, info.itemSubType, info.itemName)
+                    elseif (info.quality == 1) and isEquippable and whiteItemsJunk then
+                        local isValuableSlot = Constants.VALUABLE_EQUIP_SLOTS and Constants.VALUABLE_EQUIP_SLOTS[info.equipLoc]
+                        if not isValuableSlot then
+                            shouldBeJunk = not IsTool(info.itemType, info.itemSubType, info.itemName) and info.itemFamily == 0
+                        end
+                    end
+
+                    if shouldBeJunk then
+                        sortedClassID = 100
+                    end
+
+                    sk = {
+                        priority = PRIORITY_ITEMS[itemID] or 1000,
+                        sortedClassID = sortedClassID,
+                        sortedSubClassID = GetSortedSubClassID(info.classID, info.subClassID),
+                        sortedEquipSlot = GetEquipSlotOrder(info.equipLoc),
+                        isEquippable = isEquippable,
+                        isJunk = shouldBeJunk,
+                        invertedQuality = -info.quality,
+                        invertedItemLevel = -info.itemLevel,
+                        invertedItemID = -itemID,
+                    }
+                    sortKeyCache[itemID] = sk
+                else
+                    perfStats.sortKeyCacheHits = perfStats.sortKeyCacheHits + 1
+                end
 
                 sequence = sequence + 1
                 items[#items + 1] = {
                     bagID = bagID,
                     slot = slot,
                     sequence = sequence,
-                    itemID = itemInfo.itemID,
-                    itemLink = itemLink,
-                    itemName = itemName,
-                    quality = tonumber(itemQuality) or 0,
-                    itemLevel = tonumber(itemLevel) or 0,
-                    itemType = itemType,
-                    itemSubType = itemSubType,
-                    equipLoc = itemEquipLoc,
-                    stackCount = tonumber(itemInfo.stackCount) or 1,
-                    isLocked = itemInfo.isLocked,
-                    itemFamily = C_Item_GetItemFamily(itemInfo.itemID) or 0,
-                    classID = classID,
-                    subClassID = subClassID,
+                    itemID = itemID,
+                    itemName = info.itemName,
+                    stackCount = stackCount,
+                    -- Sort keys (from cache)
+                    priority = sk.priority,
+                    sortedClassID = sk.sortedClassID,
+                    sortedSubClassID = sk.sortedSubClassID,
+                    sortedEquipSlot = sk.sortedEquipSlot,
+                    isEquippable = sk.isEquippable,
+                    isJunk = sk.isJunk,
+                    invertedQuality = sk.invertedQuality,
+                    invertedItemLevel = sk.invertedItemLevel,
+                    invertedItemID = sk.invertedItemID,
+                    invertedCount = -stackCount,
                 }
             end
+        end
+        -- Yield between bags if budget exceeded
+        if IsFrameBudgetExceeded() then
+            coroutine_yield("budget")
+            StartFrameTimer()
         end
     end
 
     return items
-end
-
-local function AddSortKeys(items)
-    -- Check if white items should be treated as junk (setting) - read once
-    local whiteItemsJunk = Database:GetSetting("whiteItemsJunk") or false
-
-    for _, item in ipairs(items) do
-        local itemID = item.itemID
-
-        -- Check if we have cached sort keys for this itemID
-        local cached = sortKeyCache[itemID]
-        if cached then
-            perfStats.sortKeyCacheHits = perfStats.sortKeyCacheHits + 1
-            -- Reuse cached sort keys
-            item.priority = cached.priority
-            item.sortedClassID = cached.sortedClassID
-            item.sortedSubClassID = cached.sortedSubClassID
-            item.sortedEquipSlot = cached.sortedEquipSlot
-            item.isEquippable = cached.isEquippable
-            item.isJunk = cached.isJunk
-            item.invertedQuality = cached.invertedQuality
-            item.invertedItemLevel = cached.invertedItemLevel
-            item.invertedItemID = cached.invertedItemID
-            -- Note: invertedCount is stack-specific, compute fresh
-            item.invertedCount = -item.stackCount
-        else
-            perfStats.sortKeyComputes = perfStats.sortKeyComputes + 1
-            -- Compute sort keys fresh
-            -- Priority (hearthstone always first)
-            item.priority = PRIORITY_ITEMS[itemID] or 1000
-
-            -- Sorted class and subclass IDs
-            item.sortedClassID = GetSortedClassID(item.classID)
-            item.sortedSubClassID = GetSortedSubClassID(item.classID, item.subClassID)
-            item.sortedEquipSlot = GetEquipSlotOrder(item.equipLoc)
-
-            -- Check if equippable
-            local isEquippable = (item.classID == 2 or item.classID == 4) and
-                                item.equipLoc ~= "" and item.equipLoc ~= "INVTYPE_BAG"
-            item.isEquippable = isEquippable
-
-            -- Check for tools and special properties (cached by itemID)
-            local isTool = IsTool(item.itemType, item.itemSubType, item.itemName)
-            local hasSpecial = HasSpecialProperties(item.bagID, item.slot, itemID)
-
-            -- Junk detection
-            local isGrayItem = item.quality == 0
-            local isWhiteEquip = (item.quality == 1) and isEquippable
-            local shouldBeJunk = false
-
-            -- Check if this equip slot is valuable (never junk)
-            local isValuableSlot = Constants.VALUABLE_EQUIP_SLOTS and Constants.VALUABLE_EQUIP_SLOTS[item.equipLoc]
-
-            if isGrayItem then
-                -- Gray items are always junk (unless profession tools)
-                shouldBeJunk = not isTool
-            elseif isWhiteEquip and whiteItemsJunk then
-                -- Only treat white equippable as junk if setting is enabled
-                -- Valuable slots (trinket, ring, neck, shirt, tabard) are never junk
-                if isValuableSlot then
-                    shouldBeJunk = false
-                else
-                    shouldBeJunk = not isTool and not hasSpecial
-                end
-            end
-
-            item.isJunk = shouldBeJunk
-
-            -- Override class for junk items (sort to end)
-            if shouldBeJunk then
-                item.sortedClassID = 100
-            end
-
-            -- Inverted values for descending sorts
-            item.invertedQuality = -item.quality
-            item.invertedItemLevel = -item.itemLevel
-            item.invertedCount = -item.stackCount
-            item.invertedItemID = -itemID
-
-            -- Cache the computed sort keys for this itemID
-            sortKeyCache[itemID] = {
-                priority = item.priority,
-                sortedClassID = item.sortedClassID,
-                sortedSubClassID = item.sortedSubClassID,
-                sortedEquipSlot = item.sortedEquipSlot,
-                isEquippable = item.isEquippable,
-                isJunk = item.isJunk,
-                invertedQuality = item.invertedQuality,
-                invertedItemLevel = item.invertedItemLevel,
-                invertedItemID = item.invertedItemID,
-            }
-        end
-    end
 end
 
 -- Module-level sort comparator (avoids closure allocation per SortItems call)
@@ -764,10 +692,15 @@ local function SortComparator(a, b)
     return a.sequence < b.sequence
 end
 
+-- Sort items that already have sort keys computed (from CollectAndKeyItems)
 local function SortItems(items)
-    AddSortKeys(items)
     currentReverseStackSort = Database:GetSetting("reverseStackSort")
     table_sort(items, SortComparator)
+    -- Yield after sort if budget exceeded (O(n log n) comparisons)
+    if IsFrameBudgetExceeded() then
+        coroutine_yield("budget")
+        StartFrameTimer()
+    end
     return items
 end
 
@@ -878,92 +811,7 @@ local function SplitJunkItems(items)
     return nonJunk, junk
 end
 
-local function ApplySort(items, targetPositions, bagFamilies)
-    ClearCursor()
-
-    local moveToEmpty = {}
-    local swapOccupied = {}
-    local swappedSlots = {} -- Track queued swap pairs to prevent double-swaps
-
-    for i, item in ipairs(items) do
-        local target = targetPositions[i]
-        if target then
-            local targetFamily = bagFamilies[target.bagID] or 0
-            local canGoInBag = (targetFamily == 0) or CanItemGoInBag(item.itemID, targetFamily)
-
-            if canGoInBag and (item.bagID ~= target.bagID or item.slot ~= target.slot) then
-                local targetInfo = C_Container_GetContainerItemInfo(target.bagID, target.slot)
-                if not targetInfo then
-                    moveToEmpty[#moveToEmpty + 1] = {
-                        sourceBag = item.bagID, sourceSlot = item.slot,
-                        targetBag = target.bagID, targetSlot = target.slot,
-                    }
-                else
-                    -- Skip swaps between functionally identical items (same itemID + stackCount).
-                    -- Without this, identical items oscillate between passes because their
-                    -- sequence numbers change when they move to new positions.
-                    if item.itemID == targetInfo.itemID and item.stackCount == (targetInfo.stackCount or 1) then
-                        -- Items are interchangeable, swap is a no-op
-                    else
-                        local sourceFamily = bagFamilies[item.bagID] or 0
-                        local targetCanGoInSource = (sourceFamily == 0) or CanItemGoInBag(targetInfo.itemID, sourceFamily)
-
-                        if targetCanGoInSource then
-                            -- Deduplicate: if target→source was already queued, this swap
-                            -- would undo it (A↔B then B↔A = no progress). Skip the reverse.
-                            local reverseKey = SlotPairKey(target.bagID, target.slot, item.bagID, item.slot)
-                            if not swappedSlots[reverseKey] then
-                                local forwardKey = SlotPairKey(item.bagID, item.slot, target.bagID, target.slot)
-                                swappedSlots[forwardKey] = true
-                                swapOccupied[#swapOccupied + 1] = {
-                                    sourceBag = item.bagID, sourceSlot = item.slot,
-                                    targetBag = target.bagID, targetSlot = target.slot,
-                                }
-                            end
-                        end
-                    end
-                end
-            end
-        end
-    end
-
-    local moveCount = 0
-
-    for _, move in ipairs(moveToEmpty) do
-        local sourceInfo = C_Container_GetContainerItemInfo(move.sourceBag, move.sourceSlot)
-        if sourceInfo and not sourceInfo.isLocked then
-            C_Container_PickupContainerItem(move.sourceBag, move.sourceSlot)
-            C_Container_PickupContainerItem(move.targetBag, move.targetSlot)
-            ClearCursor()
-            moveCount = moveCount + 1
-            if not soundsMuted then
-                MutePickupSounds()
-                soundsMuted = true
-            end
-        end
-    end
-
-    for _, move in ipairs(swapOccupied) do
-        local sourceInfo = C_Container_GetContainerItemInfo(move.sourceBag, move.sourceSlot)
-        local targetInfo = C_Container_GetContainerItemInfo(move.targetBag, move.targetSlot)
-
-        if sourceInfo and targetInfo and not sourceInfo.isLocked and not targetInfo.isLocked then
-            C_Container_PickupContainerItem(move.sourceBag, move.sourceSlot)
-            C_Container_PickupContainerItem(move.targetBag, move.targetSlot)
-            ClearCursor()
-            moveCount = moveCount + 1
-            if not soundsMuted then
-                MutePickupSounds()
-                soundsMuted = true
-            end
-        end
-    end
-
-    return moveCount
-end
-
--- Yielding version of ApplySort for coroutine-based sorting
--- Same logic but yields every 5 moves when frame budget is exceeded
+-- Yielding sort applicator: builds move lists, then executes with budget yields
 local function ApplySort_Yielding(items, targetPositions, bagFamilies)
     ClearCursor()
 
@@ -1014,6 +862,12 @@ local function ApplySort_Yielding(items, targetPositions, bagFamilies)
         end
     end
 
+    -- Yield after move-list building if budget exceeded (the loop above does 100+ API calls)
+    if IsFrameBudgetExceeded() then
+        coroutine_yield("budget")
+        StartFrameTimer()
+    end
+
     local moveCount = 0
 
     for idx, move in ipairs(moveToEmpty) do
@@ -1057,43 +911,6 @@ local function ApplySort_Yielding(items, targetPositions, bagFamilies)
     return moveCount
 end
 
---===========================================================================
--- PHASE 6: Verify Sort Completeness
---===========================================================================
-
--- Check how many items are out of position (without moving them)
-local function CountOutOfPlaceItems(bagIDs)
-    local containers, bagFamilies = ClassifyBags(bagIDs)
-    local outOfPlace = 0
-
-    -- Check regular bags
-    local regularBags = containers.regular
-    if #regularBags > 0 then
-        local allItems = CollectItems(regularBags)
-        if #allItems > 0 then
-            allItems = SortItems(allItems)
-            local nonJunk, junk = SplitJunkItems(allItems)
-
-            -- Check non-junk items against front positions
-            if #nonJunk > 0 then
-                local frontPositions = BuildTargetPositions(regularBags, #nonJunk)
-                for i, item in ipairs(nonJunk) do
-                    local target = frontPositions[i]
-                    if target and (item.bagID ~= target.bagID or item.slot ~= target.slot) then
-                        -- Check if the item at target is functionally identical (interchangeable)
-                        local targetInfo = C_Container_GetContainerItemInfo(target.bagID, target.slot)
-                        if not targetInfo or targetInfo.itemID ~= item.itemID or (targetInfo.stackCount or 1) ~= item.stackCount then
-                            outOfPlace = outOfPlace + 1
-                        end
-                    end
-                end
-            end
-        end
-    end
-
-    return outOfPlace
-end
-
 -- Cached specialized bag type list (initialized once on first use)
 local cachedSpecializedTypes = nil
 local function GetSpecializedTypes()
@@ -1111,75 +928,6 @@ local function GetSpecializedTypes()
     return cachedSpecializedTypes
 end
 
--- Full sort completeness check: returns true if all items are already in their sorted positions.
--- Checks specialized bags, regular bags (non-junk + junk), so a redundant sort is skipped entirely.
-local function IsSortComplete(bagIDs)
-    local containers, bagFamilies = ClassifyBags(bagIDs)
-
-    -- Check specialized bags
-    local specializedTypes = GetSpecializedTypes()
-    for _, bagType in ipairs(specializedTypes) do
-        local specialBags = containers[bagType]
-        if specialBags then
-            for _, bagID in ipairs(specialBags) do
-                local items = CollectItems({bagID})
-                if #items > 0 then
-                    items = SortItems(items)
-                    local targets = BuildTargetPositions({bagID}, #items)
-                    for i, item in ipairs(items) do
-                        local target = targets[i]
-                        if target and (item.bagID ~= target.bagID or item.slot ~= target.slot) then
-                            -- Check if the item at target is functionally identical
-                            local targetInfo = C_Container_GetContainerItemInfo(target.bagID, target.slot)
-                            if not targetInfo or targetInfo.itemID ~= item.itemID or (targetInfo.stackCount or 1) ~= item.stackCount then
-                                return false
-                            end
-                        end
-                    end
-                end
-            end
-        end
-    end
-
-    -- Check regular bags (non-junk front positions + junk tail positions)
-    local regularBags = containers.regular
-    if #regularBags > 0 then
-        local allItems = CollectItems(regularBags)
-        if #allItems > 0 then
-            allItems = SortItems(allItems)
-            local nonJunk, junk = SplitJunkItems(allItems)
-
-            if #nonJunk > 0 then
-                local frontPositions = BuildTargetPositions(regularBags, #nonJunk)
-                for i, item in ipairs(nonJunk) do
-                    local target = frontPositions[i]
-                    if target and (item.bagID ~= target.bagID or item.slot ~= target.slot) then
-                        local targetInfo = C_Container_GetContainerItemInfo(target.bagID, target.slot)
-                        if not targetInfo or targetInfo.itemID ~= item.itemID or (targetInfo.stackCount or 1) ~= item.stackCount then
-                            return false
-                        end
-                    end
-                end
-            end
-
-            if #junk > 0 then
-                local tailPositions = BuildTailPositions(regularBags, #junk)
-                for i, item in ipairs(junk) do
-                    local target = tailPositions[i]
-                    if target and (item.bagID ~= target.bagID or item.slot ~= target.slot) then
-                        local targetInfo = C_Container_GetContainerItemInfo(target.bagID, target.slot)
-                        if not targetInfo or targetInfo.itemID ~= item.itemID or (targetInfo.stackCount or 1) ~= item.stackCount then
-                            return false
-                        end
-                    end
-                end
-            end
-        end
-    end
-
-    return true
-end
-
 --===========================================================================
 -- PHASE 7: Coroutine Sort Pass
 -- Yields between phases and during move execution to stay within frame budget.
@@ -1191,20 +939,29 @@ local function SortCoroutineBody(bagIDs)
     local containers, bagFamilies = ClassifyBags(bagIDs)
     local totalMoves = 0
 
-    -- Phase 2: Route specialized items
-    local routeMoves = RouteSpecializedItems(bagIDs, containers, bagFamilies)
-    totalMoves = totalMoves + routeMoves
-    if routeMoves > 0 then
-        coroutine_yield("wait_locks")
-        StartFrameTimer()
-    end
+    -- Routing and consolidation only on first pass (subsequent passes just re-sort)
+    if currentPass == 1 then
+        -- Phase 2: Route specialized items
+        local routeMoves = RouteSpecializedItems(bagIDs, containers, bagFamilies)
+        totalMoves = totalMoves + routeMoves
+        if routeMoves > 0 then
+            coroutine_yield("wait_locks")
+            StartFrameTimer()
+        elseif IsFrameBudgetExceeded() then
+            coroutine_yield("budget")
+            StartFrameTimer()
+        end
 
-    -- Phase 3: Consolidate stacks
-    local consolidateMoves = ConsolidateStacks(bagIDs, bagFamilies)
-    totalMoves = totalMoves + consolidateMoves
-    if consolidateMoves > 0 then
-        coroutine_yield("wait_locks")
-        StartFrameTimer()
+        -- Phase 3: Consolidate stacks
+        local consolidateMoves = ConsolidateStacks(bagIDs, bagFamilies)
+        totalMoves = totalMoves + consolidateMoves
+        if consolidateMoves > 0 then
+            coroutine_yield("wait_locks")
+            StartFrameTimer()
+        elseif IsFrameBudgetExceeded() then
+            coroutine_yield("budget")
+            StartFrameTimer()
+        end
     end
 
     -- Phase 4: Sort specialized bags
@@ -1213,7 +970,7 @@ local function SortCoroutineBody(bagIDs)
         local specialBags = containers[bagType]
         if specialBags then
             for _, bagID in ipairs(specialBags) do
-                local items = CollectItems({bagID})
+                local items = CollectAndKeyItems({bagID})
                 if #items > 0 then
                     items = SortItems(items)
                     local targets = BuildTargetPositions({bagID}, #items)
@@ -1224,19 +981,18 @@ local function SortCoroutineBody(bagIDs)
                         StartFrameTimer()
                     end
                 end
+                if IsFrameBudgetExceeded() then
+                    coroutine_yield("budget")
+                    StartFrameTimer()
+                end
             end
-        end
-        -- Yield between bag types if budget exceeded
-        if IsFrameBudgetExceeded() then
-            coroutine_yield("budget")
-            StartFrameTimer()
         end
     end
 
     -- Phase 5: Sort regular bags (two-pass: non-junk forward, junk backward)
     local regularBags = containers.regular
     if #regularBags > 0 then
-        local allItems = CollectItems(regularBags)
+        local allItems = CollectAndKeyItems(regularBags)
         if #allItems > 0 then
             allItems = SortItems(allItems)
             local nonJunk, junk = SplitJunkItems(allItems)
@@ -1248,12 +1004,14 @@ local function SortCoroutineBody(bagIDs)
                 if moves > 0 then
                     coroutine_yield("wait_locks")
                     StartFrameTimer()
+                elseif IsFrameBudgetExceeded() then
+                    coroutine_yield("budget")
+                    StartFrameTimer()
                 end
             end
 
             if #junk > 0 then
                 -- Re-collect only junk items (positions may have changed after non-junk sort)
-                -- Uses sortKeyCache to identify junk without full re-sort
                 local junkNow = {}
                 for _, bagID in ipairs(regularBags) do
                     local numSlots = C_Container_GetContainerNumSlots(bagID)
@@ -1286,7 +1044,6 @@ end
 
 local sortFrame = CreateFrame("Frame")
 local sortStartTime = 0
-local noProgressCount = 0
 local sortTimeout = 30
 
 local activeBagIDs = Constants.BAG_IDS
@@ -1377,25 +1134,8 @@ sortFrame:SetScript("OnUpdate", function(self, elapsed)
         ns:Debug(string.format("Sort pass %d: %.2fms, %d moves", currentPass, passTime / 1000, moveCount))
         sortCoroutine = nil
 
+        -- Sort is complete when a pass makes no moves
         if moveCount == 0 then
-            noProgressCount = noProgressCount + 1
-        else
-            noProgressCount = 0
-        end
-
-        -- Check if sort is complete
-        if noProgressCount >= 3 then
-            local outOfPlace = CountOutOfPlaceItems(activeBagIDs)
-            if outOfPlace > 0 and currentPass < maxPasses then
-                ns:Debug(string.format("Sort incomplete: %d items out of place, continuing...", outOfPlace))
-                noProgressCount = 0
-                return  -- Next frame will create new coroutine
-            end
-
-            if outOfPlace > 0 then
-                ns:Debug(string.format("Sort finished with %d items still out of place (may need another sort)", outOfPlace))
-            end
-
             FinishSort()
             return
         end
@@ -1429,12 +1169,6 @@ function SortEngine:SortBags()
         return true
     end
 
-    -- Quick check: skip sort if bags are already in order
-    if IsSortComplete(Constants.BAG_IDS) then
-        ns:Debug("Bags already sorted, skipping")
-        return true
-    end
-
     -- Classic expansions use custom sort engine
     activeBagIDs = Constants.BAG_IDS
     currentFrameBudget = FRAME_BUDGET_US
@@ -1443,7 +1177,7 @@ function SortEngine:SortBags()
     sortInProgress = true
     sortCoroutine = nil
     currentPass = 0
-    noProgressCount = 0
+
     sortStartTime = GetTime()
 
     return true
@@ -1461,7 +1195,7 @@ function SortEngine:CancelSort()
     sortCoroutine = nil
     soundsMuted = false
     currentPass = 0
-    noProgressCount = 0
+
     activeBagIDs = Constants.BAG_IDS
     currentFrameBudget = FRAME_BUDGET_US
     self:ClearCache()
@@ -1498,12 +1232,6 @@ function SortEngine:SortBank()
         return true
     end
 
-    -- Quick check: skip sort if bank is already in order
-    if IsSortComplete(Constants.BANK_BAG_IDS) then
-        ns:Debug("Bank already sorted, skipping")
-        return true
-    end
-
     -- Classic expansions use custom sort engine
     activeBagIDs = Constants.BANK_BAG_IDS
     currentFrameBudget = FRAME_BUDGET_BANK_US
@@ -1512,7 +1240,7 @@ function SortEngine:SortBank()
     sortInProgress = true
     sortCoroutine = nil
     currentPass = 0
-    noProgressCount = 0
+
     sortStartTime = GetTime()
 
     return true

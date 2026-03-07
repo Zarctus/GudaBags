@@ -1096,3 +1096,242 @@ end
 function LayoutEngine:GetCategoryHeaderHeight()
     return CATEGORY_HEADER_HEIGHT
 end
+
+-------------------------------------------------
+-- Split View Support
+-------------------------------------------------
+
+local SPLIT = Constants.SPLIT_VIEW
+
+-- Get display info (name, icon) for a bag
+function LayoutEngine:GetBagDisplayInfo(bagID, bagData, isViewingCached)
+    local L = ns.L
+    local name, icon
+
+    -- Primary bags with known identities
+    if bagID == Constants.PLAYER_BAG_MIN then
+        name = L["BAG_NAME_BACKPACK"]
+        icon = 130716 -- Interface\\Icons\\INV_Misc_Bag_07_Green (backpack)
+    elseif bagID == Constants.BANK_MAIN_BAG then
+        name = L["BAG_NAME_BANK"]
+        icon = 130716
+    elseif bagID == Constants.KEYRING_BAG_ID then
+        name = L["BAG_NAME_KEYRING"]
+        icon = 134237 -- Interface\\Icons\\INV_Misc_Key_04
+    elseif Constants.REAGENT_BAG and bagID == Constants.REAGENT_BAG then
+        name = L["BAG_NAME_REAGENT_BAG"]
+        icon = 4548860 -- Reagent bag icon
+    else
+        -- Equipped bag - get info from containerItemID
+        local containerItemID = bagData and bagData.containerItemID
+        if containerItemID then
+            local itemName, _, _, _, _, _, _, _, _, itemIcon = GetItemInfo(containerItemID)
+            name = itemName
+            icon = itemIcon or (C_Item.GetItemIconByID and C_Item.GetItemIconByID(containerItemID))
+        end
+
+        -- Fallback: try inventory slot for live bags
+        if not name and not isViewingCached then
+            local invSlot = nil
+            if (bagID >= 1 and bagID <= Constants.PLAYER_BAG_MAX) or
+               (bagID >= Constants.BANK_BAG_MIN and bagID <= Constants.BANK_BAG_MAX) then
+                invSlot = C_Container.ContainerIDToInventoryID(bagID)
+            end
+            if invSlot then
+                local itemID = GetInventoryItemID("player", invSlot)
+                if itemID then
+                    local itemName, _, _, _, _, _, _, _, _, itemIcon = GetItemInfo(itemID)
+                    name = itemName
+                    icon = itemIcon
+                end
+            end
+        end
+
+        -- Final fallback
+        if not name then
+            name = string.format("Bag %d", bagID)
+        end
+    end
+
+    return { name = name, icon = icon }
+end
+
+-- Classify bags for split view into primary (full-width top), regular (2-column), special (full-width bottom)
+local function ClassifyBagsForSplitView(bagsToShow, bags, isViewingCached)
+    local BagClassifier = ns:GetModule("BagFrame.BagClassifier")
+    local primary = {}   -- Full-width at top (backpack, main bank)
+    local regular = {}   -- 2-column grid
+    local special = {}   -- Full-width at bottom (keyring, reagent, soul, quiver, ammo, profession bags)
+
+    for _, bagInfo in ipairs(bagsToShow) do
+        local bagID = bagInfo.bagID
+        local bagData = bags[bagID]
+
+        -- Skip bags with no slots
+        if bagData and bagData.numSlots and bagData.numSlots > 0 then
+            if bagID == Constants.PLAYER_BAG_MIN or bagID == Constants.BANK_MAIN_BAG then
+                table.insert(primary, bagInfo)
+            elseif bagInfo.isKeyring or bagInfo.isReagentBag or bagInfo.isSoulBag then
+                table.insert(special, bagInfo)
+            else
+                -- Check bag type for profession/quiver/ammo bags
+                local bagType = "regular"
+                if BagClassifier then
+                    bagType = BagClassifier:GetBagTypeForBag(bagID, bagData, isViewingCached)
+                end
+                if bagType ~= "regular" then
+                    table.insert(special, bagInfo)
+                else
+                    table.insert(regular, bagInfo)
+                end
+            end
+        elseif not bagData and not isViewingCached then
+            -- Live bag with no data yet - check if it has slots
+            local numSlots = C_Container.GetContainerNumSlots(bagID)
+            if numSlots and numSlots > 0 then
+                if bagID == Constants.PLAYER_BAG_MIN or bagID == Constants.BANK_MAIN_BAG then
+                    table.insert(primary, bagInfo)
+                else
+                    table.insert(regular, bagInfo)
+                end
+            end
+        end
+    end
+
+    return primary, regular, special
+end
+
+-- Build split view layout
+-- Returns { sections = { {bagInfo, bagID, displayInfo, columns, rows, x, y, headerY, slotsStartY, isFullWidth} }, contentWidth, contentHeight }
+function LayoutEngine:BuildSplitViewLayout(bagsToShow, bags, settings, isViewingCached)
+    local iconSize = settings.iconSize
+    local spacing = settings.spacing
+    local columns = settings.columns
+
+    local primary, regular, special = ClassifyBagsForSplitView(bagsToShow, bags, isViewingCached)
+
+    local contentWidth = (iconSize * columns) + (spacing * (columns - 1))
+    local halfColumns = math.floor(columns / 2)
+    local halfWidth = (iconSize * halfColumns) + (spacing * math.max(0, halfColumns - 1))
+    local blockGap = contentWidth - (halfWidth * 2)
+    if blockGap < SPLIT.BLOCK_GAP then blockGap = SPLIT.BLOCK_GAP end
+
+    local sections = {}
+    local currentY = 0
+
+    -- Helper: add a full-width section
+    local function AddFullWidthSection(bagInfo)
+        local bagID = bagInfo.bagID
+        local bagData = bags[bagID]
+        local numSlots = bagData and bagData.numSlots or (not isViewingCached and C_Container.GetContainerNumSlots(bagID) or 0)
+        if numSlots <= 0 then return end
+
+        local displayInfo = self:GetBagDisplayInfo(bagID, bagData, isViewingCached)
+        local rows = math.ceil(numSlots / columns)
+        local sectionHeight = SPLIT.HEADER_HEIGHT + (rows * (iconSize + spacing))
+
+        table.insert(sections, {
+            bagInfo = bagInfo,
+            bagID = bagID,
+            displayInfo = displayInfo,
+            columns = columns,
+            rows = rows,
+            numSlots = numSlots,
+            x = 0,
+            y = currentY,
+            headerY = currentY,
+            slotsStartY = currentY - SPLIT.HEADER_HEIGHT,
+            isFullWidth = true,
+            width = contentWidth,
+        })
+
+        currentY = currentY - sectionHeight - SPLIT.BLOCK_SPACING
+    end
+
+    -- Primary bags (full-width at top)
+    for _, bagInfo in ipairs(primary) do
+        AddFullWidthSection(bagInfo)
+    end
+
+    -- Regular bags (2-column grid)
+    local col = 0
+    local rowStartY = currentY
+    local rowMaxHeight = 0
+
+    for _, bagInfo in ipairs(regular) do
+        local bagID = bagInfo.bagID
+        local bagData = bags[bagID]
+        local numSlots = bagData and bagData.numSlots or (not isViewingCached and C_Container.GetContainerNumSlots(bagID) or 0)
+        if numSlots > 0 then
+            local displayInfo = self:GetBagDisplayInfo(bagID, bagData, isViewingCached)
+            local rows = math.ceil(numSlots / halfColumns)
+            local blockHeight = SPLIT.HEADER_HEIGHT + (rows * (iconSize + spacing))
+            local x = col * (halfWidth + blockGap)
+
+            table.insert(sections, {
+                bagInfo = bagInfo,
+                bagID = bagID,
+                displayInfo = displayInfo,
+                columns = halfColumns,
+                rows = rows,
+                numSlots = numSlots,
+                x = x,
+                y = rowStartY,
+                headerY = rowStartY,
+                slotsStartY = rowStartY - SPLIT.HEADER_HEIGHT,
+                isFullWidth = false,
+                width = halfWidth,
+            })
+
+            if blockHeight > rowMaxHeight then
+                rowMaxHeight = blockHeight
+            end
+
+            col = col + 1
+            if col >= 2 then
+                col = 0
+                rowStartY = rowStartY - rowMaxHeight - SPLIT.BLOCK_SPACING
+                rowMaxHeight = 0
+            end
+        end
+    end
+
+    -- Complete the last partial row of regular bags
+    if col > 0 then
+        rowStartY = rowStartY - rowMaxHeight - SPLIT.BLOCK_SPACING
+    end
+    currentY = rowStartY
+
+    -- Special bags (full-width at bottom)
+    for _, bagInfo in ipairs(special) do
+        AddFullWidthSection(bagInfo)
+    end
+
+    local containerHeight = -currentY
+    if containerHeight < 1 then containerHeight = 1 end
+
+    return {
+        sections = sections,
+        contentWidth = contentWidth,
+        contentHeight = containerHeight,
+    }
+end
+
+-- Calculate frame size for split view
+function LayoutEngine:CalculateSplitFrameSize(layout, settings)
+    local showSearchBar = settings.showSearchBar
+    local showFilterChips = settings.showFilterChips
+    local showFooter = settings.showFooter
+
+    local chipHeight = (showSearchBar and showFilterChips) and (Constants.FRAME.CHIP_STRIP_HEIGHT + 1) or 0
+    local searchBarHeight = showSearchBar and (Constants.FRAME.SEARCH_BAR_HEIGHT + chipHeight + 4) or 0
+    local footerHeight = showFooter and (Constants.FRAME.FOOTER_HEIGHT + 6) or Constants.FRAME.PADDING
+
+    local frameWidth = math.max(layout.contentWidth + (Constants.FRAME.PADDING * 2), Constants.FRAME.MIN_WIDTH)
+    local frameHeight = math.max(
+        layout.contentHeight + Constants.FRAME.TITLE_HEIGHT + searchBarHeight + footerHeight + Constants.FRAME.PADDING + 4,
+        Constants.FRAME.MIN_HEIGHT
+    )
+
+    return frameWidth, frameHeight
+end

@@ -51,10 +51,12 @@ function SettingsSchema.GetLayout()
         { type = "select", key = "bagViewType", label = L["SETTINGS_BAG_VIEW"], tooltip = L["SETTINGS_BAG_VIEW_TIP"], options = {
             { value = "single", label = L["SETTINGS_VIEW_SINGLE"] },
             { value = "category", label = L["SETTINGS_VIEW_CATEGORY"] },
+            { value = "split", label = L["SETTINGS_VIEW_SPLIT"] },
         }},
         { type = "select", key = "bankViewType", label = L["SETTINGS_BANK_VIEW"], tooltip = L["SETTINGS_BANK_VIEW_TIP"], options = {
             { value = "single", label = L["SETTINGS_VIEW_SINGLE"] },
             { value = "category", label = L["SETTINGS_VIEW_CATEGORY"] },
+            { value = "split", label = L["SETTINGS_VIEW_SPLIT"] },
         }},
 
         { type = "separator", label = L["SETTINGS_SECTION_COLUMNS"] },

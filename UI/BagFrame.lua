@@ -356,6 +356,8 @@ function BagFrame:Refresh()
 
     local showFilterChips = Database:GetSetting("showFilterChips")
 
+    local splitColumns = Database:GetSetting("splitBagColumns") or 2
+
     local settings = {
         columns = columns,
         iconSize = iconSize,
@@ -364,6 +366,7 @@ function BagFrame:Refresh()
         showFilterChips = showFilterChips,
         showFooter = showFooter,
         showCategoryCount = showCategoryCount,
+        splitColumns = splitColumns,
     }
 
     -- Classify bags by type
@@ -374,8 +377,8 @@ function BagFrame:Refresh()
     local showSoulBag = Footer:IsSoulBagVisible()
     local bagsToShow = LayoutEngine:BuildDisplayOrder(classifiedBags, showKeyring, bags, showSoulBag)
 
-    -- Filter out hidden bags in single view mode (not when viewing cached character)
-    if viewType == "single" and not isViewingCached then
+    -- Filter out hidden bags in single/split view mode (not when viewing cached character)
+    if (viewType == "single" or viewType == "split") and not isViewingCached then
         local BagSlots = ns:GetModule("Footer.BagSlots")
         if BagSlots then
             local filteredBags = {}
@@ -391,6 +394,8 @@ function BagFrame:Refresh()
 
     if viewType == "category" then
         self:RefreshCategoryView(bags, bagsToShow, settings, hasSearch, isViewingCached)
+    elseif viewType == "split" then
+        self:RefreshSplitView(bags, bagsToShow, settings, hasSearch, isViewingCached)
     else
         self:RefreshSingleView(bags, bagsToShow, settings, hasSearch, isViewingCached)
     end
@@ -478,6 +483,97 @@ function BagFrame:RefreshSingleView(bags, bagsToShow, settings, hasSearch, isVie
             buttonsByBag[bagID] = {}
         end
         buttonsByBag[bagID][slotInfo.slot] = button
+    end
+
+    layoutCached = true
+end
+
+function BagFrame:RefreshSplitView(bags, bagsToShow, settings, hasSearch, isViewingCached)
+    local iconSize = settings.iconSize
+    local spacing = settings.spacing
+
+    local layout = LayoutEngine:BuildSplitViewLayout(bagsToShow, bags, settings, isViewingCached)
+    local frameWidth, frameHeight = LayoutEngine:CalculateSplitFrameSize(layout, settings)
+    frame:SetSize(frameWidth, frameHeight)
+
+    for _, section in ipairs(layout.sections) do
+        -- Create header with bag icon + name
+        local header = AcquireCategoryHeader(frame.container)
+        header:SetWidth(section.width)
+        header:ClearAllPoints()
+        header:SetPoint("TOPLEFT", frame.container, "TOPLEFT", section.x, section.headerY)
+
+        if section.displayInfo.icon then
+            header.icon:SetTexture(section.displayInfo.icon)
+            header.icon:SetSize(12, 12)
+            header.icon:Show()
+            header.text:ClearAllPoints()
+            header.text:SetPoint("LEFT", header.icon, "RIGHT", 4, 0)
+        else
+            header.icon:Hide()
+            header.text:ClearAllPoints()
+            header.text:SetPoint("LEFT", header, "LEFT", 0, 0)
+        end
+        header.text:SetText(section.displayInfo.name or "")
+
+        local fontFile, _, fontFlags = header.text:GetFont()
+        if iconSize < Constants.CATEGORY_ICON_SIZE_THRESHOLD then
+            header.text:SetFont(fontFile, Constants.CATEGORY_FONT_SMALL, fontFlags)
+        else
+            header.text:SetFont(fontFile, Constants.CATEGORY_FONT_LARGE, fontFlags)
+        end
+
+        header.line:Show()
+        header:EnableMouse(false)
+        table.insert(categoryHeaders, header)
+
+        -- Render item slots for this bag
+        local bagID = section.bagID
+        local bagData = bags[bagID]
+        local sectionColumns = section.columns
+        local numSlots = section.numSlots
+
+        for slot = 1, numSlots do
+            local itemData = bagData and bagData.slots and bagData.slots[slot]
+            local button = ItemButton:Acquire(frame.container)
+            local slotKey = bagID .. ":" .. slot
+
+            if itemData then
+                ItemButton:SetItem(button, itemData, iconSize, isViewingCached)
+                if hasSearch and not SearchBar:ItemMatchesFilters(frame, itemData) then
+                    button:SetAlpha(0.15)
+                else
+                    button:SetAlpha(1)
+                end
+                cachedItemData[slotKey] = itemData.itemID
+                cachedItemCount[slotKey] = itemData.count
+            else
+                ItemButton:SetEmpty(button, bagID, slot, iconSize, isViewingCached)
+                if hasSearch then
+                    button:SetAlpha(0.15)
+                else
+                    button:SetAlpha(1)
+                end
+                cachedItemData[slotKey] = nil
+                cachedItemCount[slotKey] = nil
+            end
+
+            local col = (slot - 1) % sectionColumns
+            local row = math.floor((slot - 1) / sectionColumns)
+            local x = section.x + col * (iconSize + spacing)
+            local y = section.slotsStartY - (row * (iconSize + spacing))
+
+            button.wrapper:ClearAllPoints()
+            button.wrapper:SetPoint("TOPLEFT", frame.container, "TOPLEFT", x, y)
+
+            buttonsBySlot[slotKey] = button
+            table.insert(itemButtons, button)
+
+            if not buttonsByBag[bagID] then
+                buttonsByBag[bagID] = {}
+            end
+            buttonsByBag[bagID][slot] = button
+        end
     end
 
     layoutCached = true

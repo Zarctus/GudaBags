@@ -200,6 +200,15 @@ Constants.BANK_BAG_SLOT_SIZE = 24
 Constants.BANK_BAG_COUNT = 7
 Constants.SECTION_SPACING = 6
 
+-- Split view settings
+Constants.SPLIT_VIEW = {
+    BLOCK_GAP = 8,
+    BLOCK_SPACING = 8,
+    HEADER_HEIGHT = 20,
+    BLOCK_BG_ALPHA = 0.04,
+    BLOCK_BORDER_ALPHA = 0.1,
+}
+
 -- Category view settings
 Constants.CATEGORY_GAP_SMALL_ICONS = 20  -- Gap when icon size < threshold
 Constants.CATEGORY_GAP_LARGE_ICONS = 18  -- Gap when icon size >= threshold
@@ -213,6 +222,11 @@ Constants.DEFAULTS = {
     bagColumns = 10,
     bankColumns = 10,
     guildBankColumns = 14,
+    splitBagColumns = 2,
+    splitBankColumns = 2,
+    splitFullWidthBackpack = true,
+    splitFullWidthReagent = true,
+    splitFullWidthKeyring = true,
     bgAlpha = 85,
     locked = false,
     showBorders = true,
@@ -312,7 +326,7 @@ Constants.CATEGORY_UI = {
 
     -- Settings popup
     POPUP_WIDTH = 500,
-    POPUP_HEIGHT = 520,
+    POPUP_HEIGHT = 580,
     POPUP_PADDING = 16,
 
     -- Editor

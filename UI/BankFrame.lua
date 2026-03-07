@@ -1092,6 +1092,7 @@ function BankFrame:Refresh()
     local showFooter = showFooterSetting or isViewingCached or not isBankOpen
     local showCategoryCount = Database:GetSetting("showCategoryCount")
     local isReadOnly = isViewingCached or not isBankOpen
+    local splitColumns = Database:GetSetting("splitBankColumns") or 2
 
     local settings = {
         columns = columns,
@@ -1101,10 +1102,13 @@ function BankFrame:Refresh()
         showFilterChips = showFilterChips,
         showFooter = showFooter,
         showCategoryCount = showCategoryCount,
+        splitColumns = splitColumns,
     }
 
     if viewType == "category" then
         self:RefreshCategoryView(bank, bagsToShow, settings, hasSearch, isReadOnly)
+    elseif viewType == "split" then
+        self:RefreshSplitView(bank, bagsToShow, settings, hasSearch, isReadOnly)
     else
         self:RefreshSingleView(bank, bagsToShow, settings, hasSearch, isReadOnly)
     end
@@ -1311,6 +1315,150 @@ function BankFrame:RefreshSingleView(bank, bagsToShow, settings, hasSearch, isRe
             buttonsByBag[bagID] = {}
         end
         buttonsByBag[bagID][slotInfo.slot] = button
+    end
+
+    layoutCached = true
+end
+
+function BankFrame:RefreshSplitView(bank, bagsToShow, settings, hasSearch, isReadOnly)
+    local iconSize = settings.iconSize
+    local spacing = settings.spacing
+
+    local layout = LayoutEngine:BuildSplitViewLayout(bagsToShow, bank, settings, isReadOnly)
+
+    -- Calculate chrome heights for scroll frame positioning
+    local showSearchBar = settings.showSearchBar
+    local showFilterChips = settings.showFilterChips
+    local showFooter = settings.showFooter
+    local chipHeight = (showSearchBar and showFilterChips) and (Constants.FRAME.CHIP_STRIP_HEIGHT + 1) or 0
+    local topOffset = showSearchBar
+        and (Constants.FRAME.TITLE_HEIGHT + Constants.FRAME.SEARCH_BAR_HEIGHT + chipHeight + Constants.FRAME.PADDING + 6)
+        or (Constants.FRAME.TITLE_HEIGHT + Constants.FRAME.PADDING + 2)
+    local bottomOffset = showFooter
+        and (Constants.FRAME.FOOTER_HEIGHT + Constants.FRAME.PADDING)
+        or Constants.FRAME.PADDING
+    local chromeHeight = topOffset + bottomOffset
+
+    local contentWidth = layout.contentWidth
+    local containerHeight = layout.contentHeight
+
+    local frameWidth = math.max(contentWidth + (Constants.FRAME.PADDING * 2), Constants.FRAME.MIN_WIDTH)
+    local frameHeightNeeded = containerHeight + chromeHeight
+    local minFrameHeight = (2 * iconSize) + (1 * spacing) + chromeHeight
+    local adjustedFrameHeight = math.max(frameHeightNeeded, minFrameHeight)
+
+    local screenHeight = UIParent:GetHeight()
+    local maxFrameHeight = screenHeight - 100
+    local actualFrameHeight = math.min(adjustedFrameHeight, maxFrameHeight)
+    local scrollAreaHeight = actualFrameHeight - chromeHeight
+    local needsScroll = containerHeight > scrollAreaHeight + 5
+
+    frame:SetSize(frameWidth, actualFrameHeight)
+
+    frame.scrollFrame:ClearAllPoints()
+    frame.scrollFrame:SetPoint("TOPLEFT", frame, "TOPLEFT", Constants.FRAME.PADDING, -topOffset)
+    frame.scrollFrame:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -Constants.FRAME.PADDING, bottomOffset)
+    frame.container:SetSize(contentWidth, math.max(containerHeight, 1))
+
+    local scrollBar = frame.scrollFrame.ScrollBar or _G[frame.scrollFrame:GetName() .. "ScrollBar"]
+    if needsScroll then
+        if scrollBar then
+            scrollBar:ClearAllPoints()
+            scrollBar:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -4, -topOffset - 16)
+            scrollBar:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -4, bottomOffset + 16)
+            scrollBar:Show()
+        end
+        frame.scrollFrame:EnableMouseWheel(true)
+    else
+        if scrollBar then scrollBar:Hide() end
+        frame.scrollFrame:SetVerticalScroll(0)
+        frame.scrollFrame:EnableMouseWheel(false)
+        C_Timer.After(0, function()
+            if scrollBar and not needsScroll then
+                scrollBar:Hide()
+                frame.scrollFrame:SetVerticalScroll(0)
+            end
+        end)
+    end
+
+    for _, section in ipairs(layout.sections) do
+        -- Create header with bag icon + name
+        local header = AcquireCategoryHeader(frame.container)
+        header:SetWidth(section.width)
+        header:ClearAllPoints()
+        header:SetPoint("TOPLEFT", frame.container, "TOPLEFT", section.x, section.headerY)
+
+        if section.displayInfo.icon then
+            header.icon:SetTexture(section.displayInfo.icon)
+            header.icon:SetSize(12, 12)
+            header.icon:Show()
+            header.text:ClearAllPoints()
+            header.text:SetPoint("LEFT", header.icon, "RIGHT", 4, 0)
+        else
+            header.icon:Hide()
+            header.text:ClearAllPoints()
+            header.text:SetPoint("LEFT", header, "LEFT", 0, 0)
+        end
+        header.text:SetText(section.displayInfo.name or "")
+
+        local fontFile, _, fontFlags = header.text:GetFont()
+        if iconSize < Constants.CATEGORY_ICON_SIZE_THRESHOLD then
+            header.text:SetFont(fontFile, Constants.CATEGORY_FONT_SMALL, fontFlags)
+        else
+            header.text:SetFont(fontFile, Constants.CATEGORY_FONT_LARGE, fontFlags)
+        end
+
+        header.line:Show()
+        header:EnableMouse(false)
+        table.insert(categoryHeaders, header)
+
+        -- Render item slots for this bag
+        local bagID = section.bagID
+        local bagData = bank[bagID]
+        local sectionColumns = section.columns
+        local numSlots = section.numSlots
+
+        for slot = 1, numSlots do
+            local itemData = bagData and bagData.slots and bagData.slots[slot]
+            local button = ItemButton:Acquire(frame.container)
+            local slotKey = bagID .. ":" .. slot
+
+            if itemData then
+                ItemButton:SetItem(button, itemData, iconSize, isReadOnly)
+                if hasSearch and not SearchBar:ItemMatchesFilters(frame, itemData) then
+                    button:SetAlpha(0.15)
+                else
+                    button:SetAlpha(1)
+                end
+                cachedItemData[slotKey] = itemData.itemID
+                cachedItemCount[slotKey] = itemData.count
+            else
+                ItemButton:SetEmpty(button, bagID, slot, iconSize, isReadOnly)
+                if hasSearch then
+                    button:SetAlpha(0.15)
+                else
+                    button:SetAlpha(1)
+                end
+                cachedItemData[slotKey] = nil
+                cachedItemCount[slotKey] = nil
+            end
+
+            local col = (slot - 1) % sectionColumns
+            local row = math.floor((slot - 1) / sectionColumns)
+            local x = section.x + col * (iconSize + spacing)
+            local y = section.slotsStartY - (row * (iconSize + spacing))
+
+            button.wrapper:ClearAllPoints()
+            button.wrapper:SetPoint("TOPLEFT", frame.container, "TOPLEFT", x, y)
+
+            buttonsBySlot[slotKey] = button
+            table.insert(itemButtons, button)
+
+            if not buttonsByBag[bagID] then
+                buttonsByBag[bagID] = {}
+            end
+            buttonsByBag[bagID][slot] = button
+        end
     end
 
     layoutCached = true

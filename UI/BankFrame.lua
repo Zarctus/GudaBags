@@ -1092,6 +1092,7 @@ function BankFrame:Refresh()
     local showFooter = showFooterSetting or isViewingCached or not isBankOpen
     local showCategoryCount = Database:GetSetting("showCategoryCount")
     local isReadOnly = isViewingCached or not isBankOpen
+    local splitColumns = Database:GetSetting("splitBankColumns") or 2
 
     local settings = {
         columns = columns,
@@ -1101,6 +1102,7 @@ function BankFrame:Refresh()
         showFilterChips = showFilterChips,
         showFooter = showFooter,
         showCategoryCount = showCategoryCount,
+        splitColumns = splitColumns,
     }
 
     if viewType == "category" then
@@ -1351,17 +1353,21 @@ function BankFrame:RefreshSplitView(bank, bagsToShow, settings, hasSearch, isRea
     local scrollAreaHeight = actualFrameHeight - chromeHeight
     local needsScroll = containerHeight > scrollAreaHeight + 5
 
-    local scrollbarWidth = needsScroll and 20 or 0
-    frame:SetSize(frameWidth + scrollbarWidth, actualFrameHeight)
+    frame:SetSize(frameWidth, actualFrameHeight)
 
     frame.scrollFrame:ClearAllPoints()
     frame.scrollFrame:SetPoint("TOPLEFT", frame, "TOPLEFT", Constants.FRAME.PADDING, -topOffset)
-    frame.scrollFrame:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -Constants.FRAME.PADDING - scrollbarWidth, bottomOffset)
+    frame.scrollFrame:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -Constants.FRAME.PADDING, bottomOffset)
     frame.container:SetSize(contentWidth, math.max(containerHeight, 1))
 
     local scrollBar = frame.scrollFrame.ScrollBar or _G[frame.scrollFrame:GetName() .. "ScrollBar"]
     if needsScroll then
-        if scrollBar then scrollBar:Show() end
+        if scrollBar then
+            scrollBar:ClearAllPoints()
+            scrollBar:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -4, -topOffset - 16)
+            scrollBar:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -4, bottomOffset + 16)
+            scrollBar:Show()
+        end
         frame.scrollFrame:EnableMouseWheel(true)
     else
         if scrollBar then scrollBar:Hide() end

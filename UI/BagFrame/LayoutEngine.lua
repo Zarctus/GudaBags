@@ -1156,11 +1156,16 @@ function LayoutEngine:GetBagDisplayInfo(bagID, bagData, isViewingCached)
     return { name = name, icon = icon }
 end
 
--- Classify bags for split view into primary (full-width top), regular (2-column), special (full-width bottom)
-local function ClassifyBagsForSplitView(bagsToShow, bags, isViewingCached)
+-- Classify bags for split view into primary (full-width top), regular (multi-column), special (full-width bottom)
+local function ClassifyBagsForSplitView(bagsToShow, bags, isViewingCached, settings)
     local BagClassifier = ns:GetModule("BagFrame.BagClassifier")
+    local Database = ns:GetModule("Database")
+    local fullWidthBackpack = Database:GetSetting("splitFullWidthBackpack") ~= false
+    local fullWidthReagent = Database:GetSetting("splitFullWidthReagent") ~= false
+    local fullWidthKeyring = Database:GetSetting("splitFullWidthKeyring") ~= false
+
     local primary = {}   -- Full-width at top (backpack, main bank)
-    local regular = {}   -- 2-column grid
+    local regular = {}   -- Multi-column grid
     local special = {}   -- Full-width at bottom (keyring, reagent, soul, quiver, ammo, profession bags)
 
     for _, bagInfo in ipairs(bagsToShow) do
@@ -1170,8 +1175,24 @@ local function ClassifyBagsForSplitView(bagsToShow, bags, isViewingCached)
         -- Skip bags with no slots
         if bagData and bagData.numSlots and bagData.numSlots > 0 then
             if bagID == Constants.PLAYER_BAG_MIN or bagID == Constants.BANK_MAIN_BAG then
-                table.insert(primary, bagInfo)
-            elseif bagInfo.isKeyring or bagInfo.isReagentBag or bagInfo.isSoulBag then
+                if fullWidthBackpack then
+                    table.insert(primary, bagInfo)
+                else
+                    table.insert(regular, bagInfo)
+                end
+            elseif bagInfo.isReagentBag then
+                if fullWidthReagent then
+                    table.insert(special, bagInfo)
+                else
+                    table.insert(regular, bagInfo)
+                end
+            elseif bagInfo.isKeyring then
+                if fullWidthKeyring then
+                    table.insert(special, bagInfo)
+                else
+                    table.insert(regular, bagInfo)
+                end
+            elseif bagInfo.isSoulBag then
                 table.insert(special, bagInfo)
             else
                 -- Check bag type for profession/quiver/ammo bags
@@ -1190,7 +1211,11 @@ local function ClassifyBagsForSplitView(bagsToShow, bags, isViewingCached)
             local numSlots = C_Container.GetContainerNumSlots(bagID)
             if numSlots and numSlots > 0 then
                 if bagID == Constants.PLAYER_BAG_MIN or bagID == Constants.BANK_MAIN_BAG then
-                    table.insert(primary, bagInfo)
+                    if fullWidthBackpack then
+                        table.insert(primary, bagInfo)
+                    else
+                        table.insert(regular, bagInfo)
+                    end
                 else
                     table.insert(regular, bagInfo)
                 end
@@ -1208,12 +1233,13 @@ function LayoutEngine:BuildSplitViewLayout(bagsToShow, bags, settings, isViewing
     local spacing = settings.spacing
     local columns = settings.columns
 
-    local primary, regular, special = ClassifyBagsForSplitView(bagsToShow, bags, isViewingCached)
+    local primary, regular, special = ClassifyBagsForSplitView(bagsToShow, bags, isViewingCached, settings)
 
+    local splitColumns = settings.splitColumns or 2
     local contentWidth = (iconSize * columns) + (spacing * (columns - 1))
-    local halfColumns = math.floor(columns / 2)
-    local halfWidth = (iconSize * halfColumns) + (spacing * math.max(0, halfColumns - 1))
-    local blockGap = contentWidth - (halfWidth * 2)
+    local blockColumns = math.floor(columns / splitColumns)
+    local blockWidth = (iconSize * blockColumns) + (spacing * math.max(0, blockColumns - 1))
+    local blockGap = (contentWidth - (blockWidth * splitColumns)) / math.max(1, splitColumns - 1)
     if blockGap < SPLIT.BLOCK_GAP then blockGap = SPLIT.BLOCK_GAP end
 
     local sections = {}
@@ -1253,7 +1279,7 @@ function LayoutEngine:BuildSplitViewLayout(bagsToShow, bags, settings, isViewing
         AddFullWidthSection(bagInfo)
     end
 
-    -- Regular bags (2-column grid)
+    -- Regular bags (multi-column grid)
     local col = 0
     local rowStartY = currentY
     local rowMaxHeight = 0
@@ -1264,15 +1290,15 @@ function LayoutEngine:BuildSplitViewLayout(bagsToShow, bags, settings, isViewing
         local numSlots = bagData and bagData.numSlots or (not isViewingCached and C_Container.GetContainerNumSlots(bagID) or 0)
         if numSlots > 0 then
             local displayInfo = self:GetBagDisplayInfo(bagID, bagData, isViewingCached)
-            local rows = math.ceil(numSlots / halfColumns)
+            local rows = math.ceil(numSlots / blockColumns)
             local blockHeight = SPLIT.HEADER_HEIGHT + (rows * (iconSize + spacing))
-            local x = col * (halfWidth + blockGap)
+            local x = col * (blockWidth + blockGap)
 
             table.insert(sections, {
                 bagInfo = bagInfo,
                 bagID = bagID,
                 displayInfo = displayInfo,
-                columns = halfColumns,
+                columns = blockColumns,
                 rows = rows,
                 numSlots = numSlots,
                 x = x,
@@ -1280,7 +1306,7 @@ function LayoutEngine:BuildSplitViewLayout(bagsToShow, bags, settings, isViewing
                 headerY = rowStartY,
                 slotsStartY = rowStartY - SPLIT.HEADER_HEIGHT,
                 isFullWidth = false,
-                width = halfWidth,
+                width = blockWidth,
             })
 
             if blockHeight > rowMaxHeight then
@@ -1288,7 +1314,7 @@ function LayoutEngine:BuildSplitViewLayout(bagsToShow, bags, settings, isViewing
             end
 
             col = col + 1
-            if col >= 2 then
+            if col >= splitColumns then
                 col = 0
                 rowStartY = rowStartY - rowMaxHeight - SPLIT.BLOCK_SPACING
                 rowMaxHeight = 0

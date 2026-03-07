@@ -133,14 +133,26 @@ end
 -------------------------------------------------
 -- Create Tab from Schema
 -------------------------------------------------
-local function CreateTabFromSchema(parent, schema)
+local function CreateTabFromSchema(parent, schemaOrFunc)
     local stack = VerticalStack:Create(parent, { spacing = 10 })
 
-    for _, item in ipairs(schema) do
-        local control = CreateControl(stack, item)
-        if control then
-            stack:AddChild(control)
+    local function BuildFromSchema(schema)
+        for _, item in ipairs(schema) do
+            local control = CreateControl(stack, item)
+            if control then
+                stack:AddChild(control)
+            end
         end
+    end
+
+    if type(schemaOrFunc) == "function" then
+        BuildFromSchema(schemaOrFunc())
+        stack.RefreshAll = function(self)
+            self:Clear()
+            BuildFromSchema(schemaOrFunc())
+        end
+    else
+        BuildFromSchema(schemaOrFunc)
     end
 
     return stack
@@ -1429,13 +1441,23 @@ local function CreateSettingsFrame()
 
     -- Create tab contents
     tabPanel:SetContent("general", CreateTabFromSchema(f, SettingsSchema.GetGeneral()))
-    tabPanel:SetContent("layout", CreateTabFromSchema(f, SettingsSchema.GetLayout()))
+    tabPanel:SetContent("layout", CreateTabFromSchema(f, function() return SettingsSchema.GetLayout() end))
     tabPanel:SetContent("icons", CreateTabFromSchema(f, SettingsSchema.GetIcons()))
     tabPanel:SetContent("bar", CreateTabFromSchema(f, SettingsSchema.GetBar()))
     tabPanel:SetContent("categories", CreateCategoriesTab(f))
     tabPanel:SetContent("guide", CreateGuideTab(f))
 
     tabPanel.SelectTab("general")
+
+    -- Rebuild layout tab when view type changes (to show/hide split column sliders)
+    Events:Register("SETTING_CHANGED", function(event, key)
+        if key == "bagViewType" or key == "bankViewType" then
+            local layoutContent = tabPanel:GetContent("layout")
+            if layoutContent and layoutContent.RefreshAll then
+                layoutContent:RefreshAll()
+            end
+        end
+    end, f)
 
     f:Hide()
     return f

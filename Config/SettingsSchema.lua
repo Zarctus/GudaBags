@@ -59,6 +59,23 @@ function SettingsSchema.GetLayout()
             { value = "split", label = L["SETTINGS_VIEW_SPLIT"] },
         }},
 
+        { type = "separator", label = L["SETTINGS_SECTION_SPLIT"],
+          hidden = function() local Database = ns:GetModule("Database")
+            return Database:GetSetting("bagViewType") ~= "split" and Database:GetSetting("bankViewType") ~= "split" end },
+        { type = "slider", key = "splitBagColumns", label = L["SETTINGS_SPLIT_BAG_COLUMNS"], min = 1, max = 3, step = 1,
+          hidden = function() local Database = ns:GetModule("Database") return Database:GetSetting("bagViewType") ~= "split" end },
+        { type = "slider", key = "splitBankColumns", label = L["SETTINGS_SPLIT_BANK_COLUMNS"], min = 1, max = 4, step = 1,
+          hidden = function() local Database = ns:GetModule("Database") return Database:GetSetting("bankViewType") ~= "split" end },
+        { type = "row", hidden = function() local Database = ns:GetModule("Database")
+            return Database:GetSetting("bagViewType") ~= "split" and Database:GetSetting("bankViewType") ~= "split" end,
+          children = {
+            { type = "checkbox", key = "splitFullWidthBackpack", label = L["SETTINGS_SPLIT_FULL_WIDTH_BACKPACK"], tooltip = L["SETTINGS_SPLIT_FULL_WIDTH_BACKPACK_TIP"] },
+            { type = "checkbox", key = "splitFullWidthReagent", label = L["SETTINGS_SPLIT_FULL_WIDTH_REAGENT"], tooltip = L["SETTINGS_SPLIT_FULL_WIDTH_REAGENT_TIP"],
+              hidden = function() local Expansion = ns:GetModule("Expansion") return not (Expansion and Expansion.IsRetail) end },
+            { type = "checkbox", key = "splitFullWidthKeyring", label = L["SETTINGS_SPLIT_FULL_WIDTH_KEYRING"], tooltip = L["SETTINGS_SPLIT_FULL_WIDTH_KEYRING_TIP"],
+              hidden = function() local Expansion = ns:GetModule("Expansion") return Expansion and Expansion.IsRetail end },
+        }},
+
         { type = "separator", label = L["SETTINGS_SECTION_COLUMNS"] },
         { type = "slider", key = "bagColumns", label = L["SETTINGS_BAG_COLUMNS"], min = 5, max = 22, step = 1 },
         { type = "slider", key = "bankColumns", label = L["SETTINGS_BANK_COLUMNS"], min = 5, max = 36, step = 1 },

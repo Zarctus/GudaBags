@@ -222,6 +222,11 @@ Constants.DEFAULTS = {
     bagColumns = 10,
     bankColumns = 10,
     guildBankColumns = 14,
+    splitBagColumns = 2,
+    splitBankColumns = 2,
+    splitFullWidthBackpack = true,
+    splitFullWidthReagent = true,
+    splitFullWidthKeyring = true,
     bgAlpha = 85,
     locked = false,
     showBorders = true,
@@ -321,7 +326,7 @@ Constants.CATEGORY_UI = {
 
     -- Settings popup
     POPUP_WIDTH = 500,
-    POPUP_HEIGHT = 520,
+    POPUP_HEIGHT = 580,
     POPUP_PADDING = 16,
 
     -- Editor

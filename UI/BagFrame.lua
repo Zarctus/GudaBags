@@ -356,6 +356,8 @@ function BagFrame:Refresh()
 
     local showFilterChips = Database:GetSetting("showFilterChips")
 
+    local splitColumns = Database:GetSetting("splitBagColumns") or 2
+
     local settings = {
         columns = columns,
         iconSize = iconSize,
@@ -364,6 +366,7 @@ function BagFrame:Refresh()
         showFilterChips = showFilterChips,
         showFooter = showFooter,
         showCategoryCount = showCategoryCount,
+        splitColumns = splitColumns,
     }
 
     -- Classify bags by type

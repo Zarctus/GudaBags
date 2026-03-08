@@ -1300,13 +1300,15 @@ function ItemButton:SetItem(button, itemData, size, isReadOnly)
             end
         end
 
-        -- Equipment set icon (use category mark if available)
+        -- Category mark icon (equipment sets + any category with a mark)
         if button.equipSetIcon then
+            local markIcon = nil
+
+            -- Equipment set mark (higher priority)
             if settings.markEquipmentSets and itemData.itemID then
                 local EquipSets = ns:GetModule("EquipmentSets")
                 if EquipSets and EquipSets:IsInSet(itemData.itemID) then
-                    -- Determine icon from category mark
-                    local markIcon = "Interface\\AddOns\\GudaBags\\Assets\\equipment.png"
+                    markIcon = "Interface\\AddOns\\GudaBags\\Assets\\equipment.png"
                     local Database = ns:GetModule("Database")
                     if Database and Database:GetSetting("showEquipSetCategories") then
                         local CategoryManager = ns:GetModule("CategoryManager")
@@ -1321,15 +1323,26 @@ function ItemButton:SetItem(button, itemData, size, isReadOnly)
                             end
                         end
                     end
-                    button.equipSetIcon:SetTexture(markIcon)
-                    button.equipSetIcon:Show()
-                    if button.equipSetIconShadow then
-                        button.equipSetIconShadow:SetTexture(markIcon)
-                        button.equipSetIconShadow:Show()
+                end
+            end
+
+            -- General category mark (if no equipment set mark)
+            if not markIcon and button.categoryId then
+                local CategoryManager = ns:GetModule("CategoryManager")
+                if CategoryManager then
+                    local catDef = CategoryManager:GetCategory(button.categoryId)
+                    if catDef and catDef.categoryMark then
+                        markIcon = catDef.categoryMark
                     end
-                else
-                    button.equipSetIcon:Hide()
-                    if button.equipSetIconShadow then button.equipSetIconShadow:Hide() end
+                end
+            end
+
+            if markIcon then
+                button.equipSetIcon:SetTexture(markIcon)
+                button.equipSetIcon:Show()
+                if button.equipSetIconShadow then
+                    button.equipSetIconShadow:SetTexture(markIcon)
+                    button.equipSetIconShadow:Show()
                 end
             else
                 button.equipSetIcon:Hide()

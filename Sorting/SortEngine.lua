@@ -56,7 +56,7 @@ end
 local sortInProgress = false
 local sortCoroutine = nil
 local currentPass = 0
-local maxPasses = 3  -- 1 main + 1 verify + 1 safety
+local maxPasses = 5  -- 1 main + up to 4 verification/retry passes
 local soundsMuted = false
 
 -- Event-driven lock waiting
@@ -66,9 +66,11 @@ local locksCleared = true
 -- Targeted lock checking: only poll slots involved in recent moves
 local pendingLockSlots = {}  -- flat array: {bagID1, slot1, bagID2, slot2, ...}
 local pendingLockCount = 0   -- number of pairs (actual array length = count * 2)
+local pendingLockSet = {}    -- set: bagID*1000+slot → true (O(1) dependency check)
 
 local function ClearPendingLocks()
     pendingLockCount = 0
+    wipe(pendingLockSet)
 end
 
 local function AddPendingLock(bagID, slot)
@@ -76,6 +78,7 @@ local function AddPendingLock(bagID, slot)
     pendingLockSlots[idx + 1] = bagID
     pendingLockSlots[idx + 2] = slot
     pendingLockCount = pendingLockCount + 1
+    pendingLockSet[bagID * 1000 + slot] = true
 end
 
 -- Performance: Cache computed sort keys by itemID across passes
@@ -941,6 +944,17 @@ local function ExecuteMoves_Yielding(moveList)
     ClearPendingLocks()
 
     for idx, move in ipairs(moveList) do
+        -- If source or target is involved in a pending move, wait for locks first
+        if pendingLockCount > 0 then
+            local srcKey = move.sourceBag * 1000 + move.sourceSlot
+            local tgtKey = move.targetBag * 1000 + move.targetSlot
+            if pendingLockSet[srcKey] or pendingLockSet[tgtKey] then
+                coroutine_yield("wait_locks")
+                StartFrameTimer()
+                ClearPendingLocks()
+            end
+        end
+
         -- Verify source still has expected item
         local sourceInfo = C_Container_GetContainerItemInfo(move.sourceBag, move.sourceSlot)
         local canExecute = sourceInfo and sourceInfo.itemID == move.expectedItemID and not sourceInfo.isLocked

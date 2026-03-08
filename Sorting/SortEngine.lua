@@ -39,8 +39,8 @@ local coroutine_resume = coroutine.resume
 local coroutine_status = coroutine.status
 
 -- Frame budget for coroutine-based sorting (microseconds)
-local FRAME_BUDGET_US = 4000      -- 4ms for player bags
-local FRAME_BUDGET_BANK_US = 6000 -- 6ms for bank (more lenient)
+local FRAME_BUDGET_US = 10000     -- 10ms for player bags
+local FRAME_BUDGET_BANK_US = 14000 -- 14ms for bank (more lenient)
 local frameStartTime = 0
 local currentFrameBudget = FRAME_BUDGET_US
 
@@ -997,7 +997,7 @@ local function ExecuteMoves_Yielding(moveList)
         end
 
         -- Yield periodically for budget and locks
-        if idx % 5 == 0 and IsFrameBudgetExceeded() then
+        if idx % 12 == 0 and IsFrameBudgetExceeded() then
             if pendingLockCount > 0 then
                 coroutine_yield("wait_locks")
                 StartFrameTimer()
@@ -1040,12 +1040,6 @@ local function ConsolidateStacks(bagIDs, bagFamilies)
                 }
             end
         end
-    end
-
-    -- Yield after scan if budget exceeded
-    if IsFrameBudgetExceeded() then
-        coroutine_yield("budget")
-        StartFrameTimer()
     end
 
     local consolidationMoves = 0
@@ -1103,11 +1097,6 @@ local function ConsolidateStacks(bagIDs, bagFamilies)
                                         source.count = source.count + amountToMove
                                         target.count = target.count - amountToMove
                                         consolidationMoves = consolidationMoves + 1
-
-                                        if consolidationMoves % 5 == 0 and IsFrameBudgetExceeded() then
-                                            coroutine_yield("budget")
-                                            StartFrameTimer()
-                                        end
 
                                         if source.count >= maxStack then break end
                                     end

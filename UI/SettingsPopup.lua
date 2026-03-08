@@ -5,6 +5,7 @@ ns:RegisterModule("SettingsPopup", SettingsPopup)
 
 local Events = ns:GetModule("Events")
 local IconButton = ns:GetModule("IconButton")
+local Theme = ns:GetModule("Theme")
 
 -- Components (loaded after this file via TOC order)
 local Slider, Checkbox, ToggleButton, Select
@@ -1380,11 +1381,110 @@ local function CreateGuideTab(parent)
 end
 
 -------------------------------------------------
+-- Apply theme to settings popup
+-------------------------------------------------
+local classicBorderKeys = {
+    "BotLeftCorner", "BotRightCorner", "BottomBorder",
+    "LeftBorder", "RightBorder",
+    "TopRightCorner", "TopLeftCorner", "TopBorder",
+}
+
+local CLOSE_TEXTURE = "Interface\\AddOns\\GudaBags\\Assets\\Themes\\retail\\redbutton2x"
+local CLOSE_TEXCOORDS = {
+    normal    = {0.152344, 0.292969, 0.0078125, 0.304688},
+    pushed    = {0.152344, 0.292969, 0.320312, 0.617188},
+    highlight = {0.449219, 0.589844, 0.0078125, 0.304688},
+}
+
+local function ResetAllChromeToHidden()
+    -- Hide Blizzard chrome
+    if frame.Bg then frame.Bg:Hide() end
+    if frame.TitleBg then frame.TitleBg:Hide() end
+    if frame.TopTileStreaks then frame.TopTileStreaks:Hide() end
+    for _, key in ipairs(classicBorderKeys) do
+        if frame[key] then frame[key]:Hide() end
+    end
+    if frame.NineSlice then frame.NineSlice:Hide() end
+    -- Hide metal frame overlay
+    if frame.metalFrame then frame.metalFrame:Hide() end
+    -- Clear backdrop
+    frame:SetBackdrop(nil)
+    -- Hide both close buttons
+    if frame.CloseButton then frame.CloseButton:Hide() end
+    if frame._retailCloseBtn then frame._retailCloseBtn:Hide() end
+end
+
+local function EnsureRetailCloseButton()
+    if frame._retailCloseBtn then return frame._retailCloseBtn end
+
+    local btn = CreateFrame("Button", nil, frame)
+    btn:SetSize(20, 20)
+    btn:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -2, -3)
+    btn:SetFrameLevel(frame:GetFrameLevel() + 10)
+
+    local normal = btn:CreateTexture(nil, "ARTWORK")
+    normal:SetTexture(CLOSE_TEXTURE)
+    normal:SetAllPoints()
+    normal:SetTexCoord(unpack(CLOSE_TEXCOORDS.normal))
+    btn:SetNormalTexture(normal)
+
+    local pushed = btn:CreateTexture(nil, "ARTWORK")
+    pushed:SetTexture(CLOSE_TEXTURE)
+    pushed:SetAllPoints()
+    pushed:SetTexCoord(unpack(CLOSE_TEXCOORDS.pushed))
+    btn:SetPushedTexture(pushed)
+
+    local hl = btn:CreateTexture(nil, "HIGHLIGHT")
+    hl:SetTexture(CLOSE_TEXTURE)
+    hl:SetAllPoints()
+    hl:SetTexCoord(unpack(CLOSE_TEXCOORDS.highlight))
+    hl:SetBlendMode("ADD")
+    btn:SetHighlightTexture(hl)
+
+    btn:SetScript("OnClick", function() frame:Hide() end)
+
+    frame._retailCloseBtn = btn
+    return btn
+end
+
+local function ApplySettingsTheme()
+    if not frame then return end
+    local useMetal = Theme:GetValue("useMetalFrame")
+    local useBlizzard = Theme:GetValue("useBlizzardFrame")
+
+    ResetAllChromeToHidden()
+
+    if useMetal then
+        -- Retail theme: metal frame overlay + retail close button
+        Theme:ApplyFrameBackground(frame, 1, true)
+        EnsureRetailCloseButton():Show()
+    elseif useBlizzard then
+        -- Blizzard theme: restore all ButtonFrameTemplate chrome
+        if frame.Bg then frame.Bg:Show() end
+        if frame.TitleBg then frame.TitleBg:Show() end
+        if frame.TopTileStreaks then frame.TopTileStreaks:Show() end
+        for _, key in ipairs(classicBorderKeys) do
+            if frame[key] then frame[key]:Show() end
+        end
+        if frame.NineSlice then frame.NineSlice:Show() end
+        frame.CloseButton:Show()
+    else
+        -- Guda theme: dark minimal backdrop
+        frame:SetBackdrop(Theme:GetValue("backdrop"))
+        local bg = Theme:GetValue("frameBg")
+        frame:SetBackdropColor(bg[1], bg[2], bg[3], 1)
+        local border = Theme:GetValue("frameBorder")
+        frame:SetBackdropBorderColor(border[1], border[2], border[3], border[4])
+        frame.CloseButton:Show()
+    end
+end
+
+-------------------------------------------------
 -- Create Main Settings Frame
 -------------------------------------------------
 local function CreateSettingsFrame()
     -- Use ButtonFrameTemplate for standard Blizzard look
-    local f = CreateFrame("Frame", "GudaBagsSettingsPopup", UIParent, "ButtonFrameTemplate")
+    local f = CreateFrame("Frame", "GudaBagsSettingsPopup", UIParent, "ButtonFrameTemplate,BackdropTemplate")
     f:SetSize(POPUP_WIDTH, POPUP_HEIGHT)
     f:SetPoint("CENTER")
     f:SetMovable(true)
@@ -1450,6 +1550,7 @@ local function CreateSettingsFrame()
     tabPanel.SelectTab("general")
 
     -- Rebuild layout tab when view type changes (to show/hide split column sliders)
+    -- Also re-apply theme when theme setting changes
     Events:Register("SETTING_CHANGED", function(event, key)
         if key == "bagViewType" or key == "bankViewType" then
             local layoutContent = tabPanel:GetContent("layout")
@@ -1457,7 +1558,13 @@ local function CreateSettingsFrame()
                 layoutContent:RefreshAll()
             end
         end
+        if key == "theme" then
+            ApplySettingsTheme()
+        end
     end, f)
+
+    -- Apply theme to settings frame
+    ApplySettingsTheme()
 
     f:Hide()
     return f

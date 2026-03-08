@@ -281,7 +281,7 @@ function Theme:ApplyFrameBackground(frame, bgAlpha, showBorders)
     if useMetal then
         -- Hide other theme elements
         if frame.blizzardBg then frame.blizzardBg:Hide() end
-        frame:SetBackdrop(nil)
+        if frame.SetBackdrop then frame:SetBackdrop(nil) end
         if frame.themeBg then frame.themeBg:Hide() end
         -- Create/show metal frame
         local mf = EnsureMetalFrame(frame)
@@ -498,6 +498,11 @@ local function StyleCloseButton(btn, useMetal)
 
         btn._metalStyled = false
     end
+end
+
+--- Public wrapper for StyleCloseButton
+function Theme:StyleCloseButton(btn, useMetal)
+    StyleCloseButton(btn, useMetal)
 end
 
 local METAL_ICON_SIZE = 13

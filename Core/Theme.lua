@@ -93,8 +93,6 @@ local themes = {
         },
     },
 }
-themes.classic = themes.blizzard
-
 -------------------------------------------------
 -- Classic border texture keys in ButtonFrameTemplate
 -------------------------------------------------
@@ -119,6 +117,8 @@ function Theme:Get()
     local themeName = Database:GetSetting("theme") or "guda"
     if themeName == "retail" and ns.IsRetail then
         themeName = "guda"
+    elseif themeName == "classic" then
+        themeName = "blizzard"
     end
     if cachedTheme and cachedThemeName == themeName then
         return cachedTheme

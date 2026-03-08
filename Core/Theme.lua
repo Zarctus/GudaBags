@@ -93,6 +93,7 @@ local themes = {
         },
     },
 }
+themes.classic = themes.blizzard
 
 -------------------------------------------------
 -- Classic border texture keys in ButtonFrameTemplate

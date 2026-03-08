@@ -18,6 +18,8 @@ function SettingsSchema.GetGeneral()
             }
             if not ns.IsRetail then
                 table.insert(opts, { value = "retail", label = L["SETTINGS_THEME_RETAIL"] })
+            else
+                table.insert(opts, { value = "classic", label = L["SETTINGS_THEME_CLASSIC"] })
             end
             return opts
         end)()},

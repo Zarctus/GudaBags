@@ -1240,7 +1240,11 @@ function LayoutEngine:BuildSplitViewLayout(bagsToShow, bags, settings, isViewing
     local blockColumns = math.floor(columns / splitColumns)
     local blockWidth = (iconSize * blockColumns) + (spacing * math.max(0, blockColumns - 1))
     local blockGap = (contentWidth - (blockWidth * splitColumns)) / math.max(1, splitColumns - 1)
-    if blockGap < SPLIT.BLOCK_GAP then blockGap = SPLIT.BLOCK_GAP end
+    if blockGap < SPLIT.BLOCK_GAP then
+        blockGap = SPLIT.BLOCK_GAP
+        -- Recalculate contentWidth so blocks + gaps fit with proper padding
+        contentWidth = (blockWidth * splitColumns) + (blockGap * math.max(0, splitColumns - 1))
+    end
 
     local sections = {}
     local currentY = 0

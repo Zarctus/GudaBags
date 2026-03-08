@@ -109,9 +109,10 @@ end
 -- SORT KEY DEFINITIONS
 --===========================================================================
 
--- Priority items (Hearthstone always first)
+-- Priority items (Hearthstone and similar always first, mounts second)
 local PRIORITY_ITEMS = {
-    [6948] = 1, -- Hearthstone
+    [6948] = 1,    -- Hearthstone
+    [260221] = 1,  -- Naaru's Embrace
 }
 
 -- Item class ordering (maps WoW item classID to sort order)
@@ -467,8 +468,18 @@ local function SnapshotSlots(bagIDs)
                         sortedClassID = 100
                     end
 
+                    -- Mount items (classID 15, subClassID 5) sort right after priority items
+                    local itemPriority = PRIORITY_ITEMS[itemID]
+                    if not itemPriority then
+                        if info.classID == 15 and info.subClassID == 5 then
+                            itemPriority = 2  -- Mounts: after hearthstone (1), before everything else
+                        else
+                            itemPriority = 1000
+                        end
+                    end
+
                     sk = {
-                        priority = PRIORITY_ITEMS[itemID] or 1000,
+                        priority = itemPriority,
                         sortedClassID = sortedClassID,
                         sortedSubClassID = GetSortedSubClassID(info.classID, info.subClassID),
                         sortedEquipSlot = GetEquipSlotOrder(info.equipLoc),

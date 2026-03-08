@@ -141,7 +141,7 @@ function GuildBankHeader:SetBackdropAlpha(alpha)
         if frame.closeButton then frame.closeButton:SetSize(closeSize, closeSize) end
         -- Raise header above blizzardBg's NineSlice on retail
         local parent = frame:GetParent()
-        if parent.blizzardBg then
+        if parent.blizzardBg or parent.metalFrame then
             frame:SetFrameLevel(parent:GetFrameLevel() + Constants.FRAME_LEVELS.HEADER)
         end
     end

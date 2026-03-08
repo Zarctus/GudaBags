@@ -148,7 +148,7 @@ function MailHeader:SetBackdropAlpha(alpha)
         local closeSize = ns.IsRetail and 22 or 32
         if frame.closeButton then frame.closeButton:SetSize(closeSize, closeSize) end
         local parent = frame:GetParent()
-        if parent.blizzardBg then
+        if parent.blizzardBg or parent.metalFrame then
             frame:SetFrameLevel(parent:GetFrameLevel() + Constants.FRAME_LEVELS.HEADER)
         end
     end

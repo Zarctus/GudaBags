@@ -74,6 +74,9 @@ local function UpdateFrameAppearance()
     -- Apply theme background (ButtonFrameTemplate for Blizzard, backdrop for Guda)
     Theme:ApplyFrameBackground(frame, bgAlpha, showBorders)
 
+    local ItemButton = ns:GetModule("ItemButton")
+    if ItemButton then ItemButton:ApplyThemeTextures() end
+
     if MailHeader then
         MailHeader:SetBackdropAlpha(bgAlpha)
     end

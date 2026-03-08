@@ -301,9 +301,9 @@ function Header:SetBackdropAlpha(alpha)
         frame:SetPoint("TOPRIGHT", frame:GetParent(), "TOPRIGHT", 4, 0)
         local closeSize = ns.IsRetail and 22 or 32
         if frame.closeButton then frame.closeButton:SetSize(closeSize, closeSize) end
-        -- Raise header above blizzardBg's NineSlice on retail
+        -- Raise header above blizzardBg's NineSlice or metalFrame overlay
         local parent = frame:GetParent()
-        if parent.blizzardBg then
+        if parent.blizzardBg or parent.metalFrame then
             frame:SetFrameLevel(parent:GetFrameLevel() + Constants.FRAME_LEVELS.HEADER)
         end
     end

@@ -37,6 +37,23 @@ local function SuppressItemErrors()
     end
 end
 
+-- Apply retail/default slot textures to a single button
+local function ApplyThemeToButton(button, slotTex)
+    if slotTex then
+        button.slotBackground:Hide()
+        button.retailSlotBg:SetTexture(slotTex.background)
+        button.retailSlotBg:Show()
+        button.highlight:Hide()
+        button.retailHighlight:SetTexture(slotTex.highlight)
+        button.retailHighlight:Show()
+    else
+        button.slotBackground:Show()
+        if button.retailSlotBg then button.retailSlotBg:Hide() end
+        button.highlight:Show()
+        if button.retailHighlight then button.retailHighlight:Hide() end
+    end
+end
+
 -- Phase 1: Use Blizzard's optimized CreateObjectPool API
 local buttonPool = nil  -- Lazy initialized
 local buttonIndex = 0
@@ -342,6 +359,13 @@ local function CreateButton(parent)
     slotBackground:SetTexture("Interface\\Buttons\\UI-EmptySlot")
     button.slotBackground = slotBackground
 
+    -- Retail theme slot background (hidden by default)
+    local retailSlotBg = button:CreateTexture(nil, "BACKGROUND", nil, -1)
+    retailSlotBg:SetPoint("TOPLEFT", button, "TOPLEFT", -2, 2)
+    retailSlotBg:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", 2, -2)
+    retailSlotBg:Hide()
+    button.retailSlotBg = retailSlotBg
+
     -- Item icon fills button completely to match empty slot size
     local icon = button.icon or button.Icon or _G[name .. "IconTexture"]
     if icon then
@@ -396,6 +420,14 @@ local function CreateButton(parent)
     highlight:SetTexture("Interface\\Buttons\\ButtonHilight-Square")
     highlight:SetBlendMode("ADD")
     button.highlight = highlight
+
+    -- Retail theme highlight (hidden by default)
+    local retailHighlight = button:CreateTexture(nil, "HIGHLIGHT")
+    retailHighlight:SetPoint("TOPLEFT", button, "TOPLEFT", -4, 4)
+    retailHighlight:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", 4, -4)
+    retailHighlight:SetBlendMode("ADD")
+    retailHighlight:Hide()
+    button.retailHighlight = retailHighlight
 
     -- Cooldown frame
     local cooldown = CreateFrame("Cooldown", name .. "Cooldown", button, "CooldownFrameTemplate")
@@ -943,6 +975,11 @@ function ItemButton:Acquire(parent)
     button.wrapper:SetShown(true)  -- Use SetShown to avoid taint during combat
     button:SetShown(true)
     button.owner = parent
+
+    -- Apply retail slot textures immediately so first-open doesn't flash default
+    local Theme = ns:GetModule("Theme")
+    ApplyThemeToButton(button, Theme:Get().slotTextures)
+
     return button
 end
 
@@ -1451,6 +1488,15 @@ function ItemButton:UpdateFontSize()
     if not buttonPool then return end
     for button in buttonPool:EnumerateActive() do
         ApplyFontSize(button)
+    end
+end
+
+function ItemButton:ApplyThemeTextures()
+    local Theme = ns:GetModule("Theme")
+    local slotTex = Theme:Get().slotTextures
+    if not buttonPool then return end
+    for button in buttonPool:EnumerateActive() do
+        ApplyThemeToButton(button, slotTex)
     end
 end
 

@@ -500,7 +500,6 @@ local function CreateSideTab(parent, index, isAllTab)
 end
 
 -- Tab icons
-local TAB_ICON_ALL = "Interface\\AddOns\\GudaBags\\Assets\\chest.png"  -- Chest icon for "All" tab
 local TAB_ICON_DEFAULT = "Interface\\Icons\\INV_Misc_Bag_10"  -- Default fallback icon
 
 function BankFrame:ShowSideTabs(characterFullName, bankType)

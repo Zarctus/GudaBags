@@ -5,9 +5,7 @@ ns:RegisterModule("Footer", Footer)
 
 local Constants = ns.Constants
 
-local function GetDatabase()
-    return ns:GetModule("Database")
-end
+local Database = ns:GetModule("Database")
 
 local frame = nil
 local backButton = nil
@@ -173,8 +171,7 @@ function Footer:Show()
     -- Position soul bag relative to bag slots (Warlock only, single view only)
     local soulBagButton = SoulBag:GetButton()
     if soulBagButton then
-        local Database = ns:GetModule("Database")
-        local viewType = Database and Database:GetSetting("bagViewType") or "single"
+        local viewType = Database:GetSetting("bagViewType") or "single"
         if viewType == "single" then
             SoulBag:SetAnchor(lastAnchor)
             SoulBag:Show()
@@ -233,8 +230,7 @@ function Footer:Update()
     -- Update soul bag visibility based on view type
     local soulBagButton = SoulBag:GetButton()
     if soulBagButton then
-        local Database = ns:GetModule("Database")
-        local viewType = Database and Database:GetSetting("bagViewType") or "single"
+        local viewType = Database:GetSetting("bagViewType") or "single"
         local bagAnchor = BagSlots:GetAnchor()
         local keyringButton = Keyring:GetButton()
 
@@ -377,8 +373,7 @@ function Footer:ShowCached(characterFullName)
     -- Position and show soul bag toggle (Warlock only, single view only)
     local soulBagButton = SoulBag:GetButton()
     if soulBagButton then
-        local Database = ns:GetModule("Database")
-        local viewType = Database and Database:GetSetting("bagViewType") or "single"
+        local viewType = Database:GetSetting("bagViewType") or "single"
         if viewType == "single" then
             SoulBag:SetAnchor(lastAnchor)
             SoulBag:Show()

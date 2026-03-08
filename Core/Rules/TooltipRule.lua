@@ -1,34 +1,8 @@
 local addonName, ns = ...
 
 local RuleEngine = ns:GetModule("RuleEngine")
+local Utils = ns:GetModule("Utils")
 local Constants = ns.Constants
-
--------------------------------------------------
--- Helper: Check if item is a profession tool
--------------------------------------------------
-
-local function IsProfessionTool(itemData)
-    if itemData.itemID and Constants.PROFESSION_TOOL_IDS[itemData.itemID] then
-        return true
-    end
-
-    local subtype = itemData.itemSubType
-    if subtype == "Fishing Poles" or subtype == "Fishing Pole" then
-        return true
-    end
-
-    local name = itemData.name
-    if name then
-        if name:find("Mining Pick") or name:find("Skinning Knife") or
-           name:find("Blacksmith Hammer") or name:find("Runed.*Rod") or
-           name:find("Philosopher's Stone") or name:find("Alchemist") or
-           name:find("Spanner") or name:find("Gyromatic") then
-            return true
-        end
-    end
-
-    return false
-end
 
 -------------------------------------------------
 -- Bind on Equip Rule
@@ -82,7 +56,7 @@ RuleEngine:RegisterEvaluator("isJunk", function(ruleValue, itemData, context)
     end
 
     -- Profession tools are never junk
-    if IsProfessionTool(itemData) then
+    if Utils:IsProfessionTool(itemData) then
         return false == ruleValue
     end
 

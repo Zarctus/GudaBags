@@ -4,23 +4,23 @@ local CategoryService = {}
 ns:RegisterModule("CategoryService", CategoryService)
 
 local Constants = ns.Constants
+local CategoryManager = ns:GetModule("CategoryManager")
+local Database = ns:GetModule("Database")
+local Events = ns:GetModule("Events")
 
 -------------------------------------------------
 -- Category Access
 -------------------------------------------------
 
 function CategoryService:GetCategories()
-    local CategoryManager = ns:GetModule("CategoryManager")
     return CategoryManager:GetCategories()
 end
 
 function CategoryService:GetCategory(categoryId)
-    local CategoryManager = ns:GetModule("CategoryManager")
     return CategoryManager:GetCategory(categoryId)
 end
 
 function CategoryService:GetCategoryOrder()
-    local CategoryManager = ns:GetModule("CategoryManager")
     return CategoryManager:GetCategoryOrder()
 end
 
@@ -29,27 +29,22 @@ end
 -------------------------------------------------
 
 function CategoryService:CreateCategory(name, group)
-    local CategoryManager = ns:GetModule("CategoryManager")
     return CategoryManager:AddCategory(name, nil, group)
 end
 
 function CategoryService:UpdateCategory(categoryId, changes)
-    local CategoryManager = ns:GetModule("CategoryManager")
     return CategoryManager:UpdateCategory(categoryId, changes)
 end
 
 function CategoryService:DeleteCategory(categoryId)
-    local CategoryManager = ns:GetModule("CategoryManager")
     return CategoryManager:DeleteCategory(categoryId)
 end
 
 function CategoryService:ToggleCategory(categoryId)
-    local CategoryManager = ns:GetModule("CategoryManager")
     return CategoryManager:ToggleCategory(categoryId)
 end
 
 function CategoryService:ResetToDefaults()
-    local CategoryManager = ns:GetModule("CategoryManager")
     return CategoryManager:ResetToDefaults()
 end
 
@@ -58,7 +53,6 @@ end
 -------------------------------------------------
 
 function CategoryService:MoveCategory(categoryId, targetIndex, targetGroup)
-    local CategoryManager = ns:GetModule("CategoryManager")
     local categories = CategoryManager:GetCategories()
     local order = categories.order
     local def = categories.definitions[categoryId]
@@ -100,12 +94,10 @@ function CategoryService:MoveCategory(categoryId, targetIndex, targetGroup)
 end
 
 function CategoryService:MoveCategoryUp(categoryId)
-    local CategoryManager = ns:GetModule("CategoryManager")
     return CategoryManager:MoveCategoryUp(categoryId)
 end
 
 function CategoryService:MoveCategoryDown(categoryId)
-    local CategoryManager = ns:GetModule("CategoryManager")
     return CategoryManager:MoveCategoryDown(categoryId)
 end
 
@@ -156,7 +148,6 @@ function CategoryService:SetCategoryGroup(categoryId, groupName)
 
     if def then
         def.group = groupName or ""
-        local CategoryManager = ns:GetModule("CategoryManager")
         CategoryManager:SaveCategories(categories)
         return true
     end
@@ -169,16 +160,12 @@ end
 -------------------------------------------------
 
 function CategoryService:GetGroupSettings()
-    local Database = ns:GetModule("Database")
     return {
         mergedGroups = Database:GetSetting("mergedGroups") or {},
     }
 end
 
 function CategoryService:SetGroupMerged(groupName, merged)
-    local Database = ns:GetModule("Database")
-    local Events = ns:GetModule("Events")
-
     local current = Database:GetSetting("mergedGroups") or {}
     current[groupName] = merged
     Database:SetSetting("mergedGroups", current)
@@ -189,7 +176,6 @@ function CategoryService:SetGroupMerged(groupName, merged)
 end
 
 function CategoryService:IsGroupMerged(groupName)
-    local Database = ns:GetModule("Database")
     local mergedGroups = Database:GetSetting("mergedGroups") or {}
     return mergedGroups[groupName] == true
 end
@@ -206,7 +192,6 @@ end
 -------------------------------------------------
 
 function CategoryService:GetRuleTypes()
-    local CategoryManager = ns:GetModule("CategoryManager")
     return CategoryManager:GetRuleTypes()
 end
 
@@ -215,11 +200,9 @@ end
 -------------------------------------------------
 
 function CategoryService:CategorizeItem(itemData, bagID, slotID, isOtherChar)
-    local CategoryManager = ns:GetModule("CategoryManager")
     return CategoryManager:CategorizeItem(itemData, bagID, slotID, isOtherChar)
 end
 
 function CategoryService:GetCategoriesByPriority()
-    local CategoryManager = ns:GetModule("CategoryManager")
     return CategoryManager:GetCategoriesByPriority()
 end

@@ -7,6 +7,7 @@ local Constants = ns.Constants
 local L = ns.L
 local Database = ns:GetModule("Database")
 local Events = ns:GetModule("Events")
+local Utils = ns:GetModule("Utils")
 
 -- Local state
 local frame = nil
@@ -27,32 +28,6 @@ end
 
 local function GetMaxColumns()
     return Database:GetSetting("trackedBarColumns") or 12
-end
-
--------------------------------------------------
--- Border Creation (same style as bag items)
--------------------------------------------------
-
-local function CreateBorder(button)
-    local BORDER_THICKNESS = Constants.ICON.BORDER_THICKNESS
-
-    local borderFrame = CreateFrame("Frame", nil, button, "BackdropTemplate")
-    borderFrame:SetPoint("TOPLEFT", button, "TOPLEFT", -BORDER_THICKNESS, BORDER_THICKNESS)
-    borderFrame:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", BORDER_THICKNESS, -BORDER_THICKNESS)
-    borderFrame:SetFrameLevel(button:GetFrameLevel() + Constants.FRAME_LEVELS.BORDER)
-
-    borderFrame:SetBackdrop({
-        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-        edgeSize = 12,
-        insets = {left = 2, right = 2, top = 2, bottom = 2},
-    })
-    borderFrame:Hide()
-
-    borderFrame.SetVertexColor = function(self, r, g, b, a)
-        self:SetBackdropBorderColor(r, g, b, a)
-    end
-
-    return borderFrame
 end
 
 -------------------------------------------------
@@ -140,7 +115,7 @@ local function CreateItemButton(parent, index)
     highlight:SetBlendMode("ADD")
 
     -- Quality border (same style as bag items)
-    local border = CreateBorder(button)
+    local border = Utils:CreateItemBorder(button)
     button.border = border
 
     -- Quest starter icon (top left corner) - exclamation mark for quest starter items

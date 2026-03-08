@@ -3,9 +3,7 @@ local addonName, ns = ...
 local Characters = {}
 ns:RegisterModule("Header.Characters", Characters)
 
-local function GetDatabase()
-    return ns:GetModule("Database")
-end
+local Database = ns:GetModule("Database")
 
 local frame = nil
 local onCharacterSelected = nil
@@ -101,7 +99,6 @@ end
 local function PopulateDropdown()
     if not frame then return end
 
-    local Database = GetDatabase()
     local characters = Database:GetAllCharacters(false, true) -- Same realm only
     local currentFullName = Database:GetPlayerFullName()
     local BagFrame = ns:GetModule("BagFrame")

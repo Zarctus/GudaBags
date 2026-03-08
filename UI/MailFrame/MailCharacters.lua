@@ -5,12 +5,9 @@ ns:RegisterModule("MailFrame.MailCharacters", MailCharacters)
 
 local CharacterDropdown = ns:GetModule("CharacterDropdown")
 
-local function GetDatabase()
-    return ns:GetModule("Database")
-end
+local Database = ns:GetModule("Database")
 
 local function HasMailData(fullName)
-    local Database = GetDatabase()
     local mailbox = Database:GetMailbox(fullName)
     return mailbox and #mailbox > 0
 end

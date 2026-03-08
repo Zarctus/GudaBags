@@ -5,9 +5,7 @@ ns:RegisterModule("Footer.Money", Money)
 
 local Utils = ns:GetModule("Utils")
 
-local function GetDatabase()
-    return ns:GetModule("Database")
-end
+local Database = ns:GetModule("Database")
 
 local moneyFrame = nil
 
@@ -53,8 +51,8 @@ local function ShowMoneyTooltip(frame)
     GameTooltip:SetOwner(frame, "ANCHOR_TOPRIGHT", 0, 0)
     GameTooltip:ClearLines()
 
-    local chars = GetDatabase():GetAllCharacters(false, true)
-    local totalMoney = GetDatabase():GetTotalMoney(false, true)
+    local chars = Database:GetAllCharacters(false, true)
+    local totalMoney = Database:GetTotalMoney(false, true)
 
     GameTooltip:AddDoubleLine("Realm gold:", FormatMoney(totalMoney), 1, 0.82, 0, 1, 1, 1)
     GameTooltip:AddLine(" ")
@@ -152,7 +150,7 @@ end
 
 function Money:UpdateCached(characterFullName)
     if not moneyFrame then return end
-    local money = GetDatabase():GetMoney(characterFullName)
+    local money = Database:GetMoney(characterFullName)
     MoneyFrame_Update(moneyFrame.frameName, money)
 end
 

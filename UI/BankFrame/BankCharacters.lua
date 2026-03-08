@@ -5,12 +5,9 @@ ns:RegisterModule("BankFrame.BankCharacters", BankCharacters)
 
 local CharacterDropdown = ns:GetModule("CharacterDropdown")
 
-local function GetDatabase()
-    return ns:GetModule("Database")
-end
+local Database = ns:GetModule("Database")
 
 local function HasBankData(fullName)
-    local Database = GetDatabase()
     local bank = Database:GetNormalizedBank(fullName)
     if not bank then return false end
 

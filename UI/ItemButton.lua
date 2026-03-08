@@ -6,6 +6,7 @@ ns:RegisterModule("ItemButton", ItemButton)
 local Constants = ns.Constants
 local Database = ns:GetModule("Database")
 local Tooltip = ns:GetModule("Tooltip")
+local Utils = ns:GetModule("Utils")
 
 -- Suppress spurious "Item isn't ready yet" errors on retail
 -- ContainerFrameItemButtonTemplate shows this error incorrectly when clicking usable items
@@ -20,7 +21,6 @@ if UIErrorsFrame and ns.IsRetail then
         if suppressItemErrors and GetTime() < suppressUntil then
             -- Check if this is one of the spurious error messages
             local errItemNotReady = ERR_ITEM_NOT_READY or "Item is not ready yet"
-            local errGenericNoTarget = ERR_GENERIC_NO_TARGET or "You have no target"
             if msg and (msg:find(errItemNotReady) or msg == errItemNotReady) then
                 return  -- Suppress this error
             end
@@ -121,8 +121,6 @@ local function ResetButton(pool, button)
     if button.cooldown then CooldownFrame_Set(button.cooldown, 0, 0, false) end
 end
 
-local BASE_BUTTON_SIZE = 37
-
 local function ApplyFontSize(button, fontSize)
     fontSize = fontSize or Database:GetSetting("iconFontSize")
     if button.Count then
@@ -184,10 +182,6 @@ local function IsJunkItem(itemData)
                 return false
             end
 
-            local isTool = IsTool(itemData.name)
-            if isTool then
-                return false
-            end
             -- Check for special properties (unique, use, equip effects, green/yellow text)
             -- Use cached value from ItemScanner to avoid tooltip rescans
             if itemData.hasSpecialProperties then
@@ -198,28 +192,6 @@ local function IsJunkItem(itemData)
     end
 
     return false
-end
-
-local function CreateBorder(button)
-    local BORDER_THICKNESS = Constants.ICON.BORDER_THICKNESS
-
-    local borderFrame = CreateFrame("Frame", nil, button, "BackdropTemplate")
-    borderFrame:SetPoint("TOPLEFT", button, "TOPLEFT", -BORDER_THICKNESS, BORDER_THICKNESS)
-    borderFrame:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", BORDER_THICKNESS, -BORDER_THICKNESS)
-    borderFrame:SetFrameLevel(button:GetFrameLevel() + Constants.FRAME_LEVELS.BORDER)
-
-    borderFrame:SetBackdrop({
-        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-        edgeSize = 12,
-        insets = {left = 2, right = 2, top = 2, bottom = 2},
-    })
-    borderFrame:Hide()
-
-    borderFrame.SetVertexColor = function(self, r, g, b, a)
-        self:SetBackdropBorderColor(r, g, b, a)
-    end
-
-    return borderFrame
 end
 
 local function CreateButton(parent)
@@ -392,7 +364,7 @@ local function CreateButton(parent)
     end
 
     -- Quality border (our custom one, not template's)
-    local border = CreateBorder(button)
+    local border = Utils:CreateItemBorder(button)
     button.border = border
 
     -- Inner shadow/glow for quality colors (inset effect)

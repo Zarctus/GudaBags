@@ -111,7 +111,9 @@ local function ScanTooltipForItem(bagID, slot, itemType, itemID, itemLink, itemQ
     end
 
     -- Mark items with itemType "Quest" as quest items (respect ignore list)
-    if not isQuestIgnored and itemType == "Quest" then
+    -- Only flag poor/common quality items — green+ quality "Quest" type items
+    -- are typically glyphs, enchants, or other non-quest items misclassified by WoW
+    if not isQuestIgnored and itemType == "Quest" and (not itemQuality or itemQuality < 2) then
         isQuestItem = true
     end
 

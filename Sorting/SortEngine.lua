@@ -1,5 +1,5 @@
 -- GudaBags Sort Engine
--- Multi-phase sorting algorithm for Classic expansions
+-- Single-pass snapshot-based sorting algorithm for Classic expansions
 
 local addonName, ns = ...
 
@@ -56,8 +56,12 @@ end
 local sortInProgress = false
 local sortCoroutine = nil
 local currentPass = 0
-local maxPasses = 10  -- Increased from 6 to ensure sort completes
+local maxPasses = 3  -- 1 main + 1 verify + 1 safety
 local soundsMuted = false
+
+-- Event-driven lock waiting
+local waitingForLocks = false
+local locksCleared = true
 
 -- Targeted lock checking: only poll slots involved in recent moves
 local pendingLockSlots = {}  -- flat array: {bagID1, slot1, bagID2, slot2, ...}
@@ -358,25 +362,21 @@ local function SlotPairKey(bag1, slot1, bag2, slot2)
 end
 
 --===========================================================================
--- PHASE 1: Classify Bags
+-- BAG CLASSIFICATION
 --===========================================================================
 
 local function ClassifyBags(bagIDs)
-    -- Build container types based on expansion
     local containers = {
-        -- Common bag types (all Classic expansions)
         soul = {}, herb = {}, enchant = {},
         engineering = {}, mining = {}, leatherworking = {},
         specialized = {}, regular = {}
     }
 
-    -- TBC-specific bag types
     if Expansion.IsTBC then
         containers.quiver = {}
         containers.ammo = {}
     end
 
-    -- MoP-specific bag types
     if Expansion.IsMoP then
         containers.gem = {}
         containers.inscription = {}
@@ -403,208 +403,12 @@ local function ClassifyBags(bagIDs)
 end
 
 --===========================================================================
--- PHASE 2: Route Specialized Items
+-- SNAPSHOT-BASED SLOT MAP
+-- Scans all slots ONCE, builds in-memory map for all subsequent computation
 --===========================================================================
 
-local function RouteSpecializedItems(bagIDs, containers, bagFamilies)
-    local routingPlan = {}
-
-    -- Pre-compute free slot lists per container type (avoids nested scanning)
-    local freeSlotsByType = {}
-    local freeSlotIdx = {}
-    for bagType, bagList in pairs(containers) do
-        if bagType ~= "regular" then
-            local free = {}
-            for _, targetBagID in ipairs(bagList) do
-                local numSlots = C_Container_GetContainerNumSlots(targetBagID)
-                for slot = 1, numSlots do
-                    if not C_Container_GetContainerItemInfo(targetBagID, slot) then
-                        free[#free + 1] = targetBagID
-                        free[#free + 1] = slot
-                    end
-                end
-            end
-            freeSlotsByType[bagType] = free
-            freeSlotIdx[bagType] = 0
-        end
-    end
-
-    for _, bagID in ipairs(bagIDs) do
-        local numSlots = C_Container_GetContainerNumSlots(bagID)
-        for slot = 1, numSlots do
-            local itemInfo = C_Container_GetContainerItemInfo(bagID, slot)
-            if itemInfo and itemInfo.itemID then
-                local preferredType = GetItemPreferredContainer(itemInfo.itemID)
-                local currentBagType = GetBagTypeFromFamily(bagFamilies[bagID] or 0)
-
-                if preferredType and currentBagType ~= preferredType then
-                    local freeList = freeSlotsByType[preferredType]
-                    local idx = freeSlotIdx[preferredType]
-                    if freeList and idx then
-                        while (idx * 2 + 2) <= #freeList do
-                            local targetBagID = freeList[idx * 2 + 1]
-                            local targetSlot = freeList[idx * 2 + 2]
-                            local targetBagFamily = bagFamilies[targetBagID] or 0
-                            if CanItemGoInBag(itemInfo.itemID, targetBagFamily) then
-                                routingPlan[#routingPlan + 1] = {
-                                    fromBag = bagID, fromSlot = slot,
-                                    toBag = targetBagID, toSlot = targetSlot
-                                }
-                                idx = idx + 1
-                                freeSlotIdx[preferredType] = idx
-                                break
-                            end
-                            idx = idx + 1
-                            freeSlotIdx[preferredType] = idx
-                        end
-                    end
-                end
-            end
-        end
-        -- Yield between bags if budget exceeded
-        if IsFrameBudgetExceeded() then
-            coroutine_yield("budget")
-            StartFrameTimer()
-        end
-    end
-
-    ClearCursor()
-    ClearPendingLocks()
-    for idx, move in ipairs(routingPlan) do
-        local sourceInfo = C_Container_GetContainerItemInfo(move.fromBag, move.fromSlot)
-        if sourceInfo and not sourceInfo.isLocked then
-            C_Container_PickupContainerItem(move.fromBag, move.fromSlot)
-            C_Container_PickupContainerItem(move.toBag, move.toSlot)
-            ClearCursor()
-            AddPendingLock(move.fromBag, move.fromSlot)
-            AddPendingLock(move.toBag, move.toSlot)
-            if not soundsMuted then
-                MutePickupSounds()
-                soundsMuted = true
-            end
-            if idx % 5 == 0 and IsFrameBudgetExceeded() then
-                coroutine_yield("budget")
-                StartFrameTimer()
-            end
-        end
-    end
-
-    return #routingPlan
-end
-
---===========================================================================
--- PHASE 3: Stack Consolidation
---===========================================================================
-
-local function ConsolidateStacks(bagIDs, bagFamilies)
-    local itemGroups = {}
-
-    for _, bagID in ipairs(bagIDs) do
-        local numSlots = C_Container_GetContainerNumSlots(bagID)
-        for slot = 1, numSlots do
-            local itemInfo = C_Container_GetContainerItemInfo(bagID, slot)
-            if itemInfo and itemInfo.itemID then
-                local groupKey = itemInfo.itemID
-                if not itemGroups[groupKey] then
-                    itemGroups[groupKey] = { itemID = itemInfo.itemID, stacks = {} }
-                end
-                local stacks = itemGroups[groupKey].stacks
-                stacks[#stacks + 1] = {
-                    bagID = bagID, slot = slot,
-                    count = tonumber(itemInfo.stackCount) or 1
-                }
-            end
-        end
-    end
-
-    -- Yield after scan if budget exceeded
-    if IsFrameBudgetExceeded() then
-        coroutine_yield("budget")
-        StartFrameTimer()
-    end
-
-    local consolidationMoves = 0
-    ClearPendingLocks()
-    for _, group in pairs(itemGroups) do
-        if #group.stacks > 1 then
-            local maxStack = 1
-            local cached = itemInfoCache[group.itemID]
-            if cached and cached.maxStack then
-                maxStack = cached.maxStack
-            else
-                local _, _, _, _, _, _, _, stackSize = GetItemInfo(group.itemID)
-                maxStack = tonumber(stackSize) or 1
-                -- Store in cache for reuse
-                if cached then
-                    cached.maxStack = maxStack
-                end
-            end
-
-            if maxStack > 1 then
-                table_sort(group.stacks, function(a, b)
-                    return (tonumber(a.count) or 0) > (tonumber(b.count) or 0)
-                end)
-
-                for i = 1, #group.stacks do
-                    local source = group.stacks[i]
-                    if source.count < maxStack and source.count > 0 then
-                        for j = i + 1, #group.stacks do
-                            local target = group.stacks[j]
-                            if target.count > 0 then
-                                local spaceAvailable = maxStack - source.count
-                                local amountToMove = math_min(spaceAvailable, target.count)
-
-                                if amountToMove > 0 then
-                                    local sourceInfo = C_Container_GetContainerItemInfo(source.bagID, source.slot)
-                                    local targetInfo = C_Container_GetContainerItemInfo(target.bagID, target.slot)
-
-                                    if sourceInfo and targetInfo and not sourceInfo.isLocked and not targetInfo.isLocked then
-                                        if amountToMove < target.count then
-                                            C_Container_SplitContainerItem(target.bagID, target.slot, amountToMove)
-                                            C_Container_PickupContainerItem(source.bagID, source.slot)
-                                        else
-                                            C_Container_PickupContainerItem(target.bagID, target.slot)
-                                            C_Container_PickupContainerItem(source.bagID, source.slot)
-                                        end
-                                        ClearCursor()
-                                        AddPendingLock(source.bagID, source.slot)
-                                        AddPendingLock(target.bagID, target.slot)
-
-                                        if not soundsMuted then
-                                            MutePickupSounds()
-                                            soundsMuted = true
-                                        end
-
-                                        source.count = source.count + amountToMove
-                                        target.count = target.count - amountToMove
-                                        consolidationMoves = consolidationMoves + 1
-
-                                        if consolidationMoves % 5 == 0 and IsFrameBudgetExceeded() then
-                                            coroutine_yield("budget")
-                                            StartFrameTimer()
-                                        end
-
-                                        if source.count >= maxStack then break end
-                                    end
-                                end
-                            end
-                        end
-                    end
-                end
-            end
-        end
-    end
-
-    return consolidationMoves
-end
-
---===========================================================================
--- PHASE 4: Collect and Sort Items
---===========================================================================
-
--- Combined collect + sort key computation in a single pass
--- Eliminates double iteration over items (was CollectItems then AddSortKeys)
-local function CollectAndKeyItems(bagIDs)
+local function SnapshotSlots(bagIDs)
+    local slotMap = {}  -- key: bagID*1000+slot → entry (or nil for empty)
     local items = {}
     local sequence = 0
     local whiteItemsJunk = Database:GetSetting("whiteItemsJunk") or false
@@ -613,7 +417,7 @@ local function CollectAndKeyItems(bagIDs)
         local numSlots = C_Container_GetContainerNumSlots(bagID)
         for slot = 1, numSlots do
             local itemInfo = C_Container_GetContainerItemInfo(bagID, slot)
-            if itemInfo then
+            if itemInfo and itemInfo.itemID then
                 local itemID = itemInfo.itemID
                 local stackCount = tonumber(itemInfo.stackCount) or 1
 
@@ -645,7 +449,6 @@ local function CollectAndKeyItems(bagIDs)
                     local isEquippable = (info.classID == 2 or info.classID == 4) and
                                         info.equipLoc ~= "" and info.equipLoc ~= "INVTYPE_BAG"
 
-                    -- Junk detection
                     local shouldBeJunk = false
                     local isGrayItem = info.quality == 0
                     if isGrayItem then
@@ -678,14 +481,15 @@ local function CollectAndKeyItems(bagIDs)
                 end
 
                 sequence = sequence + 1
-                items[#items + 1] = {
+                local key = bagID * 1000 + slot
+                local entry = {
                     bagID = bagID,
                     slot = slot,
-                    sequence = sequence,
                     itemID = itemID,
-                    itemName = info.itemName,
                     stackCount = stackCount,
-                    -- Sort keys (from cache)
+                    itemName = info.itemName,
+                    sequence = sequence,
+                    -- Inline sort keys (no separate table per item)
                     priority = sk.priority,
                     sortedClassID = sk.sortedClassID,
                     sortedSubClassID = sk.sortedSubClassID,
@@ -697,19 +501,51 @@ local function CollectAndKeyItems(bagIDs)
                     invertedItemID = sk.invertedItemID,
                     invertedCount = -stackCount,
                 }
+                slotMap[key] = entry
+                items[#items + 1] = entry
             end
-        end
-        -- Yield between bags if budget exceeded
-        if IsFrameBudgetExceeded() then
-            coroutine_yield("budget")
-            StartFrameTimer()
         end
     end
 
+    return slotMap, items
+end
+
+-- Collect items from snapshot for specific bags
+local function CollectItemsFromSnapshot(slotMap, bagIDs)
+    local items = {}
+    for _, bagID in ipairs(bagIDs) do
+        local numSlots = C_Container_GetContainerNumSlots(bagID)
+        for slot = 1, numSlots do
+            local key = bagID * 1000 + slot
+            local entry = slotMap[key]
+            if entry then
+                items[#items + 1] = entry
+            end
+        end
+    end
     return items
 end
 
--- Module-level sort comparator (avoids closure allocation per SortItems call)
+-- Collect junk items from snapshot for specific bags
+local function CollectJunkFromSnapshot(slotMap, bagIDs)
+    local junk = {}
+    for _, bagID in ipairs(bagIDs) do
+        local numSlots = C_Container_GetContainerNumSlots(bagID)
+        for slot = 1, numSlots do
+            local key = bagID * 1000 + slot
+            local entry = slotMap[key]
+            if entry and entry.isJunk then
+                junk[#junk + 1] = entry
+            end
+        end
+    end
+    return junk
+end
+
+--===========================================================================
+-- SORT COMPARATOR
+--===========================================================================
+
 local currentReverseStackSort = false
 
 local function SortComparator(a, b)
@@ -730,20 +566,14 @@ local function SortComparator(a, b)
     return a.sequence < b.sequence
 end
 
--- Sort items that already have sort keys computed (from CollectAndKeyItems)
 local function SortItems(items)
     currentReverseStackSort = Database:GetSetting("reverseStackSort")
     table_sort(items, SortComparator)
-    -- Yield after sort if budget exceeded (O(n log n) comparisons)
-    if IsFrameBudgetExceeded() then
-        coroutine_yield("budget")
-        StartFrameTimer()
-    end
     return items
 end
 
 --===========================================================================
--- PHASE 5: Build Target Positions and Apply Sort
+-- TARGET POSITION BUILDERS
 --===========================================================================
 
 local function BuildTargetPositions(bagIDs, itemCount)
@@ -849,49 +679,168 @@ local function SplitJunkItems(items)
     return nonJunk, junk
 end
 
--- Yielding sort applicator: builds move lists, then executes with budget yields
-local function ApplySort_Yielding(items, targetPositions, bagFamilies)
-    ClearCursor()
+--===========================================================================
+-- OFFLINE MOVE COMPUTATION
+-- Pure computation against slotMap — no API calls
+--===========================================================================
 
-    local moveToEmpty = {}
-    local swapOccupied = {}
-    local swappedSlots = {} -- Track queued swap pairs to prevent double-swaps
+-- Route specialized items to their preferred containers (offline)
+local function RouteSpecializedItems_Offline(bagIDs, containers, bagFamilies, slotMap)
+    local moves = {}
 
-    -- Build move lists (fast, no yielding needed)
-    for i, item in ipairs(items) do
-        local target = targetPositions[i]
-        if target then
-            local targetFamily = bagFamilies[target.bagID] or 0
-            local canGoInBag = (targetFamily == 0) or CanItemGoInBag(item.itemID, targetFamily)
+    -- Build free slot lists from snapshot
+    local freeSlotsByType = {}
+    local freeSlotIdx = {}
+    for bagType, bagList in pairs(containers) do
+        if bagType ~= "regular" then
+            local free = {}
+            for _, targetBagID in ipairs(bagList) do
+                local numSlots = C_Container_GetContainerNumSlots(targetBagID)
+                for slot = 1, numSlots do
+                    local key = targetBagID * 1000 + slot
+                    if not slotMap[key] then
+                        free[#free + 1] = targetBagID
+                        free[#free + 1] = slot
+                    end
+                end
+            end
+            freeSlotsByType[bagType] = free
+            freeSlotIdx[bagType] = 0
+        end
+    end
 
-            if canGoInBag and (item.bagID ~= target.bagID or item.slot ~= target.slot) then
-                local targetInfo = C_Container_GetContainerItemInfo(target.bagID, target.slot)
-                if not targetInfo then
-                    moveToEmpty[#moveToEmpty + 1] = {
-                        sourceBag = item.bagID, sourceSlot = item.slot,
-                        targetBag = target.bagID, targetSlot = target.slot,
-                    }
-                else
-                    -- Skip swaps between functionally identical items (same itemID + stackCount).
-                    -- Without this, identical items oscillate between passes because their
-                    -- sequence numbers change when they move to new positions.
-                    if item.itemID == targetInfo.itemID and item.stackCount == (targetInfo.stackCount or 1) then
-                        -- Items are interchangeable, swap is a no-op
-                    else
-                        local sourceFamily = bagFamilies[item.bagID] or 0
-                        local targetCanGoInSource = (sourceFamily == 0) or CanItemGoInBag(targetInfo.itemID, sourceFamily)
+    for _, bagID in ipairs(bagIDs) do
+        local numSlots = C_Container_GetContainerNumSlots(bagID)
+        for slot = 1, numSlots do
+            local key = bagID * 1000 + slot
+            local entry = slotMap[key]
+            if entry then
+                local preferredType = GetItemPreferredContainer(entry.itemID)
+                local currentBagType = GetBagTypeFromFamily(bagFamilies[bagID] or 0)
 
-                        if targetCanGoInSource then
-                            -- Deduplicate: if target→source was already queued, this swap
-                            -- would undo it (A↔B then B↔A = no progress). Skip the reverse.
-                            local reverseKey = SlotPairKey(target.bagID, target.slot, item.bagID, item.slot)
-                            if not swappedSlots[reverseKey] then
-                                local forwardKey = SlotPairKey(item.bagID, item.slot, target.bagID, target.slot)
-                                swappedSlots[forwardKey] = true
-                                swapOccupied[#swapOccupied + 1] = {
-                                    sourceBag = item.bagID, sourceSlot = item.slot,
-                                    targetBag = target.bagID, targetSlot = target.slot,
+                if preferredType and currentBagType ~= preferredType then
+                    local freeList = freeSlotsByType[preferredType]
+                    local idx = freeSlotIdx[preferredType]
+                    if freeList and idx then
+                        while (idx * 2 + 2) <= #freeList do
+                            local targetBagID = freeList[idx * 2 + 1]
+                            local targetSlot = freeList[idx * 2 + 2]
+                            local targetBagFamily = bagFamilies[targetBagID] or 0
+                            if CanItemGoInBag(entry.itemID, targetBagFamily) then
+                                moves[#moves + 1] = {
+                                    type = "move",
+                                    sourceBag = bagID, sourceSlot = slot,
+                                    targetBag = targetBagID, targetSlot = targetSlot,
+                                    expectedItemID = entry.itemID,
                                 }
+                                -- Update slotMap in-memory
+                                local targetKey = targetBagID * 1000 + targetSlot
+                                slotMap[targetKey] = entry
+                                slotMap[key] = nil
+                                entry.bagID = targetBagID
+                                entry.slot = targetSlot
+
+                                idx = idx + 1
+                                freeSlotIdx[preferredType] = idx
+                                break
+                            end
+                            idx = idx + 1
+                            freeSlotIdx[preferredType] = idx
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    return moves
+end
+
+-- Consolidate stacks offline — compute merge moves against slotMap
+local function ConsolidateStacks_Offline(bagIDs, slotMap)
+    local moves = {}
+    local itemGroups = {}
+
+    -- Build groups from snapshot
+    for _, bagID in ipairs(bagIDs) do
+        local numSlots = C_Container_GetContainerNumSlots(bagID)
+        for slot = 1, numSlots do
+            local key = bagID * 1000 + slot
+            local entry = slotMap[key]
+            if entry then
+                local groupKey = entry.itemID
+                if not itemGroups[groupKey] then
+                    itemGroups[groupKey] = {}
+                end
+                local stacks = itemGroups[groupKey]
+                stacks[#stacks + 1] = entry
+            end
+        end
+    end
+
+    for itemID, stacks in pairs(itemGroups) do
+        if #stacks > 1 then
+            local maxStack = 1
+            local cached = itemInfoCache[itemID]
+            if cached and cached.maxStack then
+                maxStack = cached.maxStack
+            else
+                local _, _, _, _, _, _, _, stackSize = GetItemInfo(itemID)
+                maxStack = tonumber(stackSize) or 1
+                if cached then
+                    cached.maxStack = maxStack
+                end
+            end
+
+            if maxStack > 1 then
+                -- Sort by count descending (fill bigger stacks first)
+                table_sort(stacks, function(a, b)
+                    return a.stackCount > b.stackCount
+                end)
+
+                for i = 1, #stacks do
+                    local dest = stacks[i]
+                    if dest.stackCount < maxStack and dest.stackCount > 0 then
+                        for j = i + 1, #stacks do
+                            local src = stacks[j]
+                            if src.stackCount > 0 then
+                                local spaceAvailable = maxStack - dest.stackCount
+                                local amountToMove = math_min(spaceAvailable, src.stackCount)
+
+                                if amountToMove > 0 then
+                                    if amountToMove < src.stackCount then
+                                        -- Partial split
+                                        moves[#moves + 1] = {
+                                            type = "split",
+                                            sourceBag = src.bagID, sourceSlot = src.slot,
+                                            targetBag = dest.bagID, targetSlot = dest.slot,
+                                            expectedItemID = itemID,
+                                            splitCount = amountToMove,
+                                        }
+                                    else
+                                        -- Move whole stack
+                                        moves[#moves + 1] = {
+                                            type = "move",
+                                            sourceBag = src.bagID, sourceSlot = src.slot,
+                                            targetBag = dest.bagID, targetSlot = dest.slot,
+                                            expectedItemID = itemID,
+                                        }
+                                    end
+
+                                    -- Update snapshot in-memory
+                                    dest.stackCount = dest.stackCount + amountToMove
+                                    dest.invertedCount = -dest.stackCount
+                                    src.stackCount = src.stackCount - amountToMove
+                                    src.invertedCount = -src.stackCount
+
+                                    -- If source is now empty, remove from slotMap
+                                    if src.stackCount <= 0 then
+                                        local srcKey = src.bagID * 1000 + src.slot
+                                        slotMap[srcKey] = nil
+                                    end
+
+                                    if dest.stackCount >= maxStack then break end
+                                end
                             end
                         end
                     end
@@ -900,58 +849,253 @@ local function ApplySort_Yielding(items, targetPositions, bagFamilies)
         end
     end
 
-    -- Yield after move-list building if budget exceeded (the loop above does 100+ API calls)
+    return moves
+end
+
+-- Compute sort moves offline — assigns items to target positions via slotMap
+local function ComputeMoves(items, targetPositions, bagFamilies, slotMap)
+    local moves = {}
+    local swappedSlots = {}
+
+    for i, item in ipairs(items) do
+        local target = targetPositions[i]
+        if target then
+            local targetFamily = bagFamilies[target.bagID] or 0
+            local canGoInBag = (targetFamily == 0) or CanItemGoInBag(item.itemID, targetFamily)
+
+            if canGoInBag and (item.bagID ~= target.bagID or item.slot ~= target.slot) then
+                local targetKey = target.bagID * 1000 + target.slot
+                local targetEntry = slotMap[targetKey]
+
+                if not targetEntry then
+                    -- Move to empty slot
+                    moves[#moves + 1] = {
+                        type = "move",
+                        sourceBag = item.bagID, sourceSlot = item.slot,
+                        targetBag = target.bagID, targetSlot = target.slot,
+                        expectedItemID = item.itemID,
+                    }
+                    -- Update slotMap in-memory
+                    local sourceKey = item.bagID * 1000 + item.slot
+                    slotMap[sourceKey] = nil
+                    slotMap[targetKey] = item
+                    item.bagID = target.bagID
+                    item.slot = target.slot
+                else
+                    -- Target occupied — check if items are interchangeable
+                    if item.itemID == targetEntry.itemID and item.stackCount == targetEntry.stackCount then
+                        -- Identical items, swap is a no-op
+                    else
+                        local sourceFamily = bagFamilies[item.bagID] or 0
+                        local targetCanGoInSource = (sourceFamily == 0) or CanItemGoInBag(targetEntry.itemID, sourceFamily)
+
+                        if targetCanGoInSource then
+                            local reverseKey = SlotPairKey(target.bagID, target.slot, item.bagID, item.slot)
+                            if not swappedSlots[reverseKey] then
+                                local forwardKey = SlotPairKey(item.bagID, item.slot, target.bagID, target.slot)
+                                swappedSlots[forwardKey] = true
+                                moves[#moves + 1] = {
+                                    type = "swap",
+                                    sourceBag = item.bagID, sourceSlot = item.slot,
+                                    targetBag = target.bagID, targetSlot = target.slot,
+                                    expectedItemID = item.itemID,
+                                }
+                                -- Update slotMap: swap entries
+                                local sourceKey = item.bagID * 1000 + item.slot
+                                local oldBag, oldSlot = item.bagID, item.slot
+                                slotMap[sourceKey] = targetEntry
+                                slotMap[targetKey] = item
+                                item.bagID = target.bagID
+                                item.slot = target.slot
+                                targetEntry.bagID = oldBag
+                                targetEntry.slot = oldSlot
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    return moves
+end
+
+--===========================================================================
+-- MOVE EXECUTION
+--===========================================================================
+
+local function AnyItemsLocked()
+    if pendingLockCount == 0 then return false end
+    for i = 0, pendingLockCount - 1 do
+        local bagID = pendingLockSlots[i * 2 + 1]
+        local slot = pendingLockSlots[i * 2 + 2]
+        local itemInfo = C_Container_GetContainerItemInfo(bagID, slot)
+        if itemInfo and itemInfo.isLocked then return true end
+    end
+    return false
+end
+
+-- Execute pre-computed moves with API calls, yielding for budget/locks
+local function ExecuteMoves_Yielding(moveList)
+    ClearCursor()
+    ClearPendingLocks()
+
+    for idx, move in ipairs(moveList) do
+        -- Verify source still has expected item
+        local sourceInfo = C_Container_GetContainerItemInfo(move.sourceBag, move.sourceSlot)
+        local canExecute = sourceInfo and sourceInfo.itemID == move.expectedItemID and not sourceInfo.isLocked
+
+        -- For swaps, also verify target
+        if canExecute and move.type == "swap" then
+            local targetInfo = C_Container_GetContainerItemInfo(move.targetBag, move.targetSlot)
+            if not targetInfo or targetInfo.isLocked then
+                canExecute = false
+            end
+        end
+
+        if canExecute then
+            if move.type == "split" then
+                C_Container_SplitContainerItem(move.sourceBag, move.sourceSlot, move.splitCount)
+            else
+                -- Both "move" and "swap" use pickup pattern
+                C_Container_PickupContainerItem(move.sourceBag, move.sourceSlot)
+            end
+            C_Container_PickupContainerItem(move.targetBag, move.targetSlot)
+            ClearCursor()
+            AddPendingLock(move.sourceBag, move.sourceSlot)
+            AddPendingLock(move.targetBag, move.targetSlot)
+
+            if not soundsMuted then
+                MutePickupSounds()
+                soundsMuted = true
+            end
+        end
+
+        -- Yield periodically for budget and locks
+        if idx % 5 == 0 and IsFrameBudgetExceeded() then
+            if pendingLockCount > 0 then
+                coroutine_yield("wait_locks")
+                StartFrameTimer()
+                ClearPendingLocks()
+            else
+                coroutine_yield("budget")
+                StartFrameTimer()
+            end
+        end
+    end
+
+    -- Final lock wait if pending
+    if pendingLockCount > 0 then
+        coroutine_yield("wait_locks")
+        StartFrameTimer()
+        ClearPendingLocks()
+    end
+end
+
+--===========================================================================
+-- STACK CONSOLIDATION (for Restack API — uses direct API calls)
+--===========================================================================
+
+local function ConsolidateStacks(bagIDs, bagFamilies)
+    local itemGroups = {}
+
+    for _, bagID in ipairs(bagIDs) do
+        local numSlots = C_Container_GetContainerNumSlots(bagID)
+        for slot = 1, numSlots do
+            local itemInfo = C_Container_GetContainerItemInfo(bagID, slot)
+            if itemInfo and itemInfo.itemID then
+                local groupKey = itemInfo.itemID
+                if not itemGroups[groupKey] then
+                    itemGroups[groupKey] = { itemID = itemInfo.itemID, stacks = {} }
+                end
+                local stacks = itemGroups[groupKey].stacks
+                stacks[#stacks + 1] = {
+                    bagID = bagID, slot = slot,
+                    count = tonumber(itemInfo.stackCount) or 1
+                }
+            end
+        end
+    end
+
+    -- Yield after scan if budget exceeded
     if IsFrameBudgetExceeded() then
         coroutine_yield("budget")
         StartFrameTimer()
     end
 
-    local moveCount = 0
+    local consolidationMoves = 0
     ClearPendingLocks()
-
-    for idx, move in ipairs(moveToEmpty) do
-        local sourceInfo = C_Container_GetContainerItemInfo(move.sourceBag, move.sourceSlot)
-        if sourceInfo and not sourceInfo.isLocked then
-            C_Container_PickupContainerItem(move.sourceBag, move.sourceSlot)
-            C_Container_PickupContainerItem(move.targetBag, move.targetSlot)
-            ClearCursor()
-            AddPendingLock(move.sourceBag, move.sourceSlot)
-            AddPendingLock(move.targetBag, move.targetSlot)
-            moveCount = moveCount + 1
-            if not soundsMuted then
-                MutePickupSounds()
-                soundsMuted = true
+    for _, group in pairs(itemGroups) do
+        if #group.stacks > 1 then
+            local maxStack = 1
+            local cached = itemInfoCache[group.itemID]
+            if cached and cached.maxStack then
+                maxStack = cached.maxStack
+            else
+                local _, _, _, _, _, _, _, stackSize = GetItemInfo(group.itemID)
+                maxStack = tonumber(stackSize) or 1
+                -- Store in cache for reuse
+                if cached then
+                    cached.maxStack = maxStack
+                end
             end
-            if idx % 5 == 0 and IsFrameBudgetExceeded() then
-                coroutine_yield("budget")
-                StartFrameTimer()
+
+            if maxStack > 1 then
+                table_sort(group.stacks, function(a, b)
+                    return (tonumber(a.count) or 0) > (tonumber(b.count) or 0)
+                end)
+
+                for i = 1, #group.stacks do
+                    local source = group.stacks[i]
+                    if source.count < maxStack and source.count > 0 then
+                        for j = i + 1, #group.stacks do
+                            local target = group.stacks[j]
+                            if target.count > 0 then
+                                local spaceAvailable = maxStack - source.count
+                                local amountToMove = math_min(spaceAvailable, target.count)
+
+                                if amountToMove > 0 then
+                                    local sourceInfo = C_Container_GetContainerItemInfo(source.bagID, source.slot)
+                                    local targetInfo = C_Container_GetContainerItemInfo(target.bagID, target.slot)
+
+                                    if sourceInfo and targetInfo and not sourceInfo.isLocked and not targetInfo.isLocked then
+                                        if amountToMove < target.count then
+                                            C_Container_SplitContainerItem(target.bagID, target.slot, amountToMove)
+                                            C_Container_PickupContainerItem(source.bagID, source.slot)
+                                        else
+                                            C_Container_PickupContainerItem(target.bagID, target.slot)
+                                            C_Container_PickupContainerItem(source.bagID, source.slot)
+                                        end
+                                        ClearCursor()
+                                        AddPendingLock(source.bagID, source.slot)
+                                        AddPendingLock(target.bagID, target.slot)
+
+                                        if not soundsMuted then
+                                            MutePickupSounds()
+                                            soundsMuted = true
+                                        end
+
+                                        source.count = source.count + amountToMove
+                                        target.count = target.count - amountToMove
+                                        consolidationMoves = consolidationMoves + 1
+
+                                        if consolidationMoves % 5 == 0 and IsFrameBudgetExceeded() then
+                                            coroutine_yield("budget")
+                                            StartFrameTimer()
+                                        end
+
+                                        if source.count >= maxStack then break end
+                                    end
+                                end
+                            end
+                        end
+                    end
+                end
             end
         end
     end
 
-    for idx, move in ipairs(swapOccupied) do
-        local sourceInfo = C_Container_GetContainerItemInfo(move.sourceBag, move.sourceSlot)
-        local targetInfo = C_Container_GetContainerItemInfo(move.targetBag, move.targetSlot)
-
-        if sourceInfo and targetInfo and not sourceInfo.isLocked and not targetInfo.isLocked then
-            C_Container_PickupContainerItem(move.sourceBag, move.sourceSlot)
-            C_Container_PickupContainerItem(move.targetBag, move.targetSlot)
-            ClearCursor()
-            AddPendingLock(move.sourceBag, move.sourceSlot)
-            AddPendingLock(move.targetBag, move.targetSlot)
-            moveCount = moveCount + 1
-            if not soundsMuted then
-                MutePickupSounds()
-                soundsMuted = true
-            end
-            if idx % 5 == 0 and IsFrameBudgetExceeded() then
-                coroutine_yield("budget")
-                StartFrameTimer()
-            end
-        end
-    end
-
-    return moveCount
+    return consolidationMoves
 end
 
 -- Cached specialized bag type list (initialized once on first use)
@@ -972,113 +1116,95 @@ local function GetSpecializedTypes()
 end
 
 --===========================================================================
--- PHASE 7: Coroutine Sort Pass
--- Yields between phases and during move execution to stay within frame budget.
--- Yield values: "wait_locks" (wait for item locks), "budget" (frame budget exceeded)
--- Return value: totalMoves (when coroutine completes)
+-- SORT COROUTINE (single-pass snapshot-based)
+-- 1. Snapshot all slots once
+-- 2. Compute ALL moves offline (route, consolidate, sort)
+-- 3. Execute moves in single pass
 --===========================================================================
 
 local function SortCoroutineBody(bagIDs)
+    local t0 = debugprofilestop()
+
+    -- 1. Snapshot all slots (one scan — the ONLY full API scan)
+    local slotMap = SnapshotSlots(bagIDs)
+    local t1 = debugprofilestop()
+
+    -- 2. Classify bags
     local containers, bagFamilies = ClassifyBags(bagIDs)
-    local totalMoves = 0
+    local t2 = debugprofilestop()
 
-    -- Routing and consolidation only on first pass (subsequent passes just re-sort)
-    if currentPass == 1 then
-        -- Phase 2: Route specialized items
-        local routeMoves = RouteSpecializedItems(bagIDs, containers, bagFamilies)
-        totalMoves = totalMoves + routeMoves
-        if routeMoves > 0 then
-            coroutine_yield("wait_locks")
-            StartFrameTimer()
-        elseif IsFrameBudgetExceeded() then
-            coroutine_yield("budget")
-            StartFrameTimer()
-        end
+    -- 3. Collect all moves
+    local allMoves = {}
+    local totalMoveCount = 0
 
-        -- Phase 3: Consolidate stacks
-        local consolidateMoves = ConsolidateStacks(bagIDs, bagFamilies)
-        totalMoves = totalMoves + consolidateMoves
-        if consolidateMoves > 0 then
-            coroutine_yield("wait_locks")
-            StartFrameTimer()
-        elseif IsFrameBudgetExceeded() then
-            coroutine_yield("budget")
-            StartFrameTimer()
+    local function appendMoves(moves)
+        for _, move in ipairs(moves) do
+            totalMoveCount = totalMoveCount + 1
+            allMoves[totalMoveCount] = move
         end
     end
 
-    -- Phase 4: Sort specialized bags
+    -- 4. Route specialized items (offline, updates slotMap)
+    appendMoves(RouteSpecializedItems_Offline(bagIDs, containers, bagFamilies, slotMap))
+    local t3 = debugprofilestop()
+
+    -- 5. Consolidate stacks (offline, updates slotMap)
+    appendMoves(ConsolidateStacks_Offline(bagIDs, slotMap))
+    local t4 = debugprofilestop()
+
+    -- 6. Sort specialized bags (from updated snapshot)
     local specializedTypes = GetSpecializedTypes()
     for _, bagType in ipairs(specializedTypes) do
         local specialBags = containers[bagType]
         if specialBags then
             for _, bagID in ipairs(specialBags) do
-                local items = CollectAndKeyItems({bagID})
+                local items = CollectItemsFromSnapshot(slotMap, {bagID})
                 if #items > 0 then
-                    items = SortItems(items)
+                    SortItems(items)
                     local targets = BuildTargetPositions({bagID}, #items)
-                    local moves = ApplySort_Yielding(items, targets, bagFamilies)
-                    totalMoves = totalMoves + moves
-                    if moves > 0 then
-                        coroutine_yield("wait_locks")
-                        StartFrameTimer()
-                    end
-                end
-                if IsFrameBudgetExceeded() then
-                    coroutine_yield("budget")
-                    StartFrameTimer()
+                    appendMoves(ComputeMoves(items, targets, bagFamilies, slotMap))
                 end
             end
         end
     end
+    local t5 = debugprofilestop()
 
-    -- Phase 5: Sort regular bags (two-pass: non-junk forward, junk backward)
+    -- 7. Sort regular bags (non-junk forward, junk to tail)
     local regularBags = containers.regular
     if #regularBags > 0 then
-        local allItems = CollectAndKeyItems(regularBags)
+        local allItems = CollectItemsFromSnapshot(slotMap, regularBags)
         if #allItems > 0 then
-            allItems = SortItems(allItems)
+            SortItems(allItems)
             local nonJunk, junk = SplitJunkItems(allItems)
 
             if #nonJunk > 0 then
                 local frontPositions = BuildTargetPositions(regularBags, #nonJunk)
-                local moves = ApplySort_Yielding(nonJunk, frontPositions, bagFamilies)
-                totalMoves = totalMoves + moves
-                if moves > 0 then
-                    coroutine_yield("wait_locks")
-                    StartFrameTimer()
-                elseif IsFrameBudgetExceeded() then
-                    coroutine_yield("budget")
-                    StartFrameTimer()
-                end
+                appendMoves(ComputeMoves(nonJunk, frontPositions, bagFamilies, slotMap))
             end
 
             if #junk > 0 then
-                -- Re-collect only junk items (positions may have changed after non-junk sort)
-                local junkNow = {}
-                for _, bagID in ipairs(regularBags) do
-                    local numSlots = C_Container_GetContainerNumSlots(bagID)
-                    for slot = 1, numSlots do
-                        local itemInfo = C_Container_GetContainerItemInfo(bagID, slot)
-                        if itemInfo and itemInfo.itemID and sortKeyCache[itemInfo.itemID] and sortKeyCache[itemInfo.itemID].isJunk then
-                            junkNow[#junkNow + 1] = {
-                                bagID = bagID, slot = slot,
-                                itemID = itemInfo.itemID,
-                                stackCount = tonumber(itemInfo.stackCount) or 1,
-                            }
-                        end
-                    end
-                end
+                -- Junk positions tracked in slotMap (no API re-scan needed)
+                local junkNow = CollectJunkFromSnapshot(slotMap, regularBags)
                 if #junkNow > 0 then
                     local tailPositions = BuildTailPositions(regularBags, #junkNow)
-                    local moves = ApplySort_Yielding(junkNow, tailPositions, bagFamilies)
-                    totalMoves = totalMoves + moves
+                    appendMoves(ComputeMoves(junkNow, tailPositions, bagFamilies, slotMap))
                 end
             end
         end
     end
+    local t6 = debugprofilestop()
 
-    return totalMoves
+    ns:Debug(string.format(
+        "Sort timing: snapshot=%.1fms classify=%.1fms route=%.1fms consolidate=%.1fms specSort=%.1fms regSort=%.1fms total=%.1fms moves=%d",
+        (t1-t0)/1000, (t2-t1)/1000, (t3-t2)/1000, (t4-t3)/1000, (t5-t4)/1000, (t6-t5)/1000, (t6-t0)/1000, totalMoveCount
+    ))
+
+    -- 8. Execute all moves in single execution phase
+    if totalMoveCount > 0 then
+        ExecuteMoves_Yielding(allMoves)
+    end
+
+    return totalMoveCount
 end
 
 --===========================================================================
@@ -1091,41 +1217,45 @@ local sortTimeout = 30
 
 local activeBagIDs = Constants.BAG_IDS
 
-local function AnyItemsLocked()
-    if pendingLockCount == 0 then return false end
-    for i = 0, pendingLockCount - 1 do
-        local bagID = pendingLockSlots[i * 2 + 1]
-        local slot = pendingLockSlots[i * 2 + 2]
-        local itemInfo = C_Container_GetContainerItemInfo(bagID, slot)
-        if itemInfo and itemInfo.isLocked then return true end
-    end
-    return false
-end
-
 -- Helper to finalize sort (clean up state and notify)
 local function FinishSort(message)
     local isBankSort = (activeBagIDs == Constants.BANK_BAG_IDS)
     sortInProgress = false
     sortCoroutine = nil
     soundsMuted = false
+    waitingForLocks = false
+    locksCleared = true
     activeBagIDs = Constants.BAG_IDS
     currentFrameBudget = FRAME_BUDGET_US
     ClearPendingLocks()
     UnmutePickupSounds()
     SortEngine:ClearCache()
+    sortFrame:UnregisterEvent("ITEM_LOCK_CHANGED")
     if message then
         ns:Print(message)
     end
+    local refreshStart = debugprofilestop()
     if isBankSort and ns.OnBankUpdated then
         ns.OnBankUpdated()
     else
         Events:Fire("BAGS_UPDATED")
     end
+    local refreshTime = (debugprofilestop() - refreshStart) / 1000
+    ns:Debug(string.format("Post-sort refresh: %.1fms", refreshTime))
 end
 
+-- Event handler for ITEM_LOCK_CHANGED (event-driven lock waiting)
+sortFrame:SetScript("OnEvent", function(self, event)
+    if event == "ITEM_LOCK_CHANGED" and sortInProgress and waitingForLocks then
+        if not AnyItemsLocked() then
+            locksCleared = true
+        end
+    end
+end)
+
 -- Coroutine-driven OnUpdate: resumes sort coroutine each frame within budget.
--- No fixed delays between passes — resumes as soon as item locks clear (~1-2 frames).
--- Each frame does at most 4-6ms of work instead of one 20-50ms spike.
+-- Single-pass architecture: snapshot once, compute moves offline, execute once.
+-- After execution, one verification pass (re-snapshot, check if sorted).
 sortFrame:SetScript("OnUpdate", function(self, elapsed)
     if not sortInProgress then return end
 
@@ -1142,9 +1272,10 @@ sortFrame:SetScript("OnUpdate", function(self, elapsed)
         return
     end
 
-    -- Wait for item locks to clear (check every frame, no fixed delay)
-    if AnyItemsLocked() then
-        return
+    -- Wait for item locks to clear (event-driven)
+    if waitingForLocks then
+        if not locksCleared then return end
+        waitingForLocks = false
     end
 
     -- Create new coroutine if needed (start of a new pass)
@@ -1182,9 +1313,13 @@ sortFrame:SetScript("OnUpdate", function(self, elapsed)
             return
         end
 
-        -- More passes needed, next frame creates new coroutine automatically
+        -- More passes needed (verification), next frame creates new coroutine
+    elseif result == "wait_locks" then
+        -- Coroutine yielded to wait for locks — use event-driven waiting
+        waitingForLocks = true
+        locksCleared = not AnyItemsLocked()
     end
-    -- If coroutine yielded ("wait_locks" or "budget"), it resumes next frame
+    -- If coroutine yielded "budget", it resumes next frame automatically
 end)
 
 -------------------------------------------------
@@ -1216,11 +1351,14 @@ function SortEngine:SortBags()
     currentFrameBudget = FRAME_BUDGET_US
     self:ClearCache()
     soundsMuted = false
+    waitingForLocks = false
+    locksCleared = true
     sortInProgress = true
     sortCoroutine = nil
     currentPass = 0
 
     sortStartTime = GetTime()
+    sortFrame:RegisterEvent("ITEM_LOCK_CHANGED")
 
     return true
 end
@@ -1236,8 +1374,11 @@ function SortEngine:CancelSort()
     sortInProgress = false
     sortCoroutine = nil
     soundsMuted = false
+    waitingForLocks = false
+    locksCleared = true
     currentPass = 0
     ClearPendingLocks()
+    sortFrame:UnregisterEvent("ITEM_LOCK_CHANGED")
 
     activeBagIDs = Constants.BAG_IDS
     currentFrameBudget = FRAME_BUDGET_US
@@ -1280,11 +1421,14 @@ function SortEngine:SortBank()
     currentFrameBudget = FRAME_BUDGET_BANK_US
     self:ClearCache()
     soundsMuted = false
+    waitingForLocks = false
+    locksCleared = true
     sortInProgress = true
     sortCoroutine = nil
     currentPass = 0
 
     sortStartTime = GetTime()
+    sortFrame:RegisterEvent("ITEM_LOCK_CHANGED")
 
     return true
 end

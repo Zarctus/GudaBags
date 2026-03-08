@@ -638,6 +638,9 @@ end
 
 local function OnBagUpdate()
     if frame and frame:IsShown() then
+        -- Skip refreshes during sort (will refresh once via BAGS_UPDATED when sort completes)
+        local SortEngine = ns:GetModule("SortEngine")
+        if SortEngine and (SortEngine:IsSorting() or SortEngine:IsRestacking()) then return end
         TrackedBar:Refresh()
         -- Schedule a full refresh after combat for layout/attribute updates
         if InCombatLockdown() then
@@ -674,3 +677,6 @@ end, TrackedBar)
 
 Events:Register("BAG_UPDATE", OnBagUpdate, TrackedBar)
 Events:Register("BAG_UPDATE_COOLDOWN", OnCooldownUpdate, TrackedBar)
+Events:Register("BAGS_UPDATED", function()
+    if frame and frame:IsShown() then TrackedBar:Refresh() end
+end, TrackedBar)

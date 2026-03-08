@@ -93,6 +93,7 @@ local themes = {
         },
     },
 }
+themes.classic = themes.blizzard
 
 -------------------------------------------------
 -- Classic border texture keys in ButtonFrameTemplate
@@ -107,6 +108,7 @@ local classicBorderKeys = {
 -- Cache
 -------------------------------------------------
 local cachedTheme = nil
+local cachedThemeName = nil
 
 -------------------------------------------------
 -- API
@@ -114,13 +116,14 @@ local cachedTheme = nil
 
 --- Returns the active theme table
 function Theme:Get()
-    if cachedTheme then
-        return cachedTheme
-    end
     local themeName = Database:GetSetting("theme") or "guda"
     if themeName == "retail" and ns.IsRetail then
         themeName = "guda"
     end
+    if cachedTheme and cachedThemeName == themeName then
+        return cachedTheme
+    end
+    cachedThemeName = themeName
     cachedTheme = themes[themeName] or themes.guda
     return cachedTheme
 end
@@ -281,7 +284,7 @@ function Theme:ApplyFrameBackground(frame, bgAlpha, showBorders)
     if useMetal then
         -- Hide other theme elements
         if frame.blizzardBg then frame.blizzardBg:Hide() end
-        frame:SetBackdrop(nil)
+        if frame.SetBackdrop then frame:SetBackdrop(nil) end
         if frame.themeBg then frame.themeBg:Hide() end
         -- Create/show metal frame
         local mf = EnsureMetalFrame(frame)
@@ -498,6 +501,11 @@ local function StyleCloseButton(btn, useMetal)
 
         btn._metalStyled = false
     end
+end
+
+--- Public wrapper for StyleCloseButton
+function Theme:StyleCloseButton(btn, useMetal)
+    StyleCloseButton(btn, useMetal)
 end
 
 local METAL_ICON_SIZE = 13

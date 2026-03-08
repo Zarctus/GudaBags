@@ -246,6 +246,7 @@ Constants.DEFAULTS = {
     recentDuration = 15,  -- Minutes items stay in Recent category
     showSoulBag = true,  -- Show soul bag in single view (Warlock only)
     autoVendorJunk = true,  -- Auto sell gray items at merchants
+    retailEmptySlots = false,  -- Use retail-style empty slot textures (Classic only)
 
     -- Icons
     iconSize = 37,

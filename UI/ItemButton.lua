@@ -37,6 +37,23 @@ local function SuppressItemErrors()
     end
 end
 
+-- Retail slot textures used when retailEmptySlots setting is enabled
+local RETAIL_SLOT_TEXTURES = {
+    background = "Interface\\AddOns\\GudaBags\\Assets\\Themes\\retail\\HDActionBarBtn",
+    border = "Interface\\AddOns\\GudaBags\\Assets\\Themes\\retail\\btn_border",
+    highlight = "Interface\\AddOns\\GudaBags\\Assets\\Themes\\retail\\btn_highlight_strong",
+}
+
+-- Resolve effective slot textures: on Retail WoW use theme directly,
+-- on Classic expansions the retailEmptySlots setting controls it
+local function GetEffectiveSlotTextures()
+    if ns.IsRetail then
+        local Theme = ns:GetModule("Theme")
+        return Theme:Get().slotTextures
+    end
+    return Database:GetSetting("retailEmptySlots") and RETAIL_SLOT_TEXTURES or nil
+end
+
 -- Apply retail/default slot textures to a single button
 local function ApplyThemeToButton(button, slotTex)
     if slotTex then
@@ -977,8 +994,7 @@ function ItemButton:Acquire(parent)
     button.owner = parent
 
     -- Apply retail slot textures immediately so first-open doesn't flash default
-    local Theme = ns:GetModule("Theme")
-    ApplyThemeToButton(button, Theme:Get().slotTextures)
+    ApplyThemeToButton(button, GetEffectiveSlotTextures())
 
     return button
 end
@@ -1300,13 +1316,15 @@ function ItemButton:SetItem(button, itemData, size, isReadOnly)
             end
         end
 
-        -- Equipment set icon (use category mark if available)
+        -- Category mark icon (equipment sets + any category with a mark)
         if button.equipSetIcon then
+            local markIcon = nil
+
+            -- Equipment set mark (higher priority)
             if settings.markEquipmentSets and itemData.itemID then
                 local EquipSets = ns:GetModule("EquipmentSets")
                 if EquipSets and EquipSets:IsInSet(itemData.itemID) then
-                    -- Determine icon from category mark
-                    local markIcon = "Interface\\AddOns\\GudaBags\\Assets\\equipment.png"
+                    markIcon = "Interface\\AddOns\\GudaBags\\Assets\\equipment.png"
                     local Database = ns:GetModule("Database")
                     if Database and Database:GetSetting("showEquipSetCategories") then
                         local CategoryManager = ns:GetModule("CategoryManager")
@@ -1321,15 +1339,26 @@ function ItemButton:SetItem(button, itemData, size, isReadOnly)
                             end
                         end
                     end
-                    button.equipSetIcon:SetTexture(markIcon)
-                    button.equipSetIcon:Show()
-                    if button.equipSetIconShadow then
-                        button.equipSetIconShadow:SetTexture(markIcon)
-                        button.equipSetIconShadow:Show()
+                end
+            end
+
+            -- General category mark (if no equipment set mark)
+            if not markIcon and button.categoryId then
+                local CategoryManager = ns:GetModule("CategoryManager")
+                if CategoryManager then
+                    local catDef = CategoryManager:GetCategory(button.categoryId)
+                    if catDef and catDef.categoryMark then
+                        markIcon = catDef.categoryMark
                     end
-                else
-                    button.equipSetIcon:Hide()
-                    if button.equipSetIconShadow then button.equipSetIconShadow:Hide() end
+                end
+            end
+
+            if markIcon then
+                button.equipSetIcon:SetTexture(markIcon)
+                button.equipSetIcon:Show()
+                if button.equipSetIconShadow then
+                    button.equipSetIconShadow:SetTexture(markIcon)
+                    button.equipSetIconShadow:Show()
                 end
             else
                 button.equipSetIcon:Hide()
@@ -1492,8 +1521,7 @@ function ItemButton:UpdateFontSize()
 end
 
 function ItemButton:ApplyThemeTextures()
-    local Theme = ns:GetModule("Theme")
-    local slotTex = Theme:Get().slotTextures
+    local slotTex = GetEffectiveSlotTextures()
     if not buttonPool then return end
     for button in buttonPool:EnumerateActive() do
         ApplyThemeToButton(button, slotTex)

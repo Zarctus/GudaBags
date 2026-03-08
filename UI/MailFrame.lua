@@ -589,7 +589,7 @@ end
 Events:Register("SETTING_CHANGED", function(event, key, value)
     if not frame then return end
 
-    if key == "bgAlpha" or key == "showBorders" or key == "theme" then
+    if key == "bgAlpha" or key == "showBorders" or key == "theme" or key == "retailEmptySlots" then
         UpdateFrameAppearance()
     elseif key == "showFooter" or key == "showSearchBar" or key == "showFilterChips" then
         UpdateFrameAppearance()

@@ -18,12 +18,12 @@ function SettingsSchema.GetGeneral()
             }
             if not ns.IsRetail then
                 table.insert(opts, { value = "retail", label = L["SETTINGS_THEME_RETAIL"] })
-            else
-                table.insert(opts, { value = "classic", label = L["SETTINGS_THEME_CLASSIC"] })
             end
             return opts
         end)()},
         { type = "slider", key = "bgAlpha", label = L["SETTINGS_BG_OPACITY"], min = 0, max = 100, step = 5, format = "%" },
+        { type = "checkbox", key = "retailEmptySlots", label = L["SETTINGS_RETAIL_EMPTY_SLOTS"], tooltip = L["SETTINGS_RETAIL_EMPTY_SLOTS_TIP"],
+          hidden = function() return ns.IsRetail end },
 
         { type = "separator", label = L["SETTINGS_SECTION_OPTIONS"] },
         { type = "row", children = {

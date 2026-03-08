@@ -138,3 +138,11 @@ end
 function Keyring:GetButton()
     return button
 end
+
+function Keyring:UpdateTheme()
+    if not button then return end
+    local fbBg = Theme:GetValue("footerButtonBg")
+    local fbBorder = Theme:GetValue("footerButtonBorder")
+    button:SetBackdropColor(fbBg[1], fbBg[2], fbBg[3], fbBg[4])
+    button:SetBackdropBorderColor(fbBorder[1], fbBorder[2], fbBorder[3], fbBorder[4])
+end

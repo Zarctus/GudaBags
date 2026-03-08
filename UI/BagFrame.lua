@@ -1494,6 +1494,10 @@ UpdateFrameAppearance = function()
     ItemButton:UpdateSlotAlpha(bgAlpha)
     ItemButton:ApplyThemeTextures()
 
+    -- Update footer button theme colors
+    local Footer = ns:GetModule("Footer")
+    if Footer then Footer:UpdateTheme() end
+
     -- Update icon font size and tracked bar
     ItemButton:UpdateFontSize()
     local TrackedBar = ns:GetModule("TrackedBar")
@@ -1544,6 +1548,7 @@ local appearanceSettings = {
     questBarSize = true,
     questBarColumns = true,
     theme = true,
+    retailEmptySlots = true,
 }
 
 -- Settings that need both appearance update AND resize

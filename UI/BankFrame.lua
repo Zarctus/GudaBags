@@ -2511,6 +2511,7 @@ local appearanceSettings = {
     questBarSize = true,
     questBarColumns = true,
     theme = true,
+    retailEmptySlots = true,
 }
 
 local resizeSettings = {

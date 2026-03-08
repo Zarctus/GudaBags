@@ -228,12 +228,10 @@ function TabPanel:Create(parent, config)
         local tabName = "GudaBagsSettingsTab" .. tabCounter
 
         -- Bottom-oriented tab: rounded borders go down
-        local tab
-        if DoesTemplateExist and DoesTemplateExist("CharacterFrameTabButtonTemplate") then
-            tab = CreateFrame("Button", tabName, container, "CharacterFrameTabButtonTemplate")
-        else
-            tab = CreateFrame("Button", tabName, container, "TabButtonTemplate")
-        end
+        -- Retail uses "PanelTabButtonTemplate" (SharedXML)
+        -- Classic/TBC/MoP/Anniversary use "CharacterFrameTabButtonTemplate" (FrameXML)
+        local tabTemplate = ns.IsRetail and "PanelTabButtonTemplate" or "CharacterFrameTabButtonTemplate"
+        local tab = CreateFrame("Button", tabName, container, tabTemplate)
 
         -- Position tabs at the bottom
         if index == 1 then

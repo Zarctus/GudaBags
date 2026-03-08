@@ -1373,6 +1373,7 @@ local appearanceSettings = {
     bgAlpha = true,
     showBorders = true,
     theme = true,
+    retailEmptySlots = true,
 }
 
 -- Handle setting changes (live update)

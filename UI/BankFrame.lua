@@ -224,6 +224,8 @@ local function CreateBankFrame()
                 CloseBankFrame()
             end
         end
+        -- Clear search bar text and filters
+        SearchBar:Clear(f)
         -- Reset to current character when bank closes
         if viewingCharacter then
             viewingCharacter = nil

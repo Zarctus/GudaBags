@@ -234,6 +234,8 @@ local function CreateBagFrame()
     f:HookScript("OnShow", function() secureButtonContainer:Show() end)
     f:HookScript("OnHide", function()
         secureButtonContainer:Hide()
+        -- Clear search bar text and filters
+        SearchBar:Clear(f)
         -- Reset to current character when bag closes
         if viewingCharacter then
             viewingCharacter = nil

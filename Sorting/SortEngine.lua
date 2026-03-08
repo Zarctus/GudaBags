@@ -59,6 +59,21 @@ local currentPass = 0
 local maxPasses = 10  -- Increased from 6 to ensure sort completes
 local soundsMuted = false
 
+-- Targeted lock checking: only poll slots involved in recent moves
+local pendingLockSlots = {}  -- flat array: {bagID1, slot1, bagID2, slot2, ...}
+local pendingLockCount = 0   -- number of pairs (actual array length = count * 2)
+
+local function ClearPendingLocks()
+    pendingLockCount = 0
+end
+
+local function AddPendingLock(bagID, slot)
+    local idx = pendingLockCount * 2
+    pendingLockSlots[idx + 1] = bagID
+    pendingLockSlots[idx + 2] = slot
+    pendingLockCount = pendingLockCount + 1
+end
+
 -- Performance: Cache computed sort keys by itemID across passes
 local sortKeyCache = {}
 -- Performance: Cache GetItemInfo results by itemID (static data, never changes)
@@ -272,7 +287,8 @@ end
 local function CanItemGoInBag(itemID, bagFamily)
     if bagFamily == 0 then return true end
     if not itemID then return false end
-    local itemFamily = C_Item_GetItemFamily(itemID)
+    local cached = itemInfoCache[itemID]
+    local itemFamily = cached and cached.itemFamily or C_Item_GetItemFamily(itemID)
     if not itemFamily then return false end
     return bit_band(itemFamily, bagFamily) ~= 0
 end
@@ -393,6 +409,26 @@ end
 local function RouteSpecializedItems(bagIDs, containers, bagFamilies)
     local routingPlan = {}
 
+    -- Pre-compute free slot lists per container type (avoids nested scanning)
+    local freeSlotsByType = {}
+    local freeSlotIdx = {}
+    for bagType, bagList in pairs(containers) do
+        if bagType ~= "regular" then
+            local free = {}
+            for _, targetBagID in ipairs(bagList) do
+                local numSlots = C_Container_GetContainerNumSlots(targetBagID)
+                for slot = 1, numSlots do
+                    if not C_Container_GetContainerItemInfo(targetBagID, slot) then
+                        free[#free + 1] = targetBagID
+                        free[#free + 1] = slot
+                    end
+                end
+            end
+            freeSlotsByType[bagType] = free
+            freeSlotIdx[bagType] = 0
+        end
+    end
+
     for _, bagID in ipairs(bagIDs) do
         local numSlots = C_Container_GetContainerNumSlots(bagID)
         for slot = 1, numSlots do
@@ -402,34 +438,30 @@ local function RouteSpecializedItems(bagIDs, containers, bagFamilies)
                 local currentBagType = GetBagTypeFromFamily(bagFamilies[bagID] or 0)
 
                 if preferredType and currentBagType ~= preferredType then
-                    local targetBags = containers[preferredType]
-                    if targetBags and #targetBags > 0 then
-                        local foundSlot = false
-                        for _, targetBagID in ipairs(targetBags) do
-                            if not foundSlot then
-                                -- Verify item can actually go in target bag before routing
-                                local targetBagFamily = bagFamilies[targetBagID] or 0
-                                if CanItemGoInBag(itemInfo.itemID, targetBagFamily) then
-                                    local targetSlots = C_Container_GetContainerNumSlots(targetBagID)
-                                    for targetSlot = 1, targetSlots do
-                                        local targetInfo = C_Container_GetContainerItemInfo(targetBagID, targetSlot)
-                                        if not targetInfo then
-                                            routingPlan[#routingPlan + 1] = {
-                                                fromBag = bagID, fromSlot = slot,
-                                                toBag = targetBagID, toSlot = targetSlot
-                                            }
-                                            foundSlot = true
-                                            break
-                                        end
-                                    end
-                                end
+                    local freeList = freeSlotsByType[preferredType]
+                    local idx = freeSlotIdx[preferredType]
+                    if freeList and idx then
+                        while (idx * 2 + 2) <= #freeList do
+                            local targetBagID = freeList[idx * 2 + 1]
+                            local targetSlot = freeList[idx * 2 + 2]
+                            local targetBagFamily = bagFamilies[targetBagID] or 0
+                            if CanItemGoInBag(itemInfo.itemID, targetBagFamily) then
+                                routingPlan[#routingPlan + 1] = {
+                                    fromBag = bagID, fromSlot = slot,
+                                    toBag = targetBagID, toSlot = targetSlot
+                                }
+                                idx = idx + 1
+                                freeSlotIdx[preferredType] = idx
+                                break
                             end
+                            idx = idx + 1
+                            freeSlotIdx[preferredType] = idx
                         end
                     end
                 end
             end
         end
-        -- Yield between bags if budget exceeded (scan does many nested API calls)
+        -- Yield between bags if budget exceeded
         if IsFrameBudgetExceeded() then
             coroutine_yield("budget")
             StartFrameTimer()
@@ -437,12 +469,15 @@ local function RouteSpecializedItems(bagIDs, containers, bagFamilies)
     end
 
     ClearCursor()
+    ClearPendingLocks()
     for idx, move in ipairs(routingPlan) do
         local sourceInfo = C_Container_GetContainerItemInfo(move.fromBag, move.fromSlot)
         if sourceInfo and not sourceInfo.isLocked then
             C_Container_PickupContainerItem(move.fromBag, move.fromSlot)
             C_Container_PickupContainerItem(move.toBag, move.toSlot)
             ClearCursor()
+            AddPendingLock(move.fromBag, move.fromSlot)
+            AddPendingLock(move.toBag, move.toSlot)
             if not soundsMuted then
                 MutePickupSounds()
                 soundsMuted = true
@@ -489,6 +524,7 @@ local function ConsolidateStacks(bagIDs, bagFamilies)
     end
 
     local consolidationMoves = 0
+    ClearPendingLocks()
     for _, group in pairs(itemGroups) do
         if #group.stacks > 1 then
             local maxStack = 1
@@ -531,6 +567,8 @@ local function ConsolidateStacks(bagIDs, bagFamilies)
                                             C_Container_PickupContainerItem(source.bagID, source.slot)
                                         end
                                         ClearCursor()
+                                        AddPendingLock(source.bagID, source.slot)
+                                        AddPendingLock(target.bagID, target.slot)
 
                                         if not soundsMuted then
                                             MutePickupSounds()
@@ -869,6 +907,7 @@ local function ApplySort_Yielding(items, targetPositions, bagFamilies)
     end
 
     local moveCount = 0
+    ClearPendingLocks()
 
     for idx, move in ipairs(moveToEmpty) do
         local sourceInfo = C_Container_GetContainerItemInfo(move.sourceBag, move.sourceSlot)
@@ -876,6 +915,8 @@ local function ApplySort_Yielding(items, targetPositions, bagFamilies)
             C_Container_PickupContainerItem(move.sourceBag, move.sourceSlot)
             C_Container_PickupContainerItem(move.targetBag, move.targetSlot)
             ClearCursor()
+            AddPendingLock(move.sourceBag, move.sourceSlot)
+            AddPendingLock(move.targetBag, move.targetSlot)
             moveCount = moveCount + 1
             if not soundsMuted then
                 MutePickupSounds()
@@ -896,6 +937,8 @@ local function ApplySort_Yielding(items, targetPositions, bagFamilies)
             C_Container_PickupContainerItem(move.sourceBag, move.sourceSlot)
             C_Container_PickupContainerItem(move.targetBag, move.targetSlot)
             ClearCursor()
+            AddPendingLock(move.sourceBag, move.sourceSlot)
+            AddPendingLock(move.targetBag, move.targetSlot)
             moveCount = moveCount + 1
             if not soundsMuted then
                 MutePickupSounds()
@@ -1049,14 +1092,12 @@ local sortTimeout = 30
 local activeBagIDs = Constants.BAG_IDS
 
 local function AnyItemsLocked()
-    for _, bagID in ipairs(activeBagIDs) do
-        local numSlots = C_Container_GetContainerNumSlots(bagID)
-        for slot = 1, numSlots do
-            local itemInfo = C_Container_GetContainerItemInfo(bagID, slot)
-            if itemInfo and itemInfo.isLocked then
-                return true
-            end
-        end
+    if pendingLockCount == 0 then return false end
+    for i = 0, pendingLockCount - 1 do
+        local bagID = pendingLockSlots[i * 2 + 1]
+        local slot = pendingLockSlots[i * 2 + 2]
+        local itemInfo = C_Container_GetContainerItemInfo(bagID, slot)
+        if itemInfo and itemInfo.isLocked then return true end
     end
     return false
 end
@@ -1069,6 +1110,7 @@ local function FinishSort(message)
     soundsMuted = false
     activeBagIDs = Constants.BAG_IDS
     currentFrameBudget = FRAME_BUDGET_US
+    ClearPendingLocks()
     UnmutePickupSounds()
     SortEngine:ClearCache()
     if message then
@@ -1195,6 +1237,7 @@ function SortEngine:CancelSort()
     sortCoroutine = nil
     soundsMuted = false
     currentPass = 0
+    ClearPendingLocks()
 
     activeBagIDs = Constants.BAG_IDS
     currentFrameBudget = FRAME_BUDGET_US
@@ -1306,6 +1349,7 @@ restackFrame:SetScript("OnUpdate", function(self, elapsed)
     if InCombatLockdown() then
         ClearCursor()
         restackInProgress = false
+        ClearPendingLocks()
         UnmutePickupSounds()
         ns:Print("Restack cancelled: entered combat")
         if restackCallback then
@@ -1322,16 +1366,10 @@ restackFrame:SetScript("OnUpdate", function(self, elapsed)
 
     if now < restackNextPassTime then return end
 
-    -- Check if any items are locked
-    for _, bagID in ipairs(restackBagIDs) do
-        local numSlots = C_Container_GetContainerNumSlots(bagID)
-        for slot = 1, numSlots do
-            local itemInfo = C_Container_GetContainerItemInfo(bagID, slot)
-            if itemInfo and itemInfo.isLocked then
-                restackNextPassTime = now + lockWaitTime
-                return -- Wait for items to unlock
-            end
-        end
+    -- Check if any items are locked (uses targeted pendingLockSlots from ConsolidateStacks)
+    if AnyItemsLocked() then
+        restackNextPassTime = now + lockWaitTime
+        return
     end
 
     restackPassCount = restackPassCount + 1
@@ -1342,6 +1380,7 @@ restackFrame:SetScript("OnUpdate", function(self, elapsed)
     if moves == 0 or restackPassCount >= restackMaxPasses then
         -- Done restacking
         restackInProgress = false
+        ClearPendingLocks()
         UnmutePickupSounds()
         if restackCallback then
             restackCallback()

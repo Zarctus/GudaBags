@@ -965,6 +965,9 @@ end
 local function OnBagUpdate()
     -- Only refresh if enabled AND shown (avoid work when disabled)
     if frame and frame:IsShown() then
+        -- Skip refreshes during sort (will refresh once via BAGS_UPDATED when sort completes)
+        local SortEngine = ns:GetModule("SortEngine")
+        if SortEngine and (SortEngine:IsSorting() or SortEngine:IsRestacking()) then return end
         QuestBar:Refresh()
     end
 end
@@ -1000,6 +1003,9 @@ end, QuestBar)
 
 Events:Register("BAG_UPDATE", OnBagUpdate, QuestBar)
 Events:Register("BAG_UPDATE_COOLDOWN", OnCooldownUpdate, QuestBar)
+Events:Register("BAGS_UPDATED", function()
+    if frame and frame:IsShown() then QuestBar:Refresh() end
+end, QuestBar)
 Events:Register("QUEST_LOG_UPDATE", OnQuestLogUpdate, QuestBar)
 Events:Register("QUEST_ACCEPTED", OnQuestLogUpdate, QuestBar)
 Events:Register("QUEST_REMOVED", OnQuestLogUpdate, QuestBar)

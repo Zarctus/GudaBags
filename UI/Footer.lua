@@ -351,6 +351,11 @@ function Footer:GetFrame()
     return frame
 end
 
+function Footer:UpdateTheme()
+    if BagSlots then BagSlots:UpdateTheme() end
+    if Keyring then Keyring:UpdateTheme() end
+end
+
 -- Show footer in cached mode (bag slots for highlighting, keyring toggle, cached money)
 function Footer:ShowCached(characterFullName)
     if not frame then return end

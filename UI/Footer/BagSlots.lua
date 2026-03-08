@@ -464,6 +464,37 @@ function BagSlots:UpdateAllVisualStates()
     end
 end
 
+-- Update theme colors on all bag slot buttons
+function BagSlots:UpdateTheme()
+    if not frame then return end
+    local fbBg = Theme:GetValue("footerButtonBg")
+    local fbBorder = Theme:GetValue("footerButtonBorder")
+
+    local function applyColors(bagSlot)
+        bagSlot:SetBackdropColor(fbBg[1], fbBg[2], fbBg[3], fbBg[4])
+        bagSlot:SetBackdropBorderColor(fbBorder[1], fbBorder[2], fbBorder[3], fbBorder[4])
+    end
+
+    -- Main bag slots
+    if frame.bagSlots then
+        for _, bagSlot in ipairs(frame.bagSlots) do
+            applyColors(bagSlot)
+        end
+    end
+
+    -- Collapsed mode main bag slot
+    if frame.mainBagSlot then
+        applyColors(frame.mainBagSlot)
+    end
+
+    -- Flyout bag slots
+    if bagFlyout and bagFlyout.bagSlots then
+        for _, bagSlot in ipairs(bagFlyout.bagSlots) do
+            applyColors(bagSlot)
+        end
+    end
+end
+
 -- Set callback for when bag visibility changes
 function BagSlots:SetVisibilityCallback(callback)
     onBagVisibilityChanged = callback

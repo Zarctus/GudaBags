@@ -1494,6 +1494,10 @@ UpdateFrameAppearance = function()
     ItemButton:UpdateSlotAlpha(bgAlpha)
     ItemButton:ApplyThemeTextures()
 
+    -- Update footer button theme colors
+    local Footer = ns:GetModule("Footer")
+    if Footer then Footer:UpdateTheme() end
+
     -- Update icon font size and tracked bar
     ItemButton:UpdateFontSize()
     local TrackedBar = ns:GetModule("TrackedBar")

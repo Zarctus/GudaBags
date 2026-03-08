@@ -2441,6 +2441,7 @@ UpdateFrameAppearance = function()
     BankHeader:SetBackdropAlpha(bgAlpha)
 
     ItemButton:UpdateSlotAlpha(bgAlpha)
+    ItemButton:ApplyThemeTextures()
     ItemButton:UpdateFontSize()
     local TrackedBar = ns:GetModule("TrackedBar")
     if TrackedBar then

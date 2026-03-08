@@ -1492,6 +1492,7 @@ UpdateFrameAppearance = function()
 
     -- Update slot background alpha (item icons stay fully visible)
     ItemButton:UpdateSlotAlpha(bgAlpha)
+    ItemButton:ApplyThemeTextures()
 
     -- Update icon font size and tracked bar
     ItemButton:UpdateFontSize()

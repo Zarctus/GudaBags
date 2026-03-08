@@ -107,6 +107,7 @@ local classicBorderKeys = {
 -- Cache
 -------------------------------------------------
 local cachedTheme = nil
+local cachedThemeName = nil
 
 -------------------------------------------------
 -- API
@@ -114,13 +115,14 @@ local cachedTheme = nil
 
 --- Returns the active theme table
 function Theme:Get()
-    if cachedTheme then
-        return cachedTheme
-    end
     local themeName = Database:GetSetting("theme") or "guda"
     if themeName == "retail" and ns.IsRetail then
         themeName = "guda"
     end
+    if cachedTheme and cachedThemeName == themeName then
+        return cachedTheme
+    end
+    cachedThemeName = themeName
     cachedTheme = themes[themeName] or themes.guda
     return cachedTheme
 end

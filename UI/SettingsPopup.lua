@@ -1396,6 +1396,16 @@ local CLOSE_TEXCOORDS = {
     highlight = {0.449219, 0.589844, 0.0078125, 0.304688},
 }
 
+local function EnsureGudaBackdrop()
+    if frame._gudaBackdrop then return frame._gudaBackdrop end
+    local bg = CreateFrame("Frame", nil, frame, "BackdropTemplate")
+    bg:SetAllPoints()
+    bg:SetFrameLevel(frame:GetFrameLevel())
+    bg:Hide()
+    frame._gudaBackdrop = bg
+    return bg
+end
+
 local function ResetAllChromeToHidden()
     -- Hide Blizzard chrome
     if frame.Bg then frame.Bg:Hide() end
@@ -1407,10 +1417,14 @@ local function ResetAllChromeToHidden()
     if frame.NineSlice then frame.NineSlice:Hide() end
     -- Hide metal frame overlay
     if frame.metalFrame then frame.metalFrame:Hide() end
-    -- Clear backdrop
-    frame:SetBackdrop(nil)
-    -- Hide both close buttons
-    if frame.CloseButton then frame.CloseButton:Hide() end
+    -- Hide Guda backdrop overlay
+    if frame._gudaBackdrop then frame._gudaBackdrop:Hide() end
+    -- Hide both close buttons, reset original to default size
+    if frame.CloseButton then
+        local closeSize = ns.IsRetail and 22 or 32
+        frame.CloseButton:SetSize(closeSize, closeSize)
+        frame.CloseButton:Hide()
+    end
     if frame._retailCloseBtn then frame._retailCloseBtn:Hide() end
 end
 
@@ -1457,7 +1471,10 @@ local function ApplySettingsTheme()
     if useMetal then
         -- Retail theme: metal frame overlay + retail close button
         Theme:ApplyFrameBackground(frame, 1, true)
-        EnsureRetailCloseButton():Show()
+        local btn = EnsureRetailCloseButton()
+        btn:ClearAllPoints()
+        btn:SetPoint("TOPRIGHT", frame, "TOPRIGHT", 2, 2)
+        btn:Show()
     elseif useBlizzard then
         -- Blizzard theme: restore all ButtonFrameTemplate chrome
         if frame.Bg then frame.Bg:Show() end
@@ -1469,13 +1486,21 @@ local function ApplySettingsTheme()
         if frame.NineSlice then frame.NineSlice:Show() end
         frame.CloseButton:Show()
     else
-        -- Guda theme: dark minimal backdrop
-        frame:SetBackdrop(Theme:GetValue("backdrop"))
+        -- Guda theme: dark minimal backdrop (on separate child frame)
+        local gudaBg = EnsureGudaBackdrop()
+        gudaBg:SetBackdrop(Theme:GetValue("backdrop"))
         local bg = Theme:GetValue("frameBg")
-        frame:SetBackdropColor(bg[1], bg[2], bg[3], 1)
+        gudaBg:SetBackdropColor(bg[1], bg[2], bg[3], 1)
         local border = Theme:GetValue("frameBorder")
-        frame:SetBackdropBorderColor(border[1], border[2], border[3], border[4])
+        gudaBg:SetBackdropBorderColor(border[1], border[2], border[3], border[4])
+        gudaBg:Show()
+        frame.CloseButton:SetSize(22, 22)
         frame.CloseButton:Show()
+    end
+
+    -- Apply tab theme
+    if tabPanel then
+        tabPanel:ApplyTheme(useMetal and "retail" or useBlizzard and "blizzard" or "guda")
     end
 end
 
@@ -1484,7 +1509,7 @@ end
 -------------------------------------------------
 local function CreateSettingsFrame()
     -- Use ButtonFrameTemplate for standard Blizzard look
-    local f = CreateFrame("Frame", "GudaBagsSettingsPopup", UIParent, "ButtonFrameTemplate,BackdropTemplate")
+    local f = CreateFrame("Frame", "GudaBagsSettingsPopup", UIParent, "ButtonFrameTemplate")
     f:SetSize(POPUP_WIDTH, POPUP_HEIGHT)
     f:SetPoint("CENTER")
     f:SetMovable(true)
@@ -1596,6 +1621,7 @@ function SettingsPopup:Toggle()
     if frame:IsShown() then
         frame:Hide()
     else
+        ApplySettingsTheme()
         tabPanel:RefreshAll()
         frame:Show()
         -- Re-select active tab after show (OnShow deselects all tabs)
@@ -1609,6 +1635,7 @@ function SettingsPopup:Show()
     if not frame then
         frame = CreateSettingsFrame()
     end
+    ApplySettingsTheme()
     tabPanel:RefreshAll()
     frame:Show()
     -- Re-select active tab after show (OnShow deselects all tabs)

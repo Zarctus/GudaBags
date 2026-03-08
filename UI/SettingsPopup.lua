@@ -1585,6 +1585,19 @@ local function CreateSettingsFrame()
         end
         if key == "theme" then
             ApplySettingsTheme()
+            -- Auto-enable retail empty slots when switching to Retail theme (Classic only)
+            if not ns.IsRetail then
+                local Database = ns:GetModule("Database")
+                local themeName = Database:GetSetting("theme")
+                if themeName == "retail" then
+                    Database:SetSetting("retailEmptySlots", true)
+                end
+            end
+            -- Refresh general tab to update retailEmptySlots checkbox
+            local generalContent = tabPanel:GetContent("general")
+            if generalContent and generalContent.RefreshAll then
+                generalContent:RefreshAll()
+            end
         end
     end, f)
 

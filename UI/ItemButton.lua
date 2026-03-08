@@ -37,6 +37,23 @@ local function SuppressItemErrors()
     end
 end
 
+-- Retail slot textures used when retailEmptySlots setting is enabled
+local RETAIL_SLOT_TEXTURES = {
+    background = "Interface\\AddOns\\GudaBags\\Assets\\Themes\\retail\\HDActionBarBtn",
+    border = "Interface\\AddOns\\GudaBags\\Assets\\Themes\\retail\\btn_border",
+    highlight = "Interface\\AddOns\\GudaBags\\Assets\\Themes\\retail\\btn_highlight_strong",
+}
+
+-- Resolve effective slot textures: on Retail WoW use theme directly,
+-- on Classic expansions the retailEmptySlots setting controls it
+local function GetEffectiveSlotTextures()
+    if ns.IsRetail then
+        local Theme = ns:GetModule("Theme")
+        return Theme:Get().slotTextures
+    end
+    return Database:GetSetting("retailEmptySlots") and RETAIL_SLOT_TEXTURES or nil
+end
+
 -- Apply retail/default slot textures to a single button
 local function ApplyThemeToButton(button, slotTex)
     if slotTex then
@@ -977,8 +994,7 @@ function ItemButton:Acquire(parent)
     button.owner = parent
 
     -- Apply retail slot textures immediately so first-open doesn't flash default
-    local Theme = ns:GetModule("Theme")
-    ApplyThemeToButton(button, Theme:Get().slotTextures)
+    ApplyThemeToButton(button, GetEffectiveSlotTextures())
 
     return button
 end
@@ -1505,8 +1521,7 @@ function ItemButton:UpdateFontSize()
 end
 
 function ItemButton:ApplyThemeTextures()
-    local Theme = ns:GetModule("Theme")
-    local slotTex = Theme:Get().slotTextures
+    local slotTex = GetEffectiveSlotTextures()
     if not buttonPool then return end
     for button in buttonPool:EnumerateActive() do
         ApplyThemeToButton(button, slotTex)

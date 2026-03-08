@@ -1544,6 +1544,7 @@ local appearanceSettings = {
     questBarSize = true,
     questBarColumns = true,
     theme = true,
+    retailEmptySlots = true,
 }
 
 -- Settings that need both appearance update AND resize

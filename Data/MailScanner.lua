@@ -236,23 +236,22 @@ local function InitializeAHHooks()
         end
     elseif PlaceAuctionBid then
         -- Classic Era / TBC: legacy PlaceAuctionBid hook
+        -- Defer predicted mail until we confirm no error from the server
+        local pendingClassicPurchase = nil
+        local pendingTimer = nil
+
         hooksecurefunc("PlaceAuctionBid", function(listType, index, bid)
-            -- GetAuctionItemInfo returns differ by version:
-            -- Classic Era: name, texture, count, quality, canUse, level, minBid, minIncrement, buyoutPrice, ..., itemId (17 returns)
-            -- TBC+:       name, texture, count, quality, canUse, level, levelColHeader, minBid, minIncrement, buyoutPrice, ..., itemId (18 returns)
             local info = {GetAuctionItemInfo(listType, index)}
             local name = info[1]
             local texture = info[2]
             local count = info[3]
             local quality = info[4]
-            -- All Classic versions (Era, TBC, etc.) share the same return layout:
-            -- name, texture, count, quality, canUse, level, levelColHeader, minBid, minIncrement, buyoutPrice, ..., itemId
             local buyoutPrice = info[10]
             local itemID = info[17]
             -- Only track buyouts (bid == buyout price)
             if buyoutPrice and buyoutPrice > 0 and bid >= buyoutPrice and itemID then
                 local link = GetAuctionItemLink(listType, index)
-                local row = {
+                pendingClassicPurchase = {
                     mailIndex = -1,
                     attachmentIndex = 1,
                     sender = AUCTION_HOUSE or "Auction House",
@@ -270,11 +269,38 @@ local function InitializeAHHooks()
                     quality = quality or 0,
                     predicted = true,
                 }
-                table.insert(cachedMail, 1, row)
-                ns:Debug("MailScanner: Classic AH buyout for", name or itemID, "x" .. (count or 1))
-                ScheduleDeferredSave()
-                if ns.OnMailUpdated then
-                    ns.OnMailUpdated()
+                -- Wait a short time for potential error; if none arrives, commit the predicted mail
+                if pendingTimer then pendingTimer:Cancel() end
+                pendingTimer = C_Timer.NewTimer(1.0, function()
+                    if pendingClassicPurchase then
+                        table.insert(cachedMail, 1, pendingClassicPurchase)
+                        ns:Debug("MailScanner: Classic AH buyout for", pendingClassicPurchase.name or pendingClassicPurchase.itemID, "x" .. (pendingClassicPurchase.count or 1))
+                        pendingClassicPurchase = nil
+                        ScheduleDeferredSave()
+                        if ns.OnMailUpdated then
+                            ns.OnMailUpdated()
+                        end
+                    end
+                end)
+            end
+        end)
+
+        -- Cancel pending predicted mail if auction error occurs
+        local auctionErrorFrame = CreateFrame("Frame")
+        auctionErrorFrame:RegisterEvent("UI_ERROR_MESSAGE")
+        auctionErrorFrame:SetScript("OnEvent", function(_, _, errorType, message)
+            if pendingClassicPurchase and message and (
+                message == ERR_AUCTION_DATABASE_ERROR
+                or message == ERR_ITEM_NOT_FOUND
+                or message == ERR_AUCTION_HIGHER_BID
+                or message == ERR_NOT_ENOUGH_MONEY
+                or string.find(message, "Internal Auction Error")
+            ) then
+                ns:Debug("MailScanner: Classic AH purchase failed:", message)
+                pendingClassicPurchase = nil
+                if pendingTimer then
+                    pendingTimer:Cancel()
+                    pendingTimer = nil
                 end
             end
         end)

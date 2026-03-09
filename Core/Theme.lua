@@ -47,8 +47,8 @@ local themes = {
         bankTabBg = {0.12, 0.12, 0.12, 1},
         bankTabBorder = {0.30, 0.30, 0.30, 1},
         bankTabSelected = {0.20, 0.20, 0.20, 1},
-        footerButtonBg = {0.5, 0.06, 0.06, 0.6},
-        footerButtonBorder = {0.5, 0.06, 0.06, 1},
+        footerButtonBg = {0.12, 0.12, 0.12, 1},
+        footerButtonBorder = {0.30, 0.30, 0.30, 1},
         useBlizzardFrame = true,
         backdrop = nil,
         headerBackdrop = nil,
@@ -324,16 +324,16 @@ function Theme:ApplyFrameBackground(frame, bgAlpha, showBorders)
         end
 
         if showBorders then
-            bliz.Bg:SetPoint("TOPLEFT", 2, -21)
+            bliz.Bg:SetPoint("TOPLEFT", 2, -2)
             bliz.Bg:SetPoint("BOTTOMRIGHT", -2, 2)
         else
             bliz.Bg:SetPoint("TOPLEFT", 2, 0)
             bliz.Bg:SetPoint("BOTTOMRIGHT", -2, 0)
         end
 
-        -- Hide title bar background (our custom header handles the title area)
+        -- Hide title bar divider (our custom header handles the title area)
         if bliz.TitleBg then
-            bliz.TitleBg:SetAlpha(showBorders and bgAlpha or 0)
+            bliz.TitleBg:Hide()
         end
 
         -- Classic border pieces (stay at frame edges — works fine on Classic)
@@ -524,8 +524,8 @@ local function StyleButton(btn, useBlizzard, useMetal)
         btn:SetSize(BLIZZARD_ICON_SIZE, BLIZZARD_ICON_SIZE)
         local bg = EnsureIconBg(btn)
         bg:SetSize(BLIZZARD_ICON_BG_W, BLIZZARD_ICON_BG_H)
-        bg:SetBackdropColor(0.5, 0.06, 0.06, 0.6)
-        bg:SetBackdropBorderColor(0.5, 0.06, 0.06, 1)
+        bg:SetBackdropColor(0.15, 0.12, 0.10, 0.6)
+        bg:SetBackdropBorderColor(0.45, 0.40, 0.35, 1)
         bg:Show()
     else
         btn:SetSize(GUDA_ICON_SIZE, GUDA_ICON_SIZE)

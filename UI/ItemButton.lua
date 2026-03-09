@@ -1216,11 +1216,11 @@ function ItemButton:SetItem(button, itemData, size, isReadOnly)
             SetItemButtonDesaturated(button, false)
         end
 
-        -- Update cooldown
+        -- Update cooldown (skip GCD — duration <= 1.5s — to avoid spinning every item on wand/ability use)
         local isOnCooldown = false
         if button.cooldown and not isReadOnly then
             local start, duration, enable = C_Container.GetContainerItemCooldown(itemData.bagID, itemData.slot)
-            if start and duration and enable and enable > 0 and duration > 0 then
+            if start and duration and enable and enable > 0 and duration > 2 then
                 CooldownFrame_Set(button.cooldown, start, duration, true)
                 isOnCooldown = true
             else
@@ -1631,7 +1631,7 @@ if Events then
                 and not button.isReadOnly and not button.isEmptySlotButton
                 and not (button.itemData.isEmptySlots) then
                 local start, duration, enable = C_Container.GetContainerItemCooldown(button.itemData.bagID, button.itemData.slot)
-                if start and duration and enable and enable > 0 and duration > 0 then
+                if start and duration and enable and enable > 0 and duration > 2 then
                     CooldownFrame_Set(button.cooldown, start, duration, true)
                 else
                     CooldownFrame_Set(button.cooldown, 0, 0, false)

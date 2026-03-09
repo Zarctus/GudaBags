@@ -14,6 +14,7 @@ if not Expansion.Features.HasKeyring then
         IsVisible = function() return false end,
         GetButton = function() return nil end,
         UpdateState = function() end,
+        UpdateTheme = function() end,
     })
     return
 end

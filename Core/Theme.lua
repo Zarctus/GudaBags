@@ -577,6 +577,116 @@ function Theme:ApplyHeaderButtons(headerFrame, leftButtons, rightButtons, closeB
 end
 
 -------------------------------------------------
+-- Popup Chrome Helpers (shared by SettingsPopup & CategoryEditor)
+-------------------------------------------------
+
+--- Creates a BackdropTemplate child frame for the Guda theme (once per frame).
+--- @param f table The popup frame
+--- @return table The backdrop frame
+function Theme:EnsureGudaBackdrop(f)
+    if f._gudaBackdrop then return f._gudaBackdrop end
+    local bg = CreateFrame("Frame", nil, f, "BackdropTemplate")
+    bg:SetAllPoints()
+    bg:SetFrameLevel(f:GetFrameLevel())
+    bg:Hide()
+    f._gudaBackdrop = bg
+    return bg
+end
+
+--- Creates a retail-style red close button (once per frame).
+--- @param f table The popup frame
+--- @return table The close button
+function Theme:EnsureRetailCloseButton(f)
+    if f._retailCloseBtn then return f._retailCloseBtn end
+
+    local btn = CreateFrame("Button", nil, f)
+    btn:SetSize(20, 20)
+    btn:SetPoint("TOPRIGHT", f, "TOPRIGHT", -2, -3)
+    btn:SetFrameLevel(f:GetFrameLevel() + 10)
+
+    local normal = btn:CreateTexture(nil, "ARTWORK")
+    normal:SetTexture(CLOSE_TEXTURE)
+    normal:SetAllPoints()
+    normal:SetTexCoord(unpack(CLOSE_TEXCOORDS.normal))
+    btn:SetNormalTexture(normal)
+
+    local pushed = btn:CreateTexture(nil, "ARTWORK")
+    pushed:SetTexture(CLOSE_TEXTURE)
+    pushed:SetAllPoints()
+    pushed:SetTexCoord(unpack(CLOSE_TEXCOORDS.pushed))
+    btn:SetPushedTexture(pushed)
+
+    local hl = btn:CreateTexture(nil, "HIGHLIGHT")
+    hl:SetTexture(CLOSE_TEXTURE)
+    hl:SetAllPoints()
+    hl:SetTexCoord(unpack(CLOSE_TEXCOORDS.highlight))
+    hl:SetBlendMode("ADD")
+    btn:SetHighlightTexture(hl)
+
+    btn:SetScript("OnClick", function() f:Hide() end)
+
+    f._retailCloseBtn = btn
+    return btn
+end
+
+--- Hides all chrome elements on a ButtonFrameTemplate popup.
+--- @param f table The popup frame
+function Theme:ResetPopupChrome(f)
+    if f.Bg then f.Bg:Hide() end
+    if f.TitleBg then f.TitleBg:Hide() end
+    if f.TopTileStreaks then f.TopTileStreaks:Hide() end
+    for _, key in ipairs(classicBorderKeys) do
+        if f[key] then f[key]:Hide() end
+    end
+    if f.NineSlice then f.NineSlice:Hide() end
+    if f.metalFrame then f.metalFrame:Hide() end
+    if f._gudaBackdrop then f._gudaBackdrop:Hide() end
+    if f.CloseButton then
+        local closeSize = ns.IsRetail and 22 or 32
+        f.CloseButton:SetSize(closeSize, closeSize)
+        f.CloseButton:Hide()
+    end
+    if f._retailCloseBtn then f._retailCloseBtn:Hide() end
+end
+
+--- Applies the current theme to a ButtonFrameTemplate popup frame.
+--- @param f table The popup frame
+function Theme:ApplyPopupTheme(f)
+    if not f then return end
+    local useMetal = self:GetValue("useMetalFrame")
+    local useBlizzard = self:GetValue("useBlizzardFrame")
+
+    self:ResetPopupChrome(f)
+
+    if useMetal then
+        self:ApplyFrameBackground(f, 1, true)
+        local btn = self:EnsureRetailCloseButton(f)
+        btn:ClearAllPoints()
+        btn:SetPoint("TOPRIGHT", f, "TOPRIGHT", 2, 2)
+        btn:Show()
+    elseif useBlizzard then
+        if f.Bg then f.Bg:Show() end
+        if f.TitleBg then f.TitleBg:Show() end
+        if f.TopTileStreaks then f.TopTileStreaks:Show() end
+        for _, key in ipairs(classicBorderKeys) do
+            if f[key] then f[key]:Show() end
+        end
+        if f.NineSlice then f.NineSlice:Show() end
+        f.CloseButton:Show()
+    else
+        local gudaBg = self:EnsureGudaBackdrop(f)
+        gudaBg:SetBackdrop(self:GetValue("backdrop"))
+        local bg = self:GetValue("frameBg")
+        gudaBg:SetBackdropColor(bg[1], bg[2], bg[3], 1)
+        local border = self:GetValue("frameBorder")
+        gudaBg:SetBackdropBorderColor(border[1], border[2], border[3], border[4])
+        gudaBg:Show()
+        f.CloseButton:SetSize(22, 22)
+        f.CloseButton:Show()
+    end
+end
+
+-------------------------------------------------
 -- Cache Invalidation
 -------------------------------------------------
 Events:Register("SETTING_CHANGED", function(event, key)

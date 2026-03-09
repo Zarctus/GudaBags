@@ -500,7 +500,6 @@ local function CreateSideTab(parent, index, isAllTab)
 end
 
 -- Tab icons
-local TAB_ICON_ALL = "Interface\\AddOns\\GudaBags\\Assets\\chest.png"  -- Chest icon for "All" tab
 local TAB_ICON_DEFAULT = "Interface\\Icons\\INV_Misc_Bag_10"  -- Default fallback icon
 
 function BankFrame:ShowSideTabs(characterFullName, bankType)
@@ -1670,16 +1669,6 @@ function BankFrame:RefreshCategoryView(bank, bagsToShow, settings, hasSearch, is
 
     local items, emptyCount, firstEmptySlot, soulEmptyCount, firstSoulEmptySlot = LayoutEngine:CollectItemsForCategoryView(bagsToShow, bank, isReadOnly)
 
-    if hasSearch then
-        local filteredItems = {}
-        for _, item in ipairs(items) do
-            if SearchBar:ItemMatchesFilters(frame, item.itemData) then
-                table.insert(filteredItems, item)
-            end
-        end
-        items = filteredItems
-    end
-
     local sections = LayoutEngine:BuildCategorySections(items, isReadOnly, emptyCount, firstEmptySlot, soulEmptyCount, firstSoulEmptySlot)
 
     local frameWidth, frameHeight = LayoutEngine:CalculateCategoryFrameSize(sections, settings)
@@ -1880,7 +1869,13 @@ function BankFrame:RefreshCategoryView(bank, bagsToShow, settings, hasSearch, is
         button.categoryId = itemInfo.categoryId
 
         ItemButton:SetItem(button, itemData, iconSize, isReadOnly)
-        button:SetAlpha(1)
+
+        -- Apply search highlighting (dim non-matching items)
+        if hasSearch and not SearchBar:ItemMatchesFilters(frame, itemData) then
+            button:SetAlpha(0.15)
+        else
+            button:SetAlpha(1)
+        end
 
         -- Store layout position for drag-drop indicator
         button.iconSize = iconSize

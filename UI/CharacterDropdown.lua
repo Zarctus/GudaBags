@@ -5,9 +5,7 @@ ns:RegisterModule("CharacterDropdown", CharacterDropdown)
 
 local L = ns.L
 
-local function GetDatabase()
-    return ns:GetModule("Database")
-end
+local Database = ns:GetModule("Database")
 
 local DROPDOWN_WIDTH = 160
 local ROW_HEIGHT = 20
@@ -94,7 +92,6 @@ local function PopulateDropdown(dropdown)
     local frame = dropdown.frame
     if not frame then return end
 
-    local Database = GetDatabase()
     local characters = Database:GetAllCharacters(false, true)
     local currentFullName = Database:GetPlayerFullName()
     local viewingCharacter = dropdown.getViewingCharacter and dropdown.getViewingCharacter() or nil

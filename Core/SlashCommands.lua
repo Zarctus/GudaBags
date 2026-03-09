@@ -9,6 +9,8 @@ local L = ns.L
 -- Module Getters (lazy loading)
 -------------------------------------------------
 
+local Database = ns:GetModule("Database")
+
 local function GetBagFrame()
     return ns:GetModule("BagFrame")
 end
@@ -19,10 +21,6 @@ end
 
 local function GetSettingsPopup()
     return ns:GetModule("SettingsPopup")
-end
-
-local function GetDatabase()
-    return ns:GetModule("Database")
 end
 
 local function GetBagScanner()
@@ -119,7 +117,6 @@ end
 
 -- List saved characters
 commandHandlers["chars"] = function()
-    local Database = GetDatabase()
     ns:Print(L["CMD_SAVED_CHARACTERS"])
 
     local characters = Database:GetAllCharacterData()
@@ -166,7 +163,6 @@ end
 -- Force save current character
 commandHandlers["save"] = function()
     local BagScanner = GetBagScanner()
-    local Database = GetDatabase()
 
     ns:Print(L["CMD_SCANNING"])
     local bags = BagScanner:ScanAllBags()
@@ -190,7 +186,6 @@ end
 
 -- Show current locale info
 commandHandlers["locale"] = function()
-    local Database = GetDatabase()
     local testLocale = Database:GetGlobalSetting("testLocale")
 
     ns:Print("Current locale: " .. ns:GetCurrentLocale())
@@ -262,7 +257,6 @@ local patternHandlers = {}
 
 -- Count item by ID across characters
 patternHandlers["^count%s+(%d+)$"] = function(itemID)
-    local Database = GetDatabase()
     local total, chars = Database:CountItemAcrossCharacters(tonumber(itemID))
     ns:Print(string.format(L["CMD_ITEM_COUNT"], itemID, total))
     for _, c in ipairs(chars) do

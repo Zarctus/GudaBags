@@ -120,6 +120,67 @@ function Utils:FormatMoneyShort(amount)
     return result
 end
 
+-------------------------------------------------
+-- Item Border Creation
+-- Creates quality border frame on item buttons
+-- Used by ItemButton, QuestBar, TrackedBar
+-------------------------------------------------
+
+function Utils:CreateItemBorder(button)
+    local Constants = ns.Constants
+    local BORDER_THICKNESS = Constants.ICON.BORDER_THICKNESS
+
+    local borderFrame = CreateFrame("Frame", nil, button, "BackdropTemplate")
+    borderFrame:SetPoint("TOPLEFT", button, "TOPLEFT", -BORDER_THICKNESS, BORDER_THICKNESS)
+    borderFrame:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", BORDER_THICKNESS, -BORDER_THICKNESS)
+    borderFrame:SetFrameLevel(button:GetFrameLevel() + Constants.FRAME_LEVELS.BORDER)
+
+    borderFrame:SetBackdrop({
+        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+        edgeSize = 12,
+        insets = {left = 2, right = 2, top = 2, bottom = 2},
+    })
+    borderFrame:Hide()
+
+    borderFrame.SetVertexColor = function(self, r, g, b, a)
+        self:SetBackdropBorderColor(r, g, b, a)
+    end
+
+    return borderFrame
+end
+
+-------------------------------------------------
+-- Profession Tool Detection
+-- Fishing poles, mining picks, skinning knives, etc.
+-------------------------------------------------
+
+function Utils:IsProfessionTool(itemData)
+    -- Check by item ID first
+    local Constants = ns.Constants
+    if itemData.itemID and Constants.PROFESSION_TOOL_IDS[itemData.itemID] then
+        return true
+    end
+
+    -- Check fishing poles by subtype
+    local subtype = itemData.itemSubType
+    if subtype == "Fishing Poles" or subtype == "Fishing Pole" then
+        return true
+    end
+
+    -- Check by name patterns
+    local name = itemData.name
+    if name then
+        if name:find("Mining Pick") or name:find("Skinning Knife") or
+           name:find("Blacksmith Hammer") or name:find("Runed.*Rod") or
+           name:find("Philosopher's Stone") or name:find("Alchemist") or
+           name:find("Spanner") or name:find("Gyromatic") then
+            return true
+        end
+    end
+
+    return false
+end
+
 -- Format money with all denominations (for totals/summaries)
 function Utils:FormatMoneyFull(amount)
     if not amount or amount == 0 then return "" end

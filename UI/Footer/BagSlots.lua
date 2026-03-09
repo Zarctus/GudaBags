@@ -6,9 +6,7 @@ ns:RegisterModule("Footer.BagSlots", BagSlots)
 local Constants = ns.Constants
 local Theme = ns:GetModule("Theme")
 
-local function GetDatabase()
-    return ns:GetModule("Database")
-end
+local Database = ns:GetModule("Database")
 
 local frame = nil
 local bagFlyout = nil
@@ -19,19 +17,12 @@ local onBagVisibilityChanged = nil  -- Callback when bag visibility changes
 
 -- Helper to get hidden bags from database
 local function GetHiddenBags()
-    local db = GetDatabase()
-    if db then
-        return db:GetSetting("hiddenBags") or {}
-    end
-    return {}
+    return Database:GetSetting("hiddenBags") or {}
 end
 
 -- Helper to set hidden bags in database
 local function SetHiddenBags(hiddenBags)
-    local db = GetDatabase()
-    if db then
-        db:SetSetting("hiddenBags", hiddenBags)
-    end
+    Database:SetSetting("hiddenBags", hiddenBags)
 end
 
 -- Check if a bag is hidden
@@ -89,7 +80,7 @@ local function CreateBagSlotButton(parent, bagID, bagSlotSize)
         end
 
         -- Show right-click hint for hiding bags (only in single view mode, not backpack)
-        local viewType = GetDatabase():GetSetting("bagViewType") or "single"
+        local viewType = Database:GetSetting("bagViewType") or "single"
         if viewType == "single" and not viewingCharacter and self.bagID ~= 0 then
             local isHidden = IsBagHidden(self.bagID)
             if isHidden then
@@ -118,7 +109,7 @@ local function CreateBagSlotButton(parent, bagID, bagSlotSize)
     bagSlot:SetScript("OnClick", function(self, button)
         -- Right-click to toggle bag visibility (only in single view mode, not for backpack)
         if button == "RightButton" then
-            local viewType = GetDatabase():GetSetting("bagViewType") or "single"
+            local viewType = Database:GetSetting("bagViewType") or "single"
             if viewType == "single" and not viewingCharacter and self.bagID ~= 0 then
                 ToggleBagVisibility(self.bagID)
                 BagSlots:UpdateBagVisualState(self)
@@ -264,7 +255,7 @@ function BagSlots:Show()
     if not frame then return end
     frame:Show()
 
-    local showAllBags = GetDatabase():GetSetting("hoverBagline")
+    local showAllBags = Database:GetSetting("hoverBagline")
 
     if showAllBags then
         -- Show all bag slots
@@ -318,7 +309,7 @@ function BagSlots:Update()
     -- Get cached bags if viewing another character
     local cachedBags = nil
     if viewingCharacter then
-        cachedBags = GetDatabase():GetNormalizedBags(viewingCharacter)
+        cachedBags = Database:GetNormalizedBags(viewingCharacter)
     end
 
     for _, bagSlot in ipairs(frame.bagSlots) do
@@ -366,7 +357,7 @@ function BagSlots:UpdateFlyout()
     -- Get cached bags if viewing another character
     local cachedBags = nil
     if viewingCharacter then
-        cachedBags = GetDatabase():GetNormalizedBags(viewingCharacter)
+        cachedBags = Database:GetNormalizedBags(viewingCharacter)
     end
 
     for _, bagSlot in ipairs(bagFlyout.bagSlots) do
@@ -419,7 +410,7 @@ end
 function BagSlots:GetAnchor()
     if not frame then return nil end
 
-    local showAllBags = GetDatabase():GetSetting("hoverBagline")
+    local showAllBags = Database:GetSetting("hoverBagline")
     if showAllBags then
         return frame.bagSlots[#frame.bagSlots]
     else
@@ -435,7 +426,7 @@ end
 function BagSlots:UpdateBagVisualState(bagSlot)
     if not bagSlot then return end
 
-    local viewType = GetDatabase():GetSetting("bagViewType") or "single"
+    local viewType = Database:GetSetting("bagViewType") or "single"
     local isHidden = IsBagHidden(bagSlot.bagID)
 
     -- Only apply hidden visual in single view mode and when not viewing another character

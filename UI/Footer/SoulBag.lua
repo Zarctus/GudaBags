@@ -24,17 +24,11 @@ ns:RegisterModule("Footer.SoulBag", SoulBag)
 local Constants = ns.Constants
 local L = ns.L
 
+local Database = ns:GetModule("Database")
+
 local button = nil
 local onSoulBagToggle = nil
 local mainBagFrame = nil
-local Database = nil
-
-local function GetDatabase()
-    if not Database then
-        Database = ns:GetModule("Database")
-    end
-    return Database
-end
 
 -- Get all soul bag IDs from BagClassifier
 local function GetSoulBagIDs()
@@ -49,19 +43,12 @@ end
 
 -- Get hidden bags from database
 local function GetHiddenBags()
-    local db = GetDatabase()
-    if db then
-        return db:GetSetting("hiddenBags") or {}
-    end
-    return {}
+    return Database:GetSetting("hiddenBags") or {}
 end
 
 -- Set hidden bags in database
 local function SetHiddenBags(hiddenBags)
-    local db = GetDatabase()
-    if db then
-        db:SetSetting("hiddenBags", hiddenBags)
-    end
+    Database:SetSetting("hiddenBags", hiddenBags)
 end
 
 -- Check if a specific bag is hidden

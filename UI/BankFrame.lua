@@ -1283,10 +1283,10 @@ function BankFrame:RefreshSingleView(bank, bagsToShow, settings, hasSearch, isRe
 
         if slotInfo.itemData then
             ItemButton:SetItem(button, slotInfo.itemData, iconSize, isReadOnly)
-            if hasSearch and not SearchBar:ItemMatchesFilters(frame, slotInfo.itemData) then
-                button:SetAlpha(0.15)
+            if hasSearch then
+                ItemButton:SetSearchState(button, SearchBar:ItemMatchesFilters(frame, slotInfo.itemData))
             else
-                button:SetAlpha(1)
+                ItemButton:ClearSearchState(button)
             end
             -- Cache item data for incremental updates
             cachedItemData[slotKey] = slotInfo.itemData.itemID
@@ -1294,9 +1294,9 @@ function BankFrame:RefreshSingleView(bank, bagsToShow, settings, hasSearch, isRe
         else
             ItemButton:SetEmpty(button, slotInfo.bagID, slotInfo.slot, iconSize, isReadOnly)
             if hasSearch then
-                button:SetAlpha(0.15)
+                ItemButton:SetSearchState(button, false)
             else
-                button:SetAlpha(1)
+                ItemButton:ClearSearchState(button)
             end
             cachedItemData[slotKey] = nil
             cachedItemCount[slotKey] = nil
@@ -1426,19 +1426,19 @@ function BankFrame:RefreshSplitView(bank, bagsToShow, settings, hasSearch, isRea
 
             if itemData then
                 ItemButton:SetItem(button, itemData, iconSize, isReadOnly)
-                if hasSearch and not SearchBar:ItemMatchesFilters(frame, itemData) then
-                    button:SetAlpha(0.15)
+                if hasSearch then
+                    ItemButton:SetSearchState(button, SearchBar:ItemMatchesFilters(frame, itemData))
                 else
-                    button:SetAlpha(1)
+                    ItemButton:ClearSearchState(button)
                 end
                 cachedItemData[slotKey] = itemData.itemID
                 cachedItemCount[slotKey] = itemData.count
             else
                 ItemButton:SetEmpty(button, bagID, slot, iconSize, isReadOnly)
                 if hasSearch then
-                    button:SetAlpha(0.15)
+                    ItemButton:SetSearchState(button, false)
                 else
-                    button:SetAlpha(1)
+                    ItemButton:ClearSearchState(button)
                 end
                 cachedItemData[slotKey] = nil
                 cachedItemCount[slotKey] = nil
@@ -1624,19 +1624,19 @@ function BankFrame:RefreshSingleViewWithTabs(bank, settings, hasSearch, isReadOn
 
             if slotInfo.itemData then
                 ItemButton:SetItem(button, slotInfo.itemData, iconSize, isReadOnly)
-                if hasSearch and not SearchBar:ItemMatchesFilters(frame, slotInfo.itemData) then
-                    button:SetAlpha(0.15)
+                if hasSearch then
+                    ItemButton:SetSearchState(button, SearchBar:ItemMatchesFilters(frame, slotInfo.itemData))
                 else
-                    button:SetAlpha(1)
+                    ItemButton:ClearSearchState(button)
                 end
                 cachedItemData[slotKey] = slotInfo.itemData.itemID
                 cachedItemCount[slotKey] = slotInfo.itemData.count
             else
                 ItemButton:SetEmpty(button, slotInfo.bagID, slotInfo.slot, iconSize, isReadOnly)
                 if hasSearch then
-                    button:SetAlpha(0.15)
+                    ItemButton:SetSearchState(button, false)
                 else
-                    button:SetAlpha(1)
+                    ItemButton:ClearSearchState(button)
                 end
                 cachedItemData[slotKey] = nil
                 cachedItemCount[slotKey] = nil
@@ -1870,11 +1870,11 @@ function BankFrame:RefreshCategoryView(bank, bagsToShow, settings, hasSearch, is
 
         ItemButton:SetItem(button, itemData, iconSize, isReadOnly)
 
-        -- Apply search highlighting (dim non-matching items)
-        if hasSearch and not SearchBar:ItemMatchesFilters(frame, itemData) then
-            button:SetAlpha(0.15)
+        -- Apply spotlight search highlighting
+        if hasSearch then
+            ItemButton:SetSearchState(button, SearchBar:ItemMatchesFilters(frame, itemData))
         else
-            button:SetAlpha(1)
+            ItemButton:ClearSearchState(button)
         end
 
         -- Store layout position for drag-drop indicator
@@ -2184,10 +2184,10 @@ function BankFrame:IncrementalUpdate(dirtyBags)
             cachedItemData[slotKey] = update.itemData.itemID
             cachedItemCount[slotKey] = update.itemData.count
             cachedItemCategory[slotKey] = update.category
-            if hasSearch and not SearchBar:ItemMatchesFilters(frame, update.itemData) then
-                update.button:SetAlpha(0.15)
+            if hasSearch then
+                ItemButton:SetSearchState(update.button, SearchBar:ItemMatchesFilters(frame, update.itemData))
             else
-                update.button:SetAlpha(1)
+                ItemButton:ClearSearchState(update.button)
             end
         end
 
@@ -2301,16 +2301,20 @@ function BankFrame:IncrementalUpdate(dirtyBags)
                         ItemButton:SetItem(button, newItemData, iconSize, isReadOnly)
                         cachedItemData[slotKey] = newItemID
                         cachedItemCount[slotKey] = newItemData.count
-                        if hasSearch and not SearchBar:ItemMatchesFilters(frame, newItemData) then
-                            button:SetAlpha(0.15)
+                        if hasSearch then
+                            ItemButton:SetSearchState(button, SearchBar:ItemMatchesFilters(frame, newItemData))
                         else
-                            button:SetAlpha(1)
+                            ItemButton:ClearSearchState(button)
                         end
                     else
                         ItemButton:SetEmpty(button, bagID, slot, iconSize, isReadOnly)
                         cachedItemData[slotKey] = nil
                         cachedItemCount[slotKey] = nil
-                        button:SetAlpha(hasSearch and 0.3 or 1)
+                        if hasSearch then
+                            ItemButton:SetSearchState(button, false)
+                        else
+                            ItemButton:ClearSearchState(button)
+                        end
                     end
                 elseif newItemData then
                     -- Same item - only update if count changed (stacking)
@@ -2339,16 +2343,20 @@ function BankFrame:IncrementalUpdate(dirtyBags)
                             ItemButton:SetItem(button, newItemData, iconSize, isReadOnly)
                             cachedItemData[slotKey] = newItemID
                             cachedItemCount[slotKey] = newItemData.count
-                            if hasSearch and not SearchBar:ItemMatchesFilters(frame, newItemData) then
-                                button:SetAlpha(0.15)
+                            if hasSearch then
+                                ItemButton:SetSearchState(button, SearchBar:ItemMatchesFilters(frame, newItemData))
                             else
-                                button:SetAlpha(1)
+                                ItemButton:ClearSearchState(button)
                             end
                         else
                             ItemButton:SetEmpty(button, bagID, slot, iconSize, isReadOnly)
                             cachedItemData[slotKey] = nil
                             cachedItemCount[slotKey] = nil
-                            button:SetAlpha(hasSearch and 0.3 or 1)
+                            if hasSearch then
+                                ItemButton:SetSearchState(button, false)
+                            else
+                                ItemButton:ClearSearchState(button)
+                            end
                         end
                     elseif newItemData then
                         -- Same item - only update if count changed (stacking)

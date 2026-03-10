@@ -118,6 +118,7 @@ local function ResetButton(pool, button)
     if button.questIcon then button.questIcon:Hide() end
     if button.questStarterIcon then button.questStarterIcon:Hide() end
     if button.craftingQualityIcon then button.craftingQualityIcon:Hide() end
+    if button.searchGlow then button.searchGlow:Hide() end
     if button.cooldown then CooldownFrame_Set(button.cooldown, 0, 0, false) end
 end
 
@@ -1516,11 +1517,15 @@ function ItemButton:HighlightBagSlots(bagID, owner)
             -- Skip buttons from other frames
         elseif button.itemData and button.itemData.bagID == bagID then
             button:SetAlpha(1.0)
+            if button.searchGlow then button.searchGlow:Hide() end
+            SetItemButtonDesaturated(button, button.itemData.locked or false)
             if button.slotBackground then
                 button.slotBackground:SetVertexColor(0.5, 0.5, 0.5, bgAlpha)
             end
         else
             button:SetAlpha(0.25)
+            if button.searchGlow then button.searchGlow:Hide() end
+            SetItemButtonDesaturated(button, true)
             if button.slotBackground then
                 button.slotBackground:SetVertexColor(0.5, 0.5, 0.5, bgAlpha * 0.25)
             end
@@ -1536,24 +1541,100 @@ function ItemButton:ClearHighlightedSlots(parentFrame)
 
     for button in buttonPool:EnumerateActive() do
         if hasSearch then
-            -- Respect search filter
-            if button.itemData and SearchBar:ItemMatchesFilters(parentFrame, button.itemData) then
-                button:SetAlpha(1.0)
-                if button.slotBackground then
-                    button.slotBackground:SetVertexColor(0.5, 0.5, 0.5, bgAlpha)
-                end
-            else
-                button:SetAlpha(0.15)
-                if button.slotBackground then
-                    button.slotBackground:SetVertexColor(0.5, 0.5, 0.5, bgAlpha * 0.15)
-                end
+            -- Respect search filter with spotlight effect
+            local isMatch = button.itemData and SearchBar:ItemMatchesFilters(parentFrame, button.itemData)
+            ItemButton:SetSearchState(button, isMatch)
+            if button.slotBackground then
+                button.slotBackground:SetVertexColor(0.5, 0.5, 0.5, isMatch and bgAlpha or bgAlpha * 0.4)
             end
         else
-            button:SetAlpha(1.0)
+            ItemButton:ClearSearchState(button)
             if button.slotBackground then
                 button.slotBackground:SetVertexColor(0.5, 0.5, 0.5, bgAlpha)
             end
         end
+    end
+end
+
+-- Spotlight search: create a bold blinking cyan rounded border lazily on first use
+-- Uses two layered BackdropTemplate borders for a thick, visible rounded glow
+local function EnsureSearchGlow(button)
+    if button.searchGlow then return button.searchGlow end
+
+    local glow = CreateFrame("Frame", nil, button)
+    glow:SetPoint("TOPLEFT", button, "TOPLEFT", -6, 6)
+    glow:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", 6, -6)
+    glow:SetFrameLevel(button:GetFrameLevel() + Constants.FRAME_LEVELS.BORDER + 1)
+
+    -- Inner border layer (tighter, brighter)
+    local inner = CreateFrame("Frame", nil, glow, "BackdropTemplate")
+    inner:SetPoint("TOPLEFT", glow, "TOPLEFT", 3, -3)
+    inner:SetPoint("BOTTOMRIGHT", glow, "BOTTOMRIGHT", -3, 3)
+    inner:SetBackdrop({
+        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+        edgeSize = 14,
+        insets = { left = 3, right = 3, top = 3, bottom = 3 },
+    })
+    inner:SetBackdropBorderColor(0, 1, 1, 1)
+
+    -- Outer border layer (wider, slightly transparent for glow effect)
+    local outer = CreateFrame("Frame", nil, glow, "BackdropTemplate")
+    outer:SetAllPoints(glow)
+    outer:SetBackdrop({
+        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+        edgeSize = 16,
+        insets = { left = 3, right = 3, top = 3, bottom = 3 },
+    })
+    outer:SetBackdropBorderColor(0, 0.8, 0.8, 0.6)
+
+    -- Blinking animation: pulse alpha between 0.3 and 1.0
+    local animGroup = glow:CreateAnimationGroup()
+    local fadeOut = animGroup:CreateAnimation("Alpha")
+    fadeOut:SetFromAlpha(1)
+    fadeOut:SetToAlpha(0.3)
+    fadeOut:SetDuration(0.45)
+    fadeOut:SetOrder(1)
+    fadeOut:SetSmoothing("IN_OUT")
+    local fadeIn = animGroup:CreateAnimation("Alpha")
+    fadeIn:SetFromAlpha(0.3)
+    fadeIn:SetToAlpha(1)
+    fadeIn:SetDuration(0.45)
+    fadeIn:SetOrder(2)
+    fadeIn:SetSmoothing("IN_OUT")
+    animGroup:SetLooping("REPEAT")
+    glow.animGroup = animGroup
+    glow:Hide()
+    button.searchGlow = glow
+    return glow
+end
+
+-- Apply spotlight search visual state to a single button
+function ItemButton:SetSearchState(button, isMatch)
+    if isMatch then
+        -- Matching item: full visibility + blinking cyan border
+        button:SetAlpha(1)
+        SetItemButtonDesaturated(button, button.itemData and button.itemData.locked or false)
+        local glow = EnsureSearchGlow(button)
+        glow:Show()
+        glow.animGroup:Play()
+    else
+        -- Non-matching item: desaturated + dimmed
+        button:SetAlpha(0.4)
+        SetItemButtonDesaturated(button, true)
+        if button.searchGlow then
+            button.searchGlow.animGroup:Stop()
+            button.searchGlow:Hide()
+        end
+    end
+end
+
+-- Clear spotlight search visual state from a single button
+function ItemButton:ClearSearchState(button)
+    button:SetAlpha(1)
+    SetItemButtonDesaturated(button, button.itemData and button.itemData.locked or false)
+    if button.searchGlow then
+        button.searchGlow.animGroup:Stop()
+        button.searchGlow:Hide()
     end
 end
 
@@ -1566,7 +1647,7 @@ function ItemButton:ResetAllAlpha(owner)
     for button in buttonPool:EnumerateActive() do
         -- Only affect buttons belonging to the specified owner (if provided)
         if not owner or button.owner == owner then
-            button:SetAlpha(1.0)
+            ItemButton:ClearSearchState(button)
             if button.slotBackground then
                 button.slotBackground:SetVertexColor(0.5, 0.5, 0.5, bgAlpha)
             end

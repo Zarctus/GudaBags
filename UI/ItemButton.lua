@@ -762,8 +762,11 @@ local function CreateButton(parent)
                 return
             end
 
-            -- Pin/unpin slot with Alt+Right-Click
+            -- Pin/unpin slot with Alt+Right-Click (requires GudaBags sort on Retail)
             if mouseButton == "RightButton" and IsAltKeyDown() and not self.isReadOnly then
+                if ns.IsRetail and not ns:GetModule("Database"):GetSetting("gudaSort") then
+                    return
+                end
                 if self.itemData and self.itemData.bagID ~= nil and self.itemData.slot and not self.itemData.isGuildBank then
                     local Database = ns:GetModule("Database")
                     Database:TogglePinnedSlot(self.itemData.bagID, self.itemData.slot)
@@ -1438,6 +1441,12 @@ end
 
 function ItemButton:UpdatePinIcon(button)
     if not button.pinIcon then return end
+    -- Pin icons require GudaBags sort on Retail
+    if ns.IsRetail and not ns:GetModule("Database"):GetSetting("gudaSort") then
+        button.pinIcon:Hide()
+        if button.pinIconShadow then button.pinIconShadow:Hide() end
+        return
+    end
     local itemData = button.itemData
     if itemData and itemData.bagID ~= nil and itemData.slot and not button.isReadOnly then
         local Database = ns:GetModule("Database")

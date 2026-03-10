@@ -249,6 +249,7 @@ Constants.DEFAULTS = {
     autoCloseBags = true,  -- Auto close bags when ending those interactions
     autoVendorJunk = true,  -- Auto sell gray items at merchants
     retailEmptySlots = false,  -- Use retail-style empty slot textures (Classic only)
+    gudaSort = false,  -- Use GudaBags custom sort engine instead of Blizzard's (Retail only)
 
     -- Icons
     iconSize = 37,

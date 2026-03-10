@@ -2753,22 +2753,6 @@ ns.OnBankTypeChanged = function(bankType)
     end
 end
 
--- Hook UseContainerItem to route items to warband bank when warband tab is active
-if ns.IsRetail then
-    local originalUseContainerItem = C_Container.UseContainerItem
-    C_Container.UseContainerItem = function(containerIndex, slotIndex, unitToken, bankType, ...)
-        -- Only inject bankType when: bank is open, warband tab active, no bankType already specified,
-        -- and item is from a player bag (not from bank bags themselves)
-        if bankType == nil and BankScanner:IsBankOpen() then
-            local currentBankType = BankFooter and BankFooter:GetCurrentBankType()
-            if currentBankType == "warband" and containerIndex >= 0 and containerIndex <= NUM_BAG_SLOTS then
-                return originalUseContainerItem(containerIndex, slotIndex, unitToken, Enum.BankType.Account, ...)
-            end
-        end
-        return originalUseContainerItem(containerIndex, slotIndex, unitToken, bankType, ...)
-    end
-end
-
 -- Disable the default Blizzard bank frame completely
 local function HideDefaultBankFrame()
     if _G.BankFrame then

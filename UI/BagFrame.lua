@@ -1866,64 +1866,80 @@ Events:Register("AUCTION_HOUSE_SHOW", RefreshForInteractionWindow, BagFrame)
 Events:Register("AUCTION_HOUSE_CLOSED", RefreshForInteractionWindow, BagFrame)
 
 -- Auto open/close bags on interaction windows
-local function AutoOpenBags()
-    if Database:GetSetting("autoOpenBags") then
-        BagFrame:Show()
+-- Blizzard calls OpenAllBags/CloseAllBags internally when interactions start/end.
+-- We use a suppression flag so our overrides can block those calls when the setting is disabled.
+-- The flag is set on the interaction event and cleared next frame.
+local suppressAutoOpen = false
+local suppressAutoClose = false
+
+local function OnInteractionOpen()
+    if not Database:GetSetting("autoOpenBags") then
+        suppressAutoOpen = true
+        C_Timer.After(0, function() suppressAutoOpen = false end)
+    else
         -- Keep bags at base level so the interaction frame stays on top
-        if frame then
-            frame:SetFrameLevel(Constants.FRAME_LEVELS.BASE)
-            Theme:SyncBlizzardBgLevel(frame)
-            if frame.container then
-                frame.container:SetFrameLevel(Constants.FRAME_LEVELS.BASE + Constants.FRAME_LEVELS.CONTAINER)
-                ItemButton:SyncFrameLevels(frame.container)
-            end
-        end
-    end
-end
-
-local function AutoCloseBags()
-    if Database:GetSetting("autoCloseBags") then
-        BagFrame:Hide()
-    end
-end
-
--- Auto open/close for bank — also raise bank frame above bags
-local function AutoOpenBagsForBank()
-    if Database:GetSetting("autoOpenBags") then
-        BagFrame:Show()
-        -- Keep bags at base level so bank frame stays on top
-        if frame then
-            frame:SetFrameLevel(Constants.FRAME_LEVELS.BASE)
-            Theme:SyncBlizzardBgLevel(frame)
-            if frame.container then
-                frame.container:SetFrameLevel(Constants.FRAME_LEVELS.BASE + Constants.FRAME_LEVELS.CONTAINER)
-                ItemButton:SyncFrameLevels(frame.container)
-            end
-        end
-        -- Raise bank frame
-        local BankFrameModule = ns:GetModule("BankFrame")
-        if BankFrameModule then
-            local bankFrame = BankFrameModule:GetFrame()
-            if bankFrame then
-                bankFrame:SetFrameLevel(Constants.FRAME_LEVELS.RAISED)
-                Theme:SyncBlizzardBgLevel(bankFrame)
-                if bankFrame.container then
-                    bankFrame.container:SetFrameLevel(Constants.FRAME_LEVELS.RAISED + Constants.FRAME_LEVELS.CONTAINER)
-                    ItemButton:SyncFrameLevels(bankFrame.container)
+        C_Timer.After(0, function()
+            if frame and frame:IsShown() then
+                frame:SetFrameLevel(Constants.FRAME_LEVELS.BASE)
+                Theme:SyncBlizzardBgLevel(frame)
+                if frame.container then
+                    frame.container:SetFrameLevel(Constants.FRAME_LEVELS.BASE + Constants.FRAME_LEVELS.CONTAINER)
+                    ItemButton:SyncFrameLevels(frame.container)
                 end
             end
-        end
+        end)
     end
 end
 
-Events:Register("TRADE_SHOW", AutoOpenBags, "AutoOpenBags_Trade")
-Events:Register("TRADE_CLOSED", AutoCloseBags, "AutoCloseBags_Trade")
-Events:Register("MAIL_SHOW", AutoOpenBags, "AutoOpenBags_Mail")
-Events:Register("MAIL_CLOSED", AutoCloseBags, "AutoCloseBags_Mail")
-Events:Register("AUCTION_HOUSE_SHOW", AutoOpenBags, "AutoOpenBags_AH")
-Events:Register("AUCTION_HOUSE_CLOSED", AutoCloseBags, "AutoCloseBags_AH")
-Events:Register("BANKFRAME_OPENED", AutoOpenBagsForBank, "AutoOpenBags_Bank")
-Events:Register("BANKFRAME_CLOSED", AutoCloseBags, "AutoCloseBags_Bank")
+local function OnInteractionClose()
+    if not Database:GetSetting("autoCloseBags") then
+        suppressAutoClose = true
+        C_Timer.After(0, function() suppressAutoClose = false end)
+    end
+end
+
+local function OnBankOpen()
+    if not Database:GetSetting("autoOpenBags") then
+        suppressAutoOpen = true
+        C_Timer.After(0, function() suppressAutoOpen = false end)
+    else
+        -- Keep bags at base level so bank frame stays on top
+        C_Timer.After(0, function()
+            if frame and frame:IsShown() then
+                frame:SetFrameLevel(Constants.FRAME_LEVELS.BASE)
+                Theme:SyncBlizzardBgLevel(frame)
+                if frame.container then
+                    frame.container:SetFrameLevel(Constants.FRAME_LEVELS.BASE + Constants.FRAME_LEVELS.CONTAINER)
+                    ItemButton:SyncFrameLevels(frame.container)
+                end
+            end
+            -- Raise bank frame
+            local BankFrameModule = ns:GetModule("BankFrame")
+            if BankFrameModule then
+                local bankFrame = BankFrameModule:GetFrame()
+                if bankFrame then
+                    bankFrame:SetFrameLevel(Constants.FRAME_LEVELS.RAISED)
+                    Theme:SyncBlizzardBgLevel(bankFrame)
+                    if bankFrame.container then
+                        bankFrame.container:SetFrameLevel(Constants.FRAME_LEVELS.RAISED + Constants.FRAME_LEVELS.CONTAINER)
+                        ItemButton:SyncFrameLevels(bankFrame.container)
+                    end
+                end
+            end
+        end)
+    end
+end
+
+Events:Register("TRADE_SHOW", OnInteractionOpen, "AutoOpenBags_Trade")
+Events:Register("TRADE_CLOSED", OnInteractionClose, "AutoCloseBags_Trade")
+Events:Register("MAIL_SHOW", OnInteractionOpen, "AutoOpenBags_Mail")
+Events:Register("MAIL_CLOSED", OnInteractionClose, "AutoCloseBags_Mail")
+Events:Register("MERCHANT_SHOW", OnInteractionOpen, "AutoOpenBags_Vendor")
+Events:Register("MERCHANT_CLOSED", OnInteractionClose, "AutoCloseBags_Vendor")
+Events:Register("AUCTION_HOUSE_SHOW", OnInteractionOpen, "AutoOpenBags_AH")
+Events:Register("AUCTION_HOUSE_CLOSED", OnInteractionClose, "AutoCloseBags_AH")
+Events:Register("BANKFRAME_OPENED", OnBankOpen, "AutoOpenBags_Bank")
+Events:Register("BANKFRAME_CLOSED", OnInteractionClose, "AutoCloseBags_Bank")
 
 -- Bank window (our own bank frame showing affects grouping)
 -- Small delay on open to ensure BankFrame is fully shown before checking
@@ -1961,27 +1977,27 @@ Events:OnPlayerLogin(function()
     end
 
     OpenAllBags = function()
-        BagFrame:Show()
+        if not suppressAutoOpen then BagFrame:Show() end
     end
 
     CloseAllBags = function()
-        BagFrame:Hide()
+        if not suppressAutoClose then BagFrame:Hide() end
     end
 
     OpenBag = function(bagID)
-        BagFrame:Show()
+        if not suppressAutoOpen then BagFrame:Show() end
     end
 
     CloseBag = function(bagID)
-        BagFrame:Hide()
+        if not suppressAutoClose then BagFrame:Hide() end
     end
 
     OpenBackpack = function()
-        BagFrame:Show()
+        if not suppressAutoOpen then BagFrame:Show() end
     end
 
     CloseBackpack = function()
-        BagFrame:Hide()
+        if not suppressAutoClose then BagFrame:Hide() end
     end
 
     ToggleAllBags = function()

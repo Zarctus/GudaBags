@@ -1310,7 +1310,7 @@ ns.OnGuildBankOpened = function()
     GuildBankFrame:Show()
 
     -- Raise guild bank above bags so interaction frame is always respected
-    if BagFrameModule then
+    if BagFrameModule and BagFrameModule:IsShown() then
         local bagFrame = BagFrameModule:GetFrame()
         if bagFrame then
             bagFrame:SetFrameLevel(Constants.FRAME_LEVELS.BASE)

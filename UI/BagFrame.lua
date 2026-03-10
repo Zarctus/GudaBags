@@ -1906,10 +1906,9 @@ local suppressAutoOpen = false
 local suppressAutoClose = false
 
 local function OnInteractionOpen()
-    if not Database:GetSetting("autoOpenBags") then
-        suppressAutoOpen = true
-        C_Timer.After(0, function() suppressAutoOpen = false end)
-    else
+    if Database:GetSetting("autoOpenBags") then
+        -- Explicitly open bags (Retail doesn't always call OpenAllBags)
+        BagFrame:Show()
         -- Keep bags at base level so the interaction frame stays on top
         C_Timer.After(0, function()
             if frame and frame:IsShown() then
@@ -1922,13 +1921,19 @@ local function OnInteractionOpen()
             end
         end)
     end
+    -- Always suppress Blizzard's OpenAllBags to prevent double-open
+    suppressAutoOpen = true
+    C_Timer.After(0, function() suppressAutoOpen = false end)
 end
 
 local function OnInteractionClose()
-    if not Database:GetSetting("autoCloseBags") then
-        suppressAutoClose = true
-        C_Timer.After(0, function() suppressAutoClose = false end)
+    if Database:GetSetting("autoCloseBags") then
+        -- Explicitly close bags (Retail doesn't always call CloseAllBags)
+        BagFrame:Hide()
     end
+    -- Always suppress Blizzard's CloseAllBags to prevent unintended close
+    suppressAutoClose = true
+    C_Timer.After(0, function() suppressAutoClose = false end)
 end
 
 local function OnBankOpen()

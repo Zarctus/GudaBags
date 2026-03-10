@@ -245,6 +245,8 @@ Constants.DEFAULTS = {
     mergedGroups = {},  -- Per-group merge settings: { ["Main"] = true, ["Other"] = false }
     recentDuration = 15,  -- Minutes items stay in Recent category
     showSoulBag = true,  -- Show soul bag in single view (Warlock only)
+    autoOpenBags = true,  -- Auto open bags when interacting with mail, trade, AH, bank, guild bank
+    autoCloseBags = true,  -- Auto close bags when ending those interactions
     autoVendorJunk = true,  -- Auto sell gray items at merchants
     retailEmptySlots = false,  -- Use retail-style empty slot textures (Classic only)
 

@@ -1300,11 +1300,36 @@ ns.OnGuildBankOpened = function()
     ns:Debug("OnGuildBankOpened callback triggered")
     LoadComponents()
 
+    -- Auto open bags on guild bank interaction (before showing guild bank so it stays on top)
+    local BagFrameModule = ns:GetModule("BagFrame")
+    if Database:GetSetting("autoOpenBags") and BagFrameModule then
+        BagFrameModule:Show()
+    end
+
     -- Show our guild bank frame (Blizzard's frame is hidden by GuildBankScanner)
     GuildBankFrame:Show()
 
+    -- Raise guild bank above bags so interaction frame is always respected
+    if BagFrameModule and BagFrameModule:IsShown() then
+        local bagFrame = BagFrameModule:GetFrame()
+        if bagFrame then
+            bagFrame:SetFrameLevel(Constants.FRAME_LEVELS.BASE)
+            Theme:SyncBlizzardBgLevel(bagFrame)
+            if bagFrame.container then
+                bagFrame.container:SetFrameLevel(Constants.FRAME_LEVELS.BASE + Constants.FRAME_LEVELS.CONTAINER)
+                ItemButton:SyncFrameLevels(bagFrame.container)
+            end
+        end
+    end
+    if frame then
+        frame:SetFrameLevel(Constants.FRAME_LEVELS.RAISED)
+        Theme:SyncBlizzardBgLevel(frame)
+        if frame.container then
+            ItemButton:SyncFrameLevels(frame.container)
+        end
+    end
+
     -- Refresh bags to update stacking (unstack when interaction window opens)
-    local BagFrameModule = ns:GetModule("BagFrame")
     if BagFrameModule and BagFrameModule:IsShown() then
         BagFrameModule:Refresh()
         local bagFrame = BagFrameModule:GetFrame()
@@ -1320,8 +1345,13 @@ ns.OnGuildBankClosed = function()
     showingPurchasePrompt = false  -- Reset purchase prompt state
     GuildBankFrame:Hide()
 
-    -- Refresh bags to update stacking (re-stack when interaction window closes)
+    -- Auto close bags on guild bank interaction end
     local BagFrameModule = ns:GetModule("BagFrame")
+    if Database:GetSetting("autoCloseBags") and BagFrameModule then
+        BagFrameModule:Hide()
+    end
+
+    -- Refresh bags to update stacking (re-stack when interaction window closes)
     if BagFrameModule and BagFrameModule:IsShown() then
         BagFrameModule:Refresh()
         local bagFrame = BagFrameModule:GetFrame()

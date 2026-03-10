@@ -39,7 +39,7 @@ local coroutine_resume = coroutine.resume
 local coroutine_status = coroutine.status
 
 -- Frame budget for coroutine-based sorting (microseconds)
-local FRAME_BUDGET_US = 10000     -- 10ms for player bags
+local FRAME_BUDGET_US = 10000      -- 10ms for player bags
 local FRAME_BUDGET_BANK_US = 14000 -- 14ms for bank (more lenient)
 local frameStartTime = 0
 local currentFrameBudget = FRAME_BUDGET_US
@@ -411,11 +411,15 @@ end
 -- Scans all slots ONCE, builds in-memory map for all subsequent computation
 --===========================================================================
 
+-- Pinned slots set, loaded once per sort pass
+local currentPinnedSlots = {}
+
 local function SnapshotSlots(bagIDs)
     local slotMap = {}  -- key: bagID*1000+slot → entry (or nil for empty)
     local items = {}
     local sequence = 0
     local whiteItemsJunk = Database:GetSetting("whiteItemsJunk") or false
+    currentPinnedSlots = Database:GetPinnedSlotSet()
 
     for _, bagID in ipairs(bagIDs) do
         local numSlots = C_Container_GetContainerNumSlots(bagID)
@@ -496,6 +500,7 @@ local function SnapshotSlots(bagIDs)
 
                 sequence = sequence + 1
                 local key = bagID * 1000 + slot
+                local isPinned = currentPinnedSlots[key] or false
                 local entry = {
                     bagID = bagID,
                     slot = slot,
@@ -503,6 +508,7 @@ local function SnapshotSlots(bagIDs)
                     stackCount = stackCount,
                     itemName = info.itemName,
                     sequence = sequence,
+                    isPinned = isPinned,
                     -- Inline sort keys (no separate table per item)
                     priority = sk.priority,
                     sortedClassID = sk.sortedClassID,
@@ -516,7 +522,9 @@ local function SnapshotSlots(bagIDs)
                     invertedCount = -stackCount,
                 }
                 slotMap[key] = entry
-                items[#items + 1] = entry
+                if not isPinned then
+                    items[#items + 1] = entry
+                end
             end
         end
     end
@@ -532,7 +540,7 @@ local function CollectItemsFromSnapshot(slotMap, bagIDs)
         for slot = 1, numSlots do
             local key = bagID * 1000 + slot
             local entry = slotMap[key]
-            if entry then
+            if entry and not entry.isPinned then
                 items[#items + 1] = entry
             end
         end
@@ -548,7 +556,7 @@ local function CollectJunkFromSnapshot(slotMap, bagIDs)
         for slot = 1, numSlots do
             local key = bagID * 1000 + slot
             local entry = slotMap[key]
-            if entry and entry.isJunk then
+            if entry and entry.isJunk and not entry.isPinned then
                 junk[#junk + 1] = entry
             end
         end
@@ -613,14 +621,16 @@ local function BuildTargetPositions(bagIDs, itemCount)
 
         if rightToLeft then
             for slot = numSlots, 1, -1 do
-                if index <= itemCount then
+                local key = bagID * 1000 + slot
+                if index <= itemCount and not currentPinnedSlots[key] then
                     positions[index] = { bagID = bagID, slot = slot }
                     index = index + 1
                 end
             end
         else
             for slot = 1, numSlots do
-                if index <= itemCount then
+                local key = bagID * 1000 + slot
+                if index <= itemCount and not currentPinnedSlots[key] then
                     positions[index] = { bagID = bagID, slot = slot }
                     index = index + 1
                 end
@@ -651,10 +661,9 @@ local function BuildTailPositions(bagIDs, junkCount)
         for i = 1, #bagOrder do
             local info = bagOrder[i]
             for slot = 1, info.numSlots do
-                if #tailSlots < junkCount then
+                local key = info.bagID * 1000 + slot
+                if #tailSlots < junkCount and not currentPinnedSlots[key] then
                     tailSlots[#tailSlots + 1] = { bagID = info.bagID, slot = slot }
-                else
-                    break
                 end
             end
             if #tailSlots >= junkCount then break end
@@ -663,10 +672,9 @@ local function BuildTailPositions(bagIDs, junkCount)
         for i = #bagOrder, 1, -1 do
             local info = bagOrder[i]
             for slot = info.numSlots, 1, -1 do
-                if #tailSlots < junkCount then
+                local key = info.bagID * 1000 + slot
+                if #tailSlots < junkCount and not currentPinnedSlots[key] then
                     tailSlots[#tailSlots + 1] = { bagID = info.bagID, slot = slot }
-                else
-                    break
                 end
             end
             if #tailSlots >= junkCount then break end
@@ -702,7 +710,7 @@ end
 local function RouteSpecializedItems_Offline(bagIDs, containers, bagFamilies, slotMap)
     local moves = {}
 
-    -- Build free slot lists from snapshot
+    -- Build free slot lists from snapshot (skip pinned slots)
     local freeSlotsByType = {}
     local freeSlotIdx = {}
     for bagType, bagList in pairs(containers) do
@@ -712,7 +720,7 @@ local function RouteSpecializedItems_Offline(bagIDs, containers, bagFamilies, sl
                 local numSlots = C_Container_GetContainerNumSlots(targetBagID)
                 for slot = 1, numSlots do
                     local key = targetBagID * 1000 + slot
-                    if not slotMap[key] then
+                    if not slotMap[key] and not currentPinnedSlots[key] then
                         free[#free + 1] = targetBagID
                         free[#free + 1] = slot
                     end
@@ -728,7 +736,7 @@ local function RouteSpecializedItems_Offline(bagIDs, containers, bagFamilies, sl
         for slot = 1, numSlots do
             local key = bagID * 1000 + slot
             local entry = slotMap[key]
-            if entry then
+            if entry and not entry.isPinned then
                 local preferredType = GetItemPreferredContainer(entry.itemID)
                 local currentBagType = GetBagTypeFromFamily(bagFamilies[bagID] or 0)
 
@@ -775,13 +783,13 @@ local function ConsolidateStacks_Offline(bagIDs, slotMap)
     local moves = {}
     local itemGroups = {}
 
-    -- Build groups from snapshot
+    -- Build groups from snapshot (skip pinned items)
     for _, bagID in ipairs(bagIDs) do
         local numSlots = C_Container_GetContainerNumSlots(bagID)
         for slot = 1, numSlots do
             local key = bagID * 1000 + slot
             local entry = slotMap[key]
-            if entry then
+            if entry and not entry.isPinned then
                 local groupKey = entry.itemID
                 if not itemGroups[groupKey] then
                     itemGroups[groupKey] = {}
@@ -951,6 +959,7 @@ end
 
 -- Execute pre-computed moves with API calls, yielding for budget/locks
 local function ExecuteMoves_Yielding(moveList)
+    local smoothSort = Database:GetSetting("smoothSort")
     ClearCursor()
     ClearPendingLocks()
 
@@ -996,8 +1005,8 @@ local function ExecuteMoves_Yielding(moveList)
             end
         end
 
-        -- Yield periodically for budget and locks
-        if idx % 12 == 0 and IsFrameBudgetExceeded() then
+        -- Yield periodically for budget and locks (only in smooth sort mode)
+        if smoothSort and idx % 12 == 0 and IsFrameBudgetExceeded() then
             if pendingLockCount > 0 then
                 coroutine_yield("wait_locks")
                 StartFrameTimer()
@@ -1023,21 +1032,25 @@ end
 
 local function ConsolidateStacks(bagIDs, bagFamilies)
     local itemGroups = {}
+    local pinnedSlots = Database:GetPinnedSlotSet()
 
     for _, bagID in ipairs(bagIDs) do
         local numSlots = C_Container_GetContainerNumSlots(bagID)
         for slot = 1, numSlots do
-            local itemInfo = C_Container_GetContainerItemInfo(bagID, slot)
-            if itemInfo and itemInfo.itemID then
-                local groupKey = itemInfo.itemID
-                if not itemGroups[groupKey] then
-                    itemGroups[groupKey] = { itemID = itemInfo.itemID, stacks = {} }
+            local key = bagID * 1000 + slot
+            if not pinnedSlots[key] then
+                local itemInfo = C_Container_GetContainerItemInfo(bagID, slot)
+                if itemInfo and itemInfo.itemID then
+                    local groupKey = itemInfo.itemID
+                    if not itemGroups[groupKey] then
+                        itemGroups[groupKey] = { itemID = itemInfo.itemID, stacks = {} }
+                    end
+                    local stacks = itemGroups[groupKey].stacks
+                    stacks[#stacks + 1] = {
+                        bagID = bagID, slot = slot,
+                        count = tonumber(itemInfo.stackCount) or 1
+                    }
                 end
-                local stacks = itemGroups[groupKey].stacks
-                stacks[#stacks + 1] = {
-                    bagID = bagID, slot = slot,
-                    count = tonumber(itemInfo.stackCount) or 1
-                }
             end
         end
     end

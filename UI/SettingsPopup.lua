@@ -1376,6 +1376,14 @@ local function CreateGuideTab(parent)
         L["GUIDE_BAG_ITEMS_TITLE"],
         L["GUIDE_BAG_ITEMS_DESC"])
 
+    yOffset = yOffset - 20
+
+    -- Pin Slot Section
+    yOffset = yOffset - CreateGuideSection(content, yOffset,
+        "Interface\\AddOns\\GudaBags\\Assets\\pin.png",
+        L["GUIDE_PIN_SLOT_TITLE"],
+        L["GUIDE_PIN_SLOT_DESC"])
+
     return content
 end
 

@@ -41,6 +41,10 @@ function SettingsSchema.GetGeneral()
               hidden = function() local Expansion = ns:GetModule("Expansion") return Expansion and Expansion.IsRetail end },
             { type = "checkbox", key = "reverseStackSort", label = L["SETTINGS_REVERSE_STACK"], tooltip = L["SETTINGS_REVERSE_STACK_TIP"] },
         }},
+        { type = "row", children = {
+            { type = "checkbox", key = "smoothSort", label = L["SETTINGS_SMOOTH_SORT"], tooltip = L["SETTINGS_SMOOTH_SORT_TIP"],
+              hidden = function() local Expansion = ns:GetModule("Expansion") return Expansion and Expansion.IsRetail end },
+        }},
 
         { type = "separator", label = L["SETTINGS_SECTION_AUTOMATION"] },
         { type = "row", children = {

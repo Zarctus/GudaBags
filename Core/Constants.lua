@@ -267,6 +267,7 @@ Constants.DEFAULTS = {
     showItemLevel = true,
     reverseStackSort = false,
     sortRightToLeft = false,
+    smoothSort = false,  -- Spread sort moves across frames to avoid stuttering
 
     -- Bag frame position
     framePoint = nil,

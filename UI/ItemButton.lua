@@ -118,6 +118,8 @@ local function ResetButton(pool, button)
     if button.questIcon then button.questIcon:Hide() end
     if button.questStarterIcon then button.questStarterIcon:Hide() end
     if button.craftingQualityIcon then button.craftingQualityIcon:Hide() end
+    if button.pinIcon then button.pinIcon:Hide() end
+    if button.pinIconShadow then button.pinIconShadow:Hide() end
     if button.searchGlow then button.searchGlow:Hide() end
     if button.cooldown then CooldownFrame_Set(button.cooldown, 0, 0, false) end
 end
@@ -502,6 +504,23 @@ local function CreateButton(parent)
     equipSetIcon:Hide()
     button.equipSetIcon = equipSetIcon
 
+    -- Pin icon shadow (bottom-left corner, replaces category mark when pinned)
+    local pinIconShadow = button:CreateTexture(nil, "OVERLAY", nil, 4)
+    pinIconShadow:SetSize(15, 15)
+    pinIconShadow:SetPoint("BOTTOMLEFT", button, "BOTTOMLEFT", 0, 0)
+    pinIconShadow:SetTexture("Interface\\AddOns\\GudaBags\\Assets\\pin.png")
+    pinIconShadow:SetVertexColor(0, 0, 0, 1)
+    pinIconShadow:Hide()
+    button.pinIconShadow = pinIconShadow
+
+    -- Pin icon (bottom-left corner, replaces category mark when pinned)
+    local pinIcon = button:CreateTexture(nil, "OVERLAY", nil, 5)
+    pinIcon:SetSize(13, 13)
+    pinIcon:SetPoint("BOTTOMLEFT", button, "BOTTOMLEFT", 1, 1)
+    pinIcon:SetTexture("Interface\\AddOns\\GudaBags\\Assets\\pin.png")
+    pinIcon:Hide()
+    button.pinIcon = pinIcon
+
     -- Item level text (top-left corner)
     local itemLevelText = button:CreateFontString(nil, "OVERLAY", nil)
     itemLevelText:SetFont(Constants.FONTS.DEFAULT, 12, "OUTLINE")
@@ -738,6 +757,23 @@ local function CreateButton(parent)
                     local TrackedBar = ns:GetModule("TrackedBar")
                     if TrackedBar then
                         TrackedBar:ToggleTrackItem(self.itemData.itemID)
+                    end
+                end
+                return
+            end
+
+            -- Pin/unpin slot with Alt+Right-Click
+            if mouseButton == "RightButton" and IsAltKeyDown() and not self.isReadOnly then
+                if self.itemData and self.itemData.bagID ~= nil and self.itemData.slot and not self.itemData.isGuildBank then
+                    local Database = ns:GetModule("Database")
+                    Database:TogglePinnedSlot(self.itemData.bagID, self.itemData.slot)
+                    local BagFrame = ns:GetModule("BagFrame")
+                    if BagFrame and BagFrame.RefreshPinIcons then
+                        BagFrame:RefreshPinIcons()
+                    end
+                    local BankFrame = ns:GetModule("BankFrame")
+                    if BankFrame and BankFrame.RefreshPinIcons then
+                        BankFrame:RefreshPinIcons()
                     end
                 end
                 return
@@ -1087,6 +1123,8 @@ function ItemButton:SetItem(button, itemData, size, isReadOnly)
     if button.questStarterIcon then button.questStarterIcon:Hide() end
     if button.junkIcon then button.junkIcon:Hide() end
     if button.craftingQualityIcon then button.craftingQualityIcon:Hide() end
+    if button.pinIcon then button.pinIcon:Hide() end
+    if button.pinIconShadow then button.pinIconShadow:Hide() end
 
     button.itemData = itemData
     button.isReadOnly = isReadOnly or false
@@ -1349,6 +1387,9 @@ function ItemButton:SetItem(button, itemData, size, isReadOnly)
                 button.itemLevelText:Hide()
             end
         end
+
+        -- Pin icon (bottom-right corner)
+        ItemButton:UpdatePinIcon(button)
     else
         button.wrapper:SetID(0)
         button:SetID(0)
@@ -1393,6 +1434,24 @@ function ItemButton:SetItem(button, itemData, size, isReadOnly)
             CooldownFrame_Set(button.cooldown, 0, 0, false)
         end
     end
+end
+
+function ItemButton:UpdatePinIcon(button)
+    if not button.pinIcon then return end
+    local itemData = button.itemData
+    if itemData and itemData.bagID ~= nil and itemData.slot and not button.isReadOnly then
+        local Database = ns:GetModule("Database")
+        if Database:IsPinnedSlot(itemData.bagID, itemData.slot) then
+            button.pinIcon:Show()
+            if button.pinIconShadow then button.pinIconShadow:Show() end
+            -- Hide category mark icon (pin takes priority in same corner)
+            if button.equipSetIcon then button.equipSetIcon:Hide() end
+            if button.equipSetIconShadow then button.equipSetIconShadow:Hide() end
+            return
+        end
+    end
+    button.pinIcon:Hide()
+    if button.pinIconShadow then button.pinIconShadow:Hide() end
 end
 
 function ItemButton:SetEmpty(button, bagID, slot, size, isReadOnly, isGuildBank)
@@ -1475,6 +1534,9 @@ function ItemButton:SetEmpty(button, bagID, slot, size, isReadOnly, isGuildBank)
     if button.cooldown then
         CooldownFrame_Set(button.cooldown, 0, 0, false)
     end
+
+    -- Show pin icon for empty pinned slots
+    ItemButton:UpdatePinIcon(button)
 end
 
 function ItemButton:UpdateSlotAlpha(alpha)

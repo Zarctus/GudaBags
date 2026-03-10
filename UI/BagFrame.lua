@@ -161,6 +161,17 @@ local function CreateBagFrame()
                 ItemButton:SyncFrameLevels(bankFrame.container)
             end
         end
+
+        local GuildBankFrameModule = ns:GetModule("GuildBankFrame")
+        if GuildBankFrameModule and GuildBankFrameModule.GetFrame and GuildBankFrameModule:GetFrame() then
+            local guildFrame = GuildBankFrameModule:GetFrame()
+            guildFrame:SetFrameLevel(Constants.FRAME_LEVELS.BASE)
+            Theme:SyncBlizzardBgLevel(guildFrame)
+            if guildFrame.container then
+                guildFrame.container:SetFrameLevel(Constants.FRAME_LEVELS.BASE + Constants.FRAME_LEVELS.CONTAINER)
+                ItemButton:SyncFrameLevels(guildFrame.container)
+            end
+        end
     end)
 
     -- Ensure container stays above frame backdrop when mouse enters
@@ -292,6 +303,12 @@ local function CreateBagFrame()
     end)
 
     return f
+end
+
+function BagFrame:RefreshPinIcons()
+    for _, button in pairs(buttonsBySlot) do
+        ItemButton:UpdatePinIcon(button)
+    end
 end
 
 function BagFrame:Refresh()
@@ -1889,10 +1906,9 @@ local suppressAutoOpen = false
 local suppressAutoClose = false
 
 local function OnInteractionOpen()
-    if not Database:GetSetting("autoOpenBags") then
-        suppressAutoOpen = true
-        C_Timer.After(0, function() suppressAutoOpen = false end)
-    else
+    if Database:GetSetting("autoOpenBags") then
+        -- Explicitly open bags (Retail doesn't always call OpenAllBags)
+        BagFrame:Show()
         -- Keep bags at base level so the interaction frame stays on top
         C_Timer.After(0, function()
             if frame and frame:IsShown() then
@@ -1905,20 +1921,25 @@ local function OnInteractionOpen()
             end
         end)
     end
+    -- Always suppress Blizzard's OpenAllBags to prevent double-open
+    suppressAutoOpen = true
+    C_Timer.After(0, function() suppressAutoOpen = false end)
 end
 
 local function OnInteractionClose()
-    if not Database:GetSetting("autoCloseBags") then
-        suppressAutoClose = true
-        C_Timer.After(0, function() suppressAutoClose = false end)
+    if Database:GetSetting("autoCloseBags") then
+        -- Explicitly close bags (Retail doesn't always call CloseAllBags)
+        BagFrame:Hide()
     end
+    -- Always suppress Blizzard's CloseAllBags to prevent unintended close
+    suppressAutoClose = true
+    C_Timer.After(0, function() suppressAutoClose = false end)
 end
 
 local function OnBankOpen()
-    if not Database:GetSetting("autoOpenBags") then
-        suppressAutoOpen = true
-        C_Timer.After(0, function() suppressAutoOpen = false end)
-    else
+    if Database:GetSetting("autoOpenBags") then
+        -- Explicitly open bags (Retail bank UI doesn't call OpenAllBags)
+        BagFrame:Show()
         -- Keep bags at base level so bank frame stays on top
         C_Timer.After(0, function()
             if frame and frame:IsShown() then
@@ -1944,6 +1965,19 @@ local function OnBankOpen()
             end
         end)
     end
+    -- Always suppress Blizzard's OpenAllBags to prevent double-open
+    suppressAutoOpen = true
+    C_Timer.After(0, function() suppressAutoOpen = false end)
+end
+
+local function OnBankClose()
+    if Database:GetSetting("autoCloseBags") then
+        -- Explicitly close bags (Retail bank UI doesn't call CloseAllBags)
+        BagFrame:Hide()
+    end
+    -- Always suppress Blizzard's CloseAllBags to prevent unintended close
+    suppressAutoClose = true
+    C_Timer.After(0, function() suppressAutoClose = false end)
 end
 
 Events:Register("TRADE_SHOW", OnInteractionOpen, "AutoOpenBags_Trade")
@@ -1955,7 +1989,7 @@ Events:Register("MERCHANT_CLOSED", OnInteractionClose, "AutoCloseBags_Vendor")
 Events:Register("AUCTION_HOUSE_SHOW", OnInteractionOpen, "AutoOpenBags_AH")
 Events:Register("AUCTION_HOUSE_CLOSED", OnInteractionClose, "AutoCloseBags_AH")
 Events:Register("BANKFRAME_OPENED", OnBankOpen, "AutoOpenBags_Bank")
-Events:Register("BANKFRAME_CLOSED", OnInteractionClose, "AutoCloseBags_Bank")
+Events:Register("BANKFRAME_CLOSED", OnBankClose, "AutoCloseBags_Bank")
 
 -- Bank window (our own bank frame showing affects grouping)
 -- Small delay on open to ensure BankFrame is fully shown before checking

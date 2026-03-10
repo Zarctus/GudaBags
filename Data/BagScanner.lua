@@ -291,12 +291,7 @@ end
 local function ProcessBatchedUpdates()
     if not pendingUpdate then return end
 
-    -- Skip UI updates while sorting is in progress (reduces overhead)
-    local SortEngine = ns:GetModule("SortEngine")
-    if SortEngine and (SortEngine:IsSorting() or SortEngine:IsRestacking()) then
-        -- Keep pending flag set, will process after sort completes
-        return
-    end
+    -- Allow UI updates during sorting so items move visually in real-time
 
     -- Copy and clear dirty bags before processing
     local bagsToScan = dirtyBags

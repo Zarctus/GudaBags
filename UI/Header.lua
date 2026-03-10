@@ -66,6 +66,16 @@ local function CreateHeader(parent)
                 ItemButton:SyncFrameLevels(bagFrame.container)
             end
         end
+        local GuildBankFrameModule = ns:GetModule("GuildBankFrame")
+        if GuildBankFrameModule and GuildBankFrameModule.GetFrame and GuildBankFrameModule:GetFrame() and GuildBankFrameModule:GetFrame() ~= parent then
+            local guildFrame = GuildBankFrameModule:GetFrame()
+            guildFrame:SetFrameLevel(Constants.FRAME_LEVELS.BASE)
+            Theme:SyncBlizzardBgLevel(guildFrame)
+            if guildFrame.container then
+                guildFrame.container:SetFrameLevel(Constants.FRAME_LEVELS.BASE + Constants.FRAME_LEVELS.CONTAINER)
+                ItemButton:SyncFrameLevels(guildFrame.container)
+            end
+        end
     end)
 
     titleBar:SetScript("OnDragStart", function()

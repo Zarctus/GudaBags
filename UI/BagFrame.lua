@@ -294,6 +294,12 @@ local function CreateBagFrame()
     return f
 end
 
+function BagFrame:RefreshPinIcons()
+    for _, button in pairs(buttonsBySlot) do
+        ItemButton:UpdatePinIcon(button)
+    end
+end
+
 function BagFrame:Refresh()
     if not frame then return end
 

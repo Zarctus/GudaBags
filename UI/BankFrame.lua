@@ -972,6 +972,12 @@ function BankFrame:FilterBankByTab(bank, tabIndex, isWarbandView)
     return filtered
 end
 
+function BankFrame:RefreshPinIcons()
+    for _, button in pairs(buttonsBySlot) do
+        ItemButton:UpdatePinIcon(button)
+    end
+end
+
 function BankFrame:Refresh()
     if not frame then return end
 

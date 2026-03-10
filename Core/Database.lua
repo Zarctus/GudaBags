@@ -47,6 +47,8 @@ local function InitializeCharDB()
         }
     end
 
+    GudaBags_CharDB.pinnedSlots = GudaBags_CharDB.pinnedSlots or {}
+
     for key, default in pairs(Constants.DEFAULTS) do
         if GudaBags_CharDB.settings[key] == nil then
             GudaBags_CharDB.settings[key] = default
@@ -186,6 +188,39 @@ end
 
 function Database:SetSetting(key, value)
     GudaBags_CharDB.settings[key] = value
+end
+
+-------------------------------------------------
+-- Pinned Slots (per-character, slot-based)
+-------------------------------------------------
+
+function Database:IsPinnedSlot(bagID, slot)
+    if not GudaBags_CharDB or not GudaBags_CharDB.pinnedSlots then return false end
+    return GudaBags_CharDB.pinnedSlots[bagID * 1000 + slot] or false
+end
+
+function Database:TogglePinnedSlot(bagID, slot)
+    if not GudaBags_CharDB then return false end
+    GudaBags_CharDB.pinnedSlots = GudaBags_CharDB.pinnedSlots or {}
+    local key = bagID * 1000 + slot
+    if GudaBags_CharDB.pinnedSlots[key] then
+        GudaBags_CharDB.pinnedSlots[key] = nil
+        return false
+    else
+        GudaBags_CharDB.pinnedSlots[key] = true
+        return true
+    end
+end
+
+function Database:GetPinnedSlotSet()
+    if not GudaBags_CharDB or not GudaBags_CharDB.pinnedSlots then return {} end
+    return GudaBags_CharDB.pinnedSlots
+end
+
+function Database:ClearPinnedSlots()
+    if GudaBags_CharDB then
+        GudaBags_CharDB.pinnedSlots = {}
+    end
 end
 
 function Database:GetCurrentCharacter()

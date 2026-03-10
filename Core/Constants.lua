@@ -267,6 +267,7 @@ Constants.DEFAULTS = {
     showItemLevel = true,
     reverseStackSort = false,
     sortRightToLeft = false,
+    fastSort = false,  -- Skip frame budget throttling for faster sort (may cause brief stutter)
 
     -- Bag frame position
     framePoint = nil,

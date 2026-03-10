@@ -292,9 +292,33 @@ local function GetBagFamily(bagID)
     return bagFamily or 0
 end
 
+-- Internal marker for reagent bag (Retail only, not a real bagFamily value)
+-- The reagent bag (ID 5) doesn't use standard bagFamily bits. We detect
+-- reagent items via classID heuristics. This marker is used in bagFamilies
+-- so GetBagTypeFromFamily and CanItemGoInBag can identify the reagent bag.
+local REAGENT_BAG_MARKER = -1
+
+-- Heuristic: is this item a crafting reagent that belongs in the reagent bag?
+-- Uses classID 7 (Trade Goods) but excludes non-reagent subcategories.
+-- subClassID 2 = Explosives, 3 = Devices (engineering gadgets, not reagents)
+-- If a false positive slips through, ExecuteMoves_Yielding's safety net skips it.
+local function IsReagentItem(itemID)
+    if not itemID then return false end
+    local cached = itemInfoCache[itemID]
+    if not cached then return false end
+    if cached.classID == 7 and cached.subClassID ~= 2 and cached.subClassID ~= 3 then
+        return true
+    end
+    return false
+end
+
 local function CanItemGoInBag(itemID, bagFamily)
     if bagFamily == 0 then return true end
     if not itemID then return false end
+    -- Reagent bag: use classID-based heuristic
+    if bagFamily == REAGENT_BAG_MARKER then
+        return IsReagentItem(itemID)
+    end
     local cached = itemInfoCache[itemID]
     local itemFamily = cached and cached.itemFamily or C_Item_GetItemFamily(itemID)
     if not itemFamily then return false end
@@ -303,6 +327,7 @@ end
 
 local function GetBagTypeFromFamily(bagFamily)
     if bagFamily == 0 then return nil end
+    if bagFamily == REAGENT_BAG_MARKER then return "reagent" end
 
     -- TBC-specific bag types (quiver/ammo only exist in TBC)
     if Expansion.IsTBC then
@@ -329,6 +354,12 @@ end
 
 local function GetItemPreferredContainer(itemID)
     if not itemID then return nil end
+    -- Retail: crafting reagents prefer the reagent bag
+    if Expansion.IsRetail and Constants.REAGENT_BAG then
+        if IsReagentItem(itemID) then
+            return "reagent"
+        end
+    end
     local itemFamily = C_Item_GetItemFamily(itemID)
     if not itemFamily or itemFamily == 0 then return nil end
     return GetBagTypeFromFamily(itemFamily)
@@ -386,20 +417,29 @@ local function ClassifyBags(bagIDs)
         containers.inscription = {}
     end
 
+    if Expansion.IsRetail then
+        containers.reagent = {}
+    end
+
     local bagFamilies = {}
 
     for _, bagID in ipairs(bagIDs) do
-        local family = GetBagFamily(bagID)
-        bagFamilies[bagID] = family
-
-        local bagType = GetBagTypeFromFamily(family)
-        if bagType and containers[bagType] then
-            local ct = containers[bagType]
-            ct[#ct + 1] = bagID
-        elseif bagType then
-            containers.specialized[#containers.specialized + 1] = bagID
+        -- Retail: reagent bag identified by ID, uses marker for routing
+        if Expansion.IsRetail and Constants.REAGENT_BAG and bagID == Constants.REAGENT_BAG then
+            bagFamilies[bagID] = REAGENT_BAG_MARKER
+            containers.reagent[#containers.reagent + 1] = bagID
         else
-            containers.regular[#containers.regular + 1] = bagID
+            local family = GetBagFamily(bagID)
+            bagFamilies[bagID] = family
+            local bagType = GetBagTypeFromFamily(family)
+            if bagType and containers[bagType] then
+                local ct = containers[bagType]
+                ct[#ct + 1] = bagID
+            elseif bagType then
+                containers.specialized[#containers.specialized + 1] = bagID
+            else
+                containers.regular[#containers.regular + 1] = bagID
+            end
         end
     end
 
@@ -444,6 +484,7 @@ local function SnapshotSlots(bagIDs)
                         classID = classID or 15,
                         subClassID = subClassID or 0,
                         itemFamily = C_Item_GetItemFamily(itemID) or 0,
+                        isCraftingReagent = itemInfo.isCraftingReagent or false,
                     }
                     itemInfoCache[itemID] = info
                 end
@@ -995,13 +1036,20 @@ local function ExecuteMoves_Yielding(moveList)
                 C_Container_PickupContainerItem(move.sourceBag, move.sourceSlot)
             end
             C_Container_PickupContainerItem(move.targetBag, move.targetSlot)
-            ClearCursor()
-            AddPendingLock(move.sourceBag, move.sourceSlot)
-            AddPendingLock(move.targetBag, move.targetSlot)
 
-            if not soundsMuted then
-                MutePickupSounds()
-                soundsMuted = true
+            -- Verify move succeeded: if cursor still has an item, the target rejected it
+            local cursorType = GetCursorInfo()
+            if cursorType then
+                -- Move failed (e.g., item incompatible with target bag) — put item back
+                ClearCursor()
+            else
+                AddPendingLock(move.sourceBag, move.sourceSlot)
+                AddPendingLock(move.targetBag, move.targetSlot)
+
+                if not soundsMuted then
+                    MutePickupSounds()
+                    soundsMuted = true
+                end
             end
         end
 
@@ -1137,6 +1185,9 @@ local function GetSpecializedTypes()
         if Expansion.IsMoP then
             cachedSpecializedTypes[#cachedSpecializedTypes + 1] = "gem"
             cachedSpecializedTypes[#cachedSpecializedTypes + 1] = "inscription"
+        end
+        if Expansion.IsRetail then
+            cachedSpecializedTypes[#cachedSpecializedTypes + 1] = "reagent"
         end
     end
     return cachedSpecializedTypes
@@ -1363,8 +1414,8 @@ function SortEngine:SortBags()
         return false
     end
 
-    -- Use native Blizzard sort API on retail
-    if Expansion.IsRetail and C_Container and C_Container.SortBags then
+    -- Use native Blizzard sort API on retail (unless GudaBags sort is enabled)
+    if Expansion.IsRetail and not Database:GetSetting("gudaSort") and C_Container and C_Container.SortBags then
         C_Container.SortBags()
         -- Fire event after a short delay to let the sort complete
         C_Timer.After(0.5, function()
@@ -1429,8 +1480,8 @@ function SortEngine:SortBank()
         return false
     end
 
-    -- Use native Blizzard sort API on retail
-    if Expansion.IsRetail and C_Container and C_Container.SortBankBags then
+    -- Use native Blizzard sort API on retail (unless GudaBags sort is enabled)
+    if Expansion.IsRetail and not Database:GetSetting("gudaSort") and C_Container and C_Container.SortBankBags then
         C_Container.SortBankBags()
         -- Fire event after a short delay to let the sort complete
         C_Timer.After(0.5, function()

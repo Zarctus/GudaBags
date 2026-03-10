@@ -1379,9 +1379,13 @@ local function CreateGuideTab(parent)
     yOffset = yOffset - 20
 
     -- Pin Slot Section
+    local pinTitle = L["GUIDE_PIN_SLOT_TITLE"]
+    if ns.IsRetail then
+        pinTitle = pinTitle .. "  |cff888888(" .. L["GUIDE_PIN_SLOT_RETAIL_NOTE"] .. ")|r"
+    end
     yOffset = yOffset - CreateGuideSection(content, yOffset,
         "Interface\\AddOns\\GudaBags\\Assets\\pin.png",
-        L["GUIDE_PIN_SLOT_TITLE"],
+        pinTitle,
         L["GUIDE_PIN_SLOT_DESC"])
 
     return content
@@ -1463,7 +1467,7 @@ local function CreateSettingsFrame()
     tabPanel:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", 0, 8)
 
     -- Create tab contents
-    tabPanel:SetContent("general", CreateTabFromSchema(f, SettingsSchema.GetGeneral()))
+    tabPanel:SetContent("general", CreateTabFromSchema(f, function() return SettingsSchema.GetGeneral() end))
     tabPanel:SetContent("layout", CreateTabFromSchema(f, function() return SettingsSchema.GetLayout() end))
     tabPanel:SetContent("icons", CreateTabFromSchema(f, SettingsSchema.GetIcons()))
     tabPanel:SetContent("bar", CreateTabFromSchema(f, SettingsSchema.GetBar()))
@@ -1475,6 +1479,12 @@ local function CreateSettingsFrame()
     -- Rebuild layout tab when view type changes (to show/hide split column sliders)
     -- Also re-apply theme when theme setting changes
     Events:Register("SETTING_CHANGED", function(event, key)
+        if key == "gudaSort" then
+            local generalContent = tabPanel:GetContent("general")
+            if generalContent and generalContent.RefreshAll then
+                generalContent:RefreshAll()
+            end
+        end
         if key == "bagViewType" or key == "bankViewType" then
             local layoutContent = tabPanel:GetContent("layout")
             if layoutContent and layoutContent.RefreshAll then

@@ -44,6 +44,10 @@ function SettingsSchema.GetGeneral()
 
         { type = "separator", label = L["SETTINGS_SECTION_AUTOMATION"] },
         { type = "row", children = {
+            { type = "checkbox", key = "autoOpenBags", label = L["SETTINGS_AUTO_OPEN_BAGS"], tooltip = L["SETTINGS_AUTO_OPEN_BAGS_TIP"] },
+            { type = "checkbox", key = "autoCloseBags", label = L["SETTINGS_AUTO_CLOSE_BAGS"], tooltip = L["SETTINGS_AUTO_CLOSE_BAGS_TIP"] },
+        }},
+        { type = "row", children = {
             { type = "checkbox", key = "autoVendorJunk", label = L["SETTINGS_AUTO_VENDOR_JUNK"], tooltip = L["SETTINGS_AUTO_VENDOR_JUNK_TIP"] },
         }},
     }

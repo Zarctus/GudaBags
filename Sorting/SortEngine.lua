@@ -959,13 +959,13 @@ end
 
 -- Execute pre-computed moves with API calls, yielding for budget/locks
 local function ExecuteMoves_Yielding(moveList)
-    local fastSort = Database:GetSetting("fastSort")
+    local smoothSort = Database:GetSetting("smoothSort")
     ClearCursor()
     ClearPendingLocks()
 
     for idx, move in ipairs(moveList) do
         -- If source or target is involved in a pending move, wait for locks first
-        if not fastSort and pendingLockCount > 0 then
+        if pendingLockCount > 0 then
             local srcKey = move.sourceBag * 1000 + move.sourceSlot
             local tgtKey = move.targetBag * 1000 + move.targetSlot
             if pendingLockSet[srcKey] or pendingLockSet[tgtKey] then
@@ -1005,8 +1005,8 @@ local function ExecuteMoves_Yielding(moveList)
             end
         end
 
-        -- Yield periodically for budget and locks (skip in fast mode)
-        if not fastSort and idx % 12 == 0 and IsFrameBudgetExceeded() then
+        -- Yield periodically for budget and locks (only in smooth sort mode)
+        if smoothSort and idx % 12 == 0 and IsFrameBudgetExceeded() then
             if pendingLockCount > 0 then
                 coroutine_yield("wait_locks")
                 StartFrameTimer()

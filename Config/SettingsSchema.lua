@@ -42,7 +42,7 @@ function SettingsSchema.GetGeneral()
             { type = "checkbox", key = "reverseStackSort", label = L["SETTINGS_REVERSE_STACK"], tooltip = L["SETTINGS_REVERSE_STACK_TIP"] },
         }},
         { type = "row", children = {
-            { type = "checkbox", key = "fastSort", label = L["SETTINGS_FAST_SORT"], tooltip = L["SETTINGS_FAST_SORT_TIP"],
+            { type = "checkbox", key = "smoothSort", label = L["SETTINGS_SMOOTH_SORT"], tooltip = L["SETTINGS_SMOOTH_SORT_TIP"],
               hidden = function() local Expansion = ns:GetModule("Expansion") return Expansion and Expansion.IsRetail end },
         }},
 

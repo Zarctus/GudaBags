@@ -1534,6 +1534,9 @@ function ItemButton:SetEmpty(button, bagID, slot, size, isReadOnly, isGuildBank)
     if button.cooldown then
         CooldownFrame_Set(button.cooldown, 0, 0, false)
     end
+
+    -- Show pin icon for empty pinned slots
+    ItemButton:UpdatePinIcon(button)
 end
 
 function ItemButton:UpdateSlotAlpha(alpha)

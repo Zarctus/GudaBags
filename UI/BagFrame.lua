@@ -451,10 +451,10 @@ function BagFrame:RefreshSingleView(bags, bagsToShow, settings, hasSearch, isVie
 
         if slotInfo.itemData then
             ItemButton:SetItem(button, slotInfo.itemData, iconSize, isViewingCached)
-            if hasSearch and not SearchBar:ItemMatchesFilters(frame, slotInfo.itemData) then
-                button:SetAlpha(0.15)
+            if hasSearch then
+                ItemButton:SetSearchState(button, SearchBar:ItemMatchesFilters(frame, slotInfo.itemData))
             else
-                button:SetAlpha(1)
+                ItemButton:ClearSearchState(button)
             end
             -- Cache item data for incremental updates
             cachedItemData[slotKey] = slotInfo.itemData.itemID
@@ -462,9 +462,9 @@ function BagFrame:RefreshSingleView(bags, bagsToShow, settings, hasSearch, isVie
         else
             ItemButton:SetEmpty(button, slotInfo.bagID, slotInfo.slot, iconSize, isViewingCached)
             if hasSearch then
-                button:SetAlpha(0.15)
+                ItemButton:SetSearchState(button, false)
             else
-                button:SetAlpha(1)
+                ItemButton:ClearSearchState(button)
             end
             cachedItemData[slotKey] = nil
             cachedItemCount[slotKey] = nil
@@ -542,19 +542,19 @@ function BagFrame:RefreshSplitView(bags, bagsToShow, settings, hasSearch, isView
 
             if itemData then
                 ItemButton:SetItem(button, itemData, iconSize, isViewingCached)
-                if hasSearch and not SearchBar:ItemMatchesFilters(frame, itemData) then
-                    button:SetAlpha(0.15)
+                if hasSearch then
+                    ItemButton:SetSearchState(button, SearchBar:ItemMatchesFilters(frame, itemData))
                 else
-                    button:SetAlpha(1)
+                    ItemButton:ClearSearchState(button)
                 end
                 cachedItemData[slotKey] = itemData.itemID
                 cachedItemCount[slotKey] = itemData.count
             else
                 ItemButton:SetEmpty(button, bagID, slot, iconSize, isViewingCached)
                 if hasSearch then
-                    button:SetAlpha(0.15)
+                    ItemButton:SetSearchState(button, false)
                 else
-                    button:SetAlpha(1)
+                    ItemButton:ClearSearchState(button)
                 end
                 cachedItemData[slotKey] = nil
                 cachedItemCount[slotKey] = nil
@@ -808,11 +808,11 @@ function BagFrame:RefreshCategoryView(bags, bagsToShow, settings, hasSearch, isV
 
         ItemButton:SetItem(button, itemData, iconSize, isViewingCached)
 
-        -- Apply search highlighting (dim non-matching items)
-        if hasSearch and not SearchBar:ItemMatchesFilters(frame, itemData) then
-            button:SetAlpha(0.15)
+        -- Apply spotlight search highlighting
+        if hasSearch then
+            ItemButton:SetSearchState(button, SearchBar:ItemMatchesFilters(frame, itemData))
         else
-            button:SetAlpha(1)
+            ItemButton:ClearSearchState(button)
         end
 
         -- Store layout position for drag-drop indicator
@@ -1295,10 +1295,10 @@ function BagFrame:IncrementalUpdate(dirtyBags)
                     cachedItemCategory[slotKey] = currentSlot.category
                     ghostsReused = ghostsReused + 1
 
-                    if hasSearch and not SearchBar:ItemMatchesFilters(frame, newItemData) then
-                        button:SetAlpha(0.15)
+                    if hasSearch then
+                        ItemButton:SetSearchState(button, SearchBar:ItemMatchesFilters(frame, newItemData))
                     else
-                        button:SetAlpha(1)
+                        ItemButton:ClearSearchState(button)
                     end
                 else
                     -- Different item - update button
@@ -1308,10 +1308,10 @@ function BagFrame:IncrementalUpdate(dirtyBags)
                     cachedItemCategory[slotKey] = currentSlot.category
                     buttonsUpdated = buttonsUpdated + 1
 
-                    if hasSearch and not SearchBar:ItemMatchesFilters(frame, newItemData) then
-                        button:SetAlpha(0.15)
+                    if hasSearch then
+                        ItemButton:SetSearchState(button, SearchBar:ItemMatchesFilters(frame, newItemData))
                     else
-                        button:SetAlpha(1)
+                        ItemButton:ClearSearchState(button)
                     end
                 end
             else
@@ -1326,7 +1326,11 @@ function BagFrame:IncrementalUpdate(dirtyBags)
                         ItemButton:SetEmpty(button, bagID, slot, iconSize, false)
                         cachedItemData[slotKey] = nil
                         cachedItemCount[slotKey] = nil
-                        button:SetAlpha(hasSearch and 0.3 or 1)
+                        if hasSearch then
+                            ItemButton:SetSearchState(button, false)
+                        else
+                            ItemButton:ClearSearchState(button)
+                        end
                         ghostsCreated = ghostsCreated + 1
                     end
                 end
@@ -1350,7 +1354,11 @@ function BagFrame:IncrementalUpdate(dirtyBags)
                                 ItemButton:SetEmpty(button, bagID, slot, iconSize, false)
                                 cachedItemData[slotKey] = nil
                                 cachedItemCount[slotKey] = nil
-                                button:SetAlpha(hasSearch and 0.3 or 1)
+                                if hasSearch then
+                                    ItemButton:SetSearchState(button, false)
+                                else
+                                    ItemButton:ClearSearchState(button)
+                                end
                                 ghostsCreated = ghostsCreated + 1
                             end
                             break
@@ -1387,16 +1395,20 @@ function BagFrame:IncrementalUpdate(dirtyBags)
                         ItemButton:SetItem(button, newItemData, iconSize, false)
                         cachedItemData[slotKey] = newItemID
                         cachedItemCount[slotKey] = newItemData.count
-                        if hasSearch and not SearchBar:ItemMatchesFilters(frame, newItemData) then
-                            button:SetAlpha(0.15)
+                        if hasSearch then
+                            ItemButton:SetSearchState(button, SearchBar:ItemMatchesFilters(frame, newItemData))
                         else
-                            button:SetAlpha(1)
+                            ItemButton:ClearSearchState(button)
                         end
                     else
                         ItemButton:SetEmpty(button, bagID, slot, iconSize, false)
                         cachedItemData[slotKey] = nil
                         cachedItemCount[slotKey] = nil
-                        button:SetAlpha(hasSearch and 0.3 or 1)
+                        if hasSearch then
+                            ItemButton:SetSearchState(button, false)
+                        else
+                            ItemButton:ClearSearchState(button)
+                        end
                     end
                 elseif newItemData then
                     -- Same item - only update if count changed (stacking)
@@ -1426,16 +1438,20 @@ function BagFrame:IncrementalUpdate(dirtyBags)
                             ItemButton:SetItem(button, newItemData, iconSize, false)
                             cachedItemData[slotKey] = newItemID
                             cachedItemCount[slotKey] = newItemData.count
-                            if hasSearch and not SearchBar:ItemMatchesFilters(frame, newItemData) then
-                                button:SetAlpha(0.15)
+                            if hasSearch then
+                                ItemButton:SetSearchState(button, SearchBar:ItemMatchesFilters(frame, newItemData))
                             else
-                                button:SetAlpha(1)
+                                ItemButton:ClearSearchState(button)
                             end
                         else
                             ItemButton:SetEmpty(button, bagID, slot, iconSize, false)
                             cachedItemData[slotKey] = nil
                             cachedItemCount[slotKey] = nil
-                            button:SetAlpha(hasSearch and 0.3 or 1)
+                            if hasSearch then
+                                ItemButton:SetSearchState(button, false)
+                            else
+                                ItemButton:ClearSearchState(button)
+                            end
                         end
                     elseif newItemData then
                         -- Same item - only update if count changed (stacking)

@@ -465,8 +465,8 @@ local function CreateButton(parent)
 
     -- Crafting quality icon (top-left corner, Retail only)
     local craftingQualityIcon = button:CreateTexture(nil, "OVERLAY", nil, 3)
-    craftingQualityIcon:SetSize(20, 20)
-    craftingQualityIcon:SetPoint("TOPLEFT", button, "TOPLEFT", -3, 3)
+    craftingQualityIcon:SetSize(34, 34)
+    craftingQualityIcon:SetPoint("TOPLEFT", button, "TOPLEFT", -5, 5)
     craftingQualityIcon:Hide()
     button.craftingQualityIcon = craftingQualityIcon
 

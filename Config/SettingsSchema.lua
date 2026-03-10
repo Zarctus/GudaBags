@@ -36,6 +36,7 @@ function SettingsSchema.GetGeneral()
             { type = "checkbox", key = "showTooltipCounts", label = L["SETTINGS_INVENTORY_COUNTS"], tooltip = L["SETTINGS_INVENTORY_COUNTS_TIP"] },
         }},
 
+        { type = "separator", label = L["SETTINGS_SECTION_SORT"] },
         { type = "row", children = {
             { type = "checkbox", key = "gudaSort", label = L["SETTINGS_GUDA_SORT"], tooltip = L["SETTINGS_GUDA_SORT_TIP"],
               hidden = function() local Expansion = ns:GetModule("Expansion") return not (Expansion and Expansion.IsRetail) end },

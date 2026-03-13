@@ -167,7 +167,7 @@ function TooltipScanner:GetRestoreTag(bagID, slotID, itemData)
     self:ScanLines(function(lineNum, text)
         local textLower = text:lower()
 
-        if textLower:find("use: restores") then
+        if textLower:find("use: restores") or textLower:find("use: regenerates") then
             hasRestores = true
             if textLower:find("health") then hasHealth = true end
             if textLower:find("mana") then hasMana = true end

@@ -434,7 +434,7 @@ function CategoryManager:SyncEquipmentSetCategories()
             categories.definitions[catId] = {
                 name = setName,
                 icon = "Interface\\PaperDollInfoFrame\\PaperDollSidebarTabs",
-                group = saved and saved.group or "Main",
+                group = saved and saved.group or "Sets",
                 enabled = restoredEnabled,
                 isEquipSet = true,
                 isBuiltIn = false,
@@ -762,6 +762,9 @@ function CategoryManager:ResetToDefaults()
 
     -- Reset merged groups to default (empty = no groups merged)
     Database:SetSetting("mergedGroups", {})
+
+    -- Re-sync equipment set categories so they aren't lost on reset
+    self:SyncEquipmentSetCategories()
 
     -- Invalidate caches when categories reset
     self:InvalidatePriorityCache()

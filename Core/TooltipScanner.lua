@@ -159,38 +159,36 @@ function TooltipScanner:GetRestoreTag(bagID, slotID, itemData)
         return nil
     end
 
-    local tag = nil
+    local hasHealth = false
+    local hasMana = false
+    local hasRestores = false
+    local mustRemainSeated = false
+
     self:ScanLines(function(lineNum, text)
         local textLower = text:lower()
 
         if textLower:find("use: restores") then
-            if textLower:find("health") and textLower:find("mana") then
-                tag = "restore"
-            elseif textLower:find("health") then
-                tag = "eat"
-            elseif textLower:find("mana") then
-                tag = "drink"
-            else
-                tag = "restore"
-            end
-            return true
+            hasRestores = true
+            if textLower:find("health") then hasHealth = true end
+            if textLower:find("mana") then hasMana = true end
         end
 
         if textLower:find("must remain seated") then
-            if textLower:find("health") or (itemData and itemData.itemSubType == "Food & Drink") then
-                if textLower:find("mana") then
-                    tag = "restore"
-                else
-                    tag = "eat"
-                end
-            elseif textLower:find("mana") then
-                tag = "drink"
-            end
-            return tag ~= nil
+            mustRemainSeated = true
         end
     end)
 
-    return tag
+    if mustRemainSeated then
+        if hasHealth and hasMana then
+            return "restore"
+        elseif hasHealth then
+            return "eat"
+        elseif hasMana then
+            return "drink"
+        end
+    end
+
+    return nil
 end
 
 -- Check if item has special properties (Use:, Equip:, Chance on hit)

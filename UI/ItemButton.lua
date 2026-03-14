@@ -48,34 +48,7 @@ local function IsItemProtected(itemID)
     return false
 end
 
--- Classic: Hook ContainerFrameItemButton_OnClick to prevent selling/disenchanting protected items
--- On Retail, protection is handled via spell guard (OnUpdate) and merchant overlays to avoid taint
-if not ns.IsRetail and ContainerFrameItemButton_OnClick then
-    local OriginalContainerFrameItemButton_OnClick = ContainerFrameItemButton_OnClick
-    ContainerFrameItemButton_OnClick = function(self, button, ...)
-        local bag = self:GetParent():GetID()
-        local slot = self:GetID()
-        local itemInfo = C_Container.GetContainerItemInfo(bag, slot)
-        if itemInfo and itemInfo.itemID and IsItemProtected(itemInfo.itemID) then
-            -- Block selling at merchant
-            if MerchantFrame and MerchantFrame:IsShown() and button == "RightButton" then
-                local L = ns.L
-                ns:Print(string.format(L["ITEM_LOCKED_CANNOT_SELL"], itemInfo.hyperlink or ""))
-                return
-            end
-            -- Block disenchant/milling/prospecting (spell targeting an item)
-            if SpellIsTargeting() then
-                SpellStopTargeting()
-                local L = ns.L
-                ns:Print(string.format(L["ITEM_LOCKED_CANNOT_DISENCHANT"], itemInfo.hyperlink or ""))
-                return
-            end
-        end
-        return OriginalContainerFrameItemButton_OnClick(self, button, ...)
-    end
-end
-
--- Retail: protect locked items from disenchant/milling/prospecting without tainting secure click chain
+-- Protect locked items from disenchant/milling/prospecting without tainting secure click chain
 -- Uses overlay frames on protected buttons that eat clicks while spell targeting is active
 local spellTargetingActive = false
 local spellOverlayButtons = {}
@@ -107,7 +80,6 @@ local function CreateSpellOverlay(button)
 end
 
 local function UpdateSpellOverlay(button)
-    if not ns.IsRetail then return end
     if spellTargetingActive and button.itemData and button.itemData.itemID and IsItemProtected(button.itemData.itemID) then
         local overlay = CreateSpellOverlay(button)
         overlay:SetFrameLevel(button:GetFrameLevel() + 21)
@@ -121,7 +93,7 @@ local function UpdateSpellOverlay(button)
     end
 end
 
-if ns.IsRetail then
+do
     local spellGuardFrame = CreateFrame("Frame")
     spellGuardFrame:Hide()
     spellGuardFrame:SetScript("OnUpdate", function(self)
@@ -152,7 +124,7 @@ if ns.IsRetail then
     end)
 end
 
--- Retail: protect locked items from being sold at merchant
+-- Protect locked items from being sold at merchant
 -- Uses overlay frames on protected buttons that intercept right-clicks while merchant is open
 local merchantProtectionActive = false
 local merchantOverlayButtons = {}
@@ -185,7 +157,6 @@ local function CreateMerchantOverlay(button)
 end
 
 local function UpdateMerchantOverlay(button)
-    if not ns.IsRetail then return end
     if merchantProtectionActive and button.itemData and button.itemData.itemID and IsItemProtected(button.itemData.itemID) then
         local overlay = CreateMerchantOverlay(button)
         overlay:SetFrameLevel(button:GetFrameLevel() + 20)
@@ -199,7 +170,7 @@ local function UpdateMerchantOverlay(button)
     end
 end
 
-if ns.IsRetail then
+do
     local merchantFrame = CreateFrame("Frame")
     merchantFrame:RegisterEvent("MERCHANT_SHOW")
     merchantFrame:RegisterEvent("MERCHANT_CLOSED")

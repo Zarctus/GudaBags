@@ -1370,11 +1370,11 @@ local function CreateGuideTab(parent)
         yOffset = yOffset - 20
     end
 
-    -- Item Buttons Section
+    -- Locked Items Section
     yOffset = yOffset - CreateGuideSection(content, yOffset,
-        "Interface\\AddOns\\GudaBags\\Assets\\itembar.png",
-        L["GUIDE_BAG_ITEMS_TITLE"],
-        L["GUIDE_BAG_ITEMS_DESC"])
+        "Interface\\LFGFrame\\UI-LFG-ICON-LOCK",
+        L["GUIDE_LOCKED_ITEMS_TITLE"],
+        L["GUIDE_LOCKED_ITEMS_DESC"])
 
     yOffset = yOffset - 20
 

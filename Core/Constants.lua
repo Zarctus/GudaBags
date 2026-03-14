@@ -265,6 +265,7 @@ Constants.DEFAULTS = {
     otherBorders = true,
     markUnusableItems = true,
     markEquipmentSets = true,
+    autoLockSetItems = true,  -- Prevent selling/deleting equipment set items
     showItemLevel = true,
     reverseStackSort = false,
     sortRightToLeft = false,

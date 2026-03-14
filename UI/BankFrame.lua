@@ -978,6 +978,12 @@ function BankFrame:RefreshPinIcons()
     end
 end
 
+function BankFrame:RefreshLockIcons()
+    for _, button in pairs(buttonsBySlot) do
+        ItemButton:UpdateUserLockIcon(button)
+    end
+end
+
 function BankFrame:Refresh()
     if not frame then return end
 

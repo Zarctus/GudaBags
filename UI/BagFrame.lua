@@ -330,6 +330,7 @@ function BagFrame:Refresh()
     -- else: RefreshCategoryView handles button release/acquire with key-based reuse
 
     ReleaseAllCategoryHeaders()
+
     itemButtons = {}
 
     -- Release pseudo-item buttons BEFORE clearing the table

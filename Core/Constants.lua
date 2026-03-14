@@ -331,7 +331,7 @@ Constants.CATEGORY_UI = {
 
     -- Settings popup
     POPUP_WIDTH = 500,
-    POPUP_HEIGHT = 535,
+    POPUP_HEIGHT = 565,
     POPUP_PADDING = 16,
 
     -- Editor

@@ -911,7 +911,8 @@ function CategoryEditor:Save()
 
     local groupText = frame.groupBox:GetText()
     -- Convert localized group name back to English for storage
-    local group = nil
+    -- Use "" for intentionally ungrouped (nil means "never had a group" for migration)
+    local group = ""
     if groupText and groupText ~= "" then
         group = ns.DefaultCategories:GetGroupIdFromLocalized(groupText)
     end

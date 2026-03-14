@@ -95,7 +95,6 @@ local CATEGORY_LOCALE_KEYS = {
 -- Locale keys for group names
 local GROUP_LOCALE_KEYS = {
     ["Main"] = "GROUP_MAIN",
-    ["Consumables"] = "GROUP_CONSUMABLES",
     ["Sets"] = "GROUP_SETS",
     ["Other"] = "GROUP_OTHER",
     ["Class"] = "GROUP_CLASS",
@@ -132,9 +131,8 @@ end
 -- Get all localized group names
 function DefaultCategories:GetLocalizedGroupNames()
     return {
-        { id = "Consumables", name = self:GetLocalizedGroupName("Consumables") },
-        { id = "Main", name = self:GetLocalizedGroupName("Main") },
         { id = "Sets", name = self:GetLocalizedGroupName("Sets") },
+        { id = "Main", name = self:GetLocalizedGroupName("Main") },
         { id = "Other", name = self:GetLocalizedGroupName("Other") },
         { id = "Class", name = self:GetLocalizedGroupName("Class") },
     }
@@ -165,7 +163,7 @@ DefaultCategories.DEFINITIONS = {
         priority = 200,  -- Highest priority, shows first
         enabled = true,
         isBuiltIn = true,
-        group = "Main",
+        group = "",
     },
 
     ["BoE"] = {
@@ -217,7 +215,7 @@ DefaultCategories.DEFINITIONS = {
         priority = 50,
         enabled = true,
         isBuiltIn = true,
-        group = "Consumables",
+        group = "",
     },
 
     ["Food"] = {
@@ -231,7 +229,7 @@ DefaultCategories.DEFINITIONS = {
         priority = 55,
         enabled = true,
         isBuiltIn = true,
-        group = "Consumables",
+        group = "",
     },
 
     ["Drink"] = {
@@ -245,7 +243,7 @@ DefaultCategories.DEFINITIONS = {
         priority = 55,
         enabled = true,
         isBuiltIn = true,
-        group = "Consumables",
+        group = "",
     },
 
     ["Trade Goods"] = {
@@ -448,10 +446,10 @@ end
 -- Order matching original Guda addon
 -- Built dynamically based on expansion
 DefaultCategories.ORDER = {
+    "Recent",
     "Food",
     "Drink",
     "Consumable",
-    "Recent",
     "BoE",
     "Weapon",
     "Armor",

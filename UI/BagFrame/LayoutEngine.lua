@@ -922,68 +922,63 @@ local function GetCategoryBlockGap(iconSize)
     end
 end
 
--- Calculate frame size for category view with inline layout
--- Returns frameWidth, frameHeight
-function LayoutEngine:CalculateCategoryFrameSize(sections, settings)
+-- Shared layout iteration for both FrameSize and Positions
+-- Calls visitor(section, blockCols, blockRows, blockWidth, blockHeight, x, y) for each block
+local function IterateCategoryLayout(sections, settings, visitor)
     local columns = settings.columns
     local iconSize = settings.iconSize
     local spacing = settings.spacing
-    local showSearchBar = settings.showSearchBar
-    local showFilterChips = settings.showFilterChips
-    local showFooter = settings.showFooter
     local blockGap = GetCategoryBlockGap(iconSize)
-
     local totalWidth = (iconSize * columns) + (spacing * (columns - 1))
+
     local currentX = 0
     local currentY = 0
     local rowMaxHeight = 0
-
     local lastGroup = nil
 
     for _, section in ipairs(sections) do
         if #section.items > 0 then
-            -- Calculate block dimensions
-            local numItems = #section.items
-            local blockCols = numItems
-            if blockCols > columns then blockCols = columns end
-            local blockRows = math.ceil(numItems / columns)
-            -- Block width: N icons + (N-1) spacing between them
+            if section.group ~= lastGroup and currentX > 0 then
+                currentX = 0
+                currentY = currentY + rowMaxHeight
+                rowMaxHeight = 0
+            end
+            lastGroup = section.group
+
+            local blockCols = math.min(#section.items, columns)
+            local blockRows = math.ceil(#section.items / columns)
             local blockWidth = (blockCols * iconSize) + (math.max(0, blockCols - 1) * spacing)
             local blockHeight = CATEGORY_HEADER_HEIGHT + (blockRows * iconSize) + (math.max(0, blockRows - 1) * spacing) + 5
 
-            -- Check if group changed (entering or leaving a group requires new row)
-            local currentGroup = section.group
-            local groupChanged = currentGroup ~= lastGroup
-
-            if groupChanged and currentX > 0 then
-                -- Group boundary - start new row
-                currentX = 0
-                currentY = currentY + rowMaxHeight
-                rowMaxHeight = 0
-            -- Check if block fits in current row (gap only needed between blocks, not at end)
-            elseif currentX > 0 and currentX + blockWidth > totalWidth then
-                -- Start new row
+            if currentX > 0 and currentX + blockWidth > totalWidth then
                 currentX = 0
                 currentY = currentY + rowMaxHeight
                 rowMaxHeight = 0
             end
 
-            lastGroup = currentGroup
+            visitor(section, blockCols, blockRows, blockWidth, blockHeight, currentX, currentY)
 
-            -- Track max height for this row
-            if blockHeight > rowMaxHeight then
-                rowMaxHeight = blockHeight
-            end
-
-            -- Move X for next block (add gap for spacing to next block)
+            if blockHeight > rowMaxHeight then rowMaxHeight = blockHeight end
             currentX = currentX + blockWidth + blockGap
         end
     end
 
-    -- Add final row height
-    local contentHeight = currentY + rowMaxHeight
+    return currentY + rowMaxHeight
+end
+
+-- Calculate frame size for category view
+function LayoutEngine:CalculateCategoryFrameSize(sections, settings)
+    local showSearchBar = settings.showSearchBar
+    local showFilterChips = settings.showFilterChips
+    local showFooter = settings.showFooter
+    local columns = settings.columns
+    local iconSize = settings.iconSize
+    local spacing = settings.spacing
+
+    local contentHeight = IterateCategoryLayout(sections, settings, function() end)
     if contentHeight < iconSize then contentHeight = iconSize end
 
+    local totalWidth = (iconSize * columns) + (spacing * (columns - 1))
     local chipHeight = (showSearchBar and showFilterChips) and (Constants.FRAME.CHIP_STRIP_HEIGHT + 1) or 0
     local searchBarHeight = showSearchBar and (Constants.FRAME.SEARCH_BAR_HEIGHT + chipHeight + 4) or 0
     local footerHeight = showFooter and (Constants.FRAME.FOOTER_HEIGHT + 6) or Constants.FRAME.PADDING
@@ -997,98 +992,46 @@ function LayoutEngine:CalculateCategoryFrameSize(sections, settings)
     return frameWidth, frameHeight
 end
 
--- Calculate positions for category view with inline layout
+-- Calculate positions for category view
 -- Returns { headers = { {section, x, y, width} }, items = { {item, x, y} } }
 function LayoutEngine:CalculateCategoryPositions(sections, settings)
-    local columns = settings.columns
     local iconSize = settings.iconSize
     local spacing = settings.spacing
-    local blockGap = GetCategoryBlockGap(iconSize)
 
     local result = {
         headers = {},
         items = {},
     }
 
-    local totalWidth = (iconSize * columns) + (spacing * (columns - 1))
-    local currentX = 0
-    local currentY = 0
-    local rowMaxHeight = 0
+    local sortSelf = self
+    IterateCategoryLayout(sections, settings, function(section, blockCols, blockRows, blockWidth, blockHeight, x, y)
+        sortSelf:SortCategoryItems(section.items, section.isGroup)
 
-    local lastGroup = nil
+        table.insert(result.headers, {
+            section = section,
+            x = x,
+            y = -y,
+            width = blockWidth,
+        })
 
-    for _, section in ipairs(sections) do
-        if #section.items > 0 then
-            -- Sort items within category (merged groups sort by category order first)
-            self:SortCategoryItems(section.items, section.isGroup)
-
-            -- Calculate block dimensions
-            local numItems = #section.items
-            local blockCols = numItems
-            if blockCols > columns then blockCols = columns end
-            local blockRows = math.ceil(numItems / columns)
-            -- Block width: N icons + (N-1) spacing between them
-            local blockWidth = (blockCols * iconSize) + (math.max(0, blockCols - 1) * spacing)
-            local blockHeight = CATEGORY_HEADER_HEIGHT + (blockRows * iconSize) + (math.max(0, blockRows - 1) * spacing) + 5
-
-            -- Check if group changed (entering or leaving a group requires new row)
-            local currentGroup = section.group
-            local groupChanged = currentGroup ~= lastGroup
-
-            if groupChanged and currentX > 0 then
-                -- Group boundary - start new row
-                currentX = 0
-                currentY = currentY + rowMaxHeight
-                rowMaxHeight = 0
-            -- Check if block fits in current row (gap only needed between blocks, not at end)
-            elseif currentX > 0 and currentX + blockWidth > totalWidth then
-                -- Start new row
-                currentX = 0
-                currentY = currentY + rowMaxHeight
-                rowMaxHeight = 0
-            end
-
-            lastGroup = currentGroup
-
-            -- Header position (y is negative offset from top)
-            table.insert(result.headers, {
-                section = section,
-                x = currentX,
-                y = -currentY,
-                width = blockWidth,
+        local itemStartY = y + CATEGORY_HEADER_HEIGHT
+        local col = 0
+        local row = 0
+        for _, item in ipairs(section.items) do
+            table.insert(result.items, {
+                item = item,
+                x = x + (col * (iconSize + spacing)),
+                y = -(itemStartY + (row * (iconSize + spacing))),
+                categoryId = section.categoryId,
             })
 
-            -- Item positions within this block
-            local itemStartY = currentY + CATEGORY_HEADER_HEIGHT
-            local col = 0
-            local row = 0
-            for _, item in ipairs(section.items) do
-                local x = currentX + (col * (iconSize + spacing))
-                local y = -(itemStartY + (row * (iconSize + spacing)))
-
-                table.insert(result.items, {
-                    item = item,
-                    x = x,
-                    y = y,
-                    categoryId = section.categoryId,
-                })
-
-                col = col + 1
-                if col >= blockCols then
-                    col = 0
-                    row = row + 1
-                end
+            col = col + 1
+            if col >= settings.columns then
+                col = 0
+                row = row + 1
             end
-
-            -- Track max height for this row
-            if blockHeight > rowMaxHeight then
-                rowMaxHeight = blockHeight
-            end
-
-            -- Move X for next block
-            currentX = currentX + blockWidth + blockGap
         end
-    end
+    end)
 
     return result
 end

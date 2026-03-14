@@ -311,6 +311,12 @@ function BagFrame:RefreshPinIcons()
     end
 end
 
+function BagFrame:RefreshLockIcons()
+    for _, button in pairs(buttonsBySlot) do
+        ItemButton:UpdateUserLockIcon(button)
+    end
+end
+
 function BagFrame:Refresh()
     if not frame then return end
 
@@ -1873,12 +1879,15 @@ local function AutoVendorJunk()
 
     local totalPrice = 0
     local itemsSold = 0
+    local EquipSets = ns:GetModule("EquipmentSets")
+    local autoLockSets = Database:GetSetting("autoLockSetItems")
 
     for bagID = Constants.PLAYER_BAG_MIN, Constants.PLAYER_BAG_MAX do
         local numSlots = C_Container.GetContainerNumSlots(bagID)
         for slot = 1, numSlots do
             local itemInfo = C_Container.GetContainerItemInfo(bagID, slot)
-            if itemInfo and itemInfo.quality == 0 then
+            if itemInfo and itemInfo.quality == 0 and not Database:IsItemLocked(itemInfo.itemID)
+                and not (autoLockSets and EquipSets and EquipSets:IsInSet(itemInfo.itemID)) then
                 local _, _, _, _, _, _, _, _, _, _, sellPrice = GetItemInfo(itemInfo.hyperlink)
                 if sellPrice and sellPrice > 0 then
                     C_Container.UseContainerItem(bagID, slot)

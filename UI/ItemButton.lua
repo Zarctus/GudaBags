@@ -37,6 +37,54 @@ local function SuppressItemErrors()
     end
 end
 
+-- Check if an item is protected from selling/deleting (user-locked or in equipment set)
+local function IsItemProtected(itemID)
+    if not itemID then return false end
+    if Database:IsItemLocked(itemID) then return true end
+    if Database:GetSetting("autoLockSetItems") then
+        local EquipSets = ns:GetModule("EquipmentSets")
+        if EquipSets and EquipSets:IsInSet(itemID) then return true end
+    end
+    return false
+end
+
+-- Hook UseContainerItem to prevent selling protected items at vendor
+-- This catches both manual right-click sells and auto-vendor from any addon
+local OriginalUseContainerItem = C_Container.UseContainerItem
+C_Container.UseContainerItem = function(containerIndex, slotIndex, ...)
+    local itemInfo = C_Container.GetContainerItemInfo(containerIndex, slotIndex)
+    if itemInfo and itemInfo.itemID and IsItemProtected(itemInfo.itemID) then
+        -- Block the action when at a merchant (selling)
+        if MerchantFrame and MerchantFrame:IsShown() then
+            local L = ns.L
+            ns:Print(string.format(L["ITEM_LOCKED_CANNOT_SELL"], itemInfo.hyperlink or ""))
+            return
+        end
+    end
+    return OriginalUseContainerItem(containerIndex, slotIndex, ...)
+end
+
+-- Hook delete confirmation popups to prevent deleting protected items
+local function HookDeletePopup(dialogName)
+    if not StaticPopupDialogs or not StaticPopupDialogs[dialogName] then return end
+    local originalOnShow = StaticPopupDialogs[dialogName].OnShow
+    StaticPopupDialogs[dialogName].OnShow = function(self, ...)
+        local cursorType, itemID = GetCursorInfo()
+        if cursorType == "item" and itemID and IsItemProtected(itemID) then
+            local L = ns.L
+            ns:Print(string.format(L["ITEM_LOCKED_CANNOT_DELETE"], select(2, GetItemInfo(itemID)) or ""))
+            ClearCursor()
+            self:Hide()
+            return
+        end
+        if originalOnShow then
+            return originalOnShow(self, ...)
+        end
+    end
+end
+HookDeletePopup("DELETE_ITEM")
+HookDeletePopup("DELETE_GOOD_ITEM")
+
 -- Retail slot textures used when retailEmptySlots setting is enabled
 local RETAIL_SLOT_TEXTURES = {
     background = "Interface\\AddOns\\GudaBags\\Assets\\Themes\\retail\\HDActionBarBtn",
@@ -521,6 +569,24 @@ local function CreateButton(parent)
     pinIcon:Hide()
     button.pinIcon = pinIcon
 
+    -- User lock icon shadow (bottom-right corner, offset for stroke effect)
+    local userLockIconShadow = button:CreateTexture(nil, "OVERLAY", nil, 4)
+    userLockIconShadow:SetSize(13, 13)
+    userLockIconShadow:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", 2, -2)
+    userLockIconShadow:SetTexture("Interface\\LFGFrame\\UI-LFG-ICON-LOCK")
+    userLockIconShadow:SetVertexColor(0, 0, 0, 1)
+    userLockIconShadow:Hide()
+    button.userLockIconShadow = userLockIconShadow
+
+    -- User lock icon (bottom-right corner)
+    local userLockIcon = button:CreateTexture(nil, "OVERLAY", nil, 5)
+    userLockIcon:SetSize(13, 13)
+    userLockIcon:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", 1, -1)
+    userLockIcon:SetTexture("Interface\\LFGFrame\\UI-LFG-ICON-LOCK")
+    userLockIcon:SetVertexColor(1, 0.85, 0, 1)
+    userLockIcon:Hide()
+    button.userLockIcon = userLockIcon
+
     -- Item level text (top-left corner)
     local itemLevelText = button:CreateFontString(nil, "OVERLAY", nil)
     itemLevelText:SetFont(Constants.FONTS.DEFAULT, 12, "OUTLINE")
@@ -757,6 +823,38 @@ local function CreateButton(parent)
                     local TrackedBar = ns:GetModule("TrackedBar")
                     if TrackedBar then
                         TrackedBar:ToggleTrackItem(self.itemData.itemID)
+                    end
+                end
+                return
+            end
+
+            -- Lock/unlock item with Ctrl+Right-Click
+            if mouseButton == "RightButton" and IsControlKeyDown() and not IsAltKeyDown() and not self.isReadOnly then
+                if self.itemData and self.itemData.itemID then
+                    local Database = ns:GetModule("Database")
+                    -- Skip if already protected by equipment set
+                    if Database:GetSetting("autoLockSetItems") then
+                        local EquipSets = ns:GetModule("EquipmentSets")
+                        if EquipSets and EquipSets:IsInSet(self.itemData.itemID) then
+                            local L = ns.L
+                            ns:Print(string.format(L["ITEM_ALREADY_SET_PROTECTED"], self.itemData.link or self.itemData.name or ""))
+                            return
+                        end
+                    end
+                    local isNowLocked = Database:ToggleItemLock(self.itemData.itemID)
+                    local L = ns.L
+                    if isNowLocked then
+                        ns:Print(string.format(L["ITEM_LOCKED"], self.itemData.link or self.itemData.name or ""))
+                    else
+                        ns:Print(string.format(L["ITEM_UNLOCKED"], self.itemData.link or self.itemData.name or ""))
+                    end
+                    local BagFrame = ns:GetModule("BagFrame")
+                    if BagFrame and BagFrame.RefreshLockIcons then
+                        BagFrame:RefreshLockIcons()
+                    end
+                    local BankFrame = ns:GetModule("BankFrame")
+                    if BankFrame and BankFrame.RefreshLockIcons then
+                        BankFrame:RefreshLockIcons()
                     end
                 end
                 return
@@ -1393,6 +1491,9 @@ function ItemButton:SetItem(button, itemData, size, isReadOnly)
 
         -- Pin icon (bottom-right corner)
         ItemButton:UpdatePinIcon(button)
+
+        -- User lock icon (bottom-right corner)
+        ItemButton:UpdateUserLockIcon(button)
     else
         button.wrapper:SetID(0)
         button:SetID(0)
@@ -1433,6 +1534,12 @@ function ItemButton:SetItem(button, itemData, size, isReadOnly)
         if button.itemLevelText then
             button.itemLevelText:Hide()
         end
+        if button.userLockIcon then
+            button.userLockIcon:Hide()
+        end
+        if button.userLockIconShadow then
+            button.userLockIconShadow:Hide()
+        end
         if button.cooldown then
             CooldownFrame_Set(button.cooldown, 0, 0, false)
         end
@@ -1461,6 +1568,21 @@ function ItemButton:UpdatePinIcon(button)
     end
     button.pinIcon:Hide()
     if button.pinIconShadow then button.pinIconShadow:Hide() end
+end
+
+function ItemButton:UpdateUserLockIcon(button)
+    if not button.userLockIcon then return end
+    local itemData = button.itemData
+    if itemData and itemData.itemID and not button.isReadOnly then
+        local Database = ns:GetModule("Database")
+        if Database:IsItemLocked(itemData.itemID) then
+            button.userLockIcon:Show()
+            if button.userLockIconShadow then button.userLockIconShadow:Show() end
+            return
+        end
+    end
+    button.userLockIcon:Hide()
+    if button.userLockIconShadow then button.userLockIconShadow:Hide() end
 end
 
 function ItemButton:SetEmpty(button, bagID, slot, size, isReadOnly, isGuildBank)
@@ -1539,6 +1661,12 @@ function ItemButton:SetEmpty(button, bagID, slot, size, isReadOnly, isGuildBank)
     end
     if button.itemLevelText then
         button.itemLevelText:Hide()
+    end
+    if button.userLockIcon then
+        button.userLockIcon:Hide()
+    end
+    if button.userLockIconShadow then
+        button.userLockIconShadow:Hide()
     end
     if button.cooldown then
         CooldownFrame_Set(button.cooldown, 0, 0, false)
@@ -1766,6 +1894,15 @@ function ItemButton:UpdateLockForItem(bagID, slotID)
             else
                 button.lockOverlay:Hide()
                 SetItemButtonDesaturated(button, false)
+            end
+
+            -- Refresh user lock icon using live API data (itemData may be stale)
+            if itemInfo and itemInfo.itemID and Database:IsItemLocked(itemInfo.itemID) then
+                if button.userLockIcon then button.userLockIcon:Show() end
+                if button.userLockIconShadow then button.userLockIconShadow:Show() end
+            else
+                if button.userLockIcon then button.userLockIcon:Hide() end
+                if button.userLockIconShadow then button.userLockIconShadow:Hide() end
             end
             return  -- Found the button, done
         end

@@ -48,6 +48,7 @@ local function InitializeCharDB()
     end
 
     GudaBags_CharDB.pinnedSlots = GudaBags_CharDB.pinnedSlots or {}
+    GudaBags_CharDB.lockedItems = GudaBags_CharDB.lockedItems or {}
 
     for key, default in pairs(Constants.DEFAULTS) do
         if GudaBags_CharDB.settings[key] == nil then
@@ -220,6 +221,27 @@ end
 function Database:ClearPinnedSlots()
     if GudaBags_CharDB then
         GudaBags_CharDB.pinnedSlots = {}
+    end
+end
+
+-------------------------------------------------
+-- Locked Items (per-character, itemID-based)
+-------------------------------------------------
+
+function Database:IsItemLocked(itemID)
+    if not itemID or not GudaBags_CharDB or not GudaBags_CharDB.lockedItems then return false end
+    return GudaBags_CharDB.lockedItems[itemID] or false
+end
+
+function Database:ToggleItemLock(itemID)
+    if not itemID or not GudaBags_CharDB then return false end
+    GudaBags_CharDB.lockedItems = GudaBags_CharDB.lockedItems or {}
+    if GudaBags_CharDB.lockedItems[itemID] then
+        GudaBags_CharDB.lockedItems[itemID] = nil
+        return false
+    else
+        GudaBags_CharDB.lockedItems[itemID] = true
+        return true
     end
 end
 

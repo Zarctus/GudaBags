@@ -377,6 +377,7 @@ local function CreateButton(parent)
     if button.cooldown then button.cooldown:SetFrameLevel(btnLvl + Constants.FRAME_LEVELS.COOLDOWN) end
     if button.questStarterIcon then button.questStarterIcon:SetFrameLevel(btnLvl + Constants.FRAME_LEVELS.QUEST_ICON) end
     if button.questIcon then button.questIcon:SetFrameLevel(btnLvl + Constants.FRAME_LEVELS.QUEST_ICON) end
+    if button.userLockFrame then button.userLockFrame:SetFrameLevel(btnLvl + Constants.FRAME_LEVELS.BORDER + 2) end
 
     -- Reset hit rect to cover the full button (template might shrink it)
     button:SetHitRectInsets(0, 0, 0, 0)
@@ -569,23 +570,28 @@ local function CreateButton(parent)
     pinIcon:Hide()
     button.pinIcon = pinIcon
 
-    -- User lock icon shadow (bottom-right corner, offset for stroke effect)
-    local userLockIconShadow = button:CreateTexture(nil, "OVERLAY", nil, 4)
-    userLockIconShadow:SetSize(13, 13)
-    userLockIconShadow:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", 2, -2)
-    userLockIconShadow:SetTexture("Interface\\LFGFrame\\UI-LFG-ICON-LOCK")
-    userLockIconShadow:SetVertexColor(0, 0, 0, 1)
-    userLockIconShadow:Hide()
-    button.userLockIconShadow = userLockIconShadow
+    -- User lock icon container (above quality border)
+    local userLockFrame = CreateFrame("Frame", nil, button)
+    userLockFrame:SetAllPoints(button)
+    userLockFrame:SetFrameLevel(button:GetFrameLevel() + Constants.FRAME_LEVELS.BORDER + 2)
+
+    -- User lock icon stroke (bottom-right corner, slightly larger black copy for outline)
+    local userLockIconStroke = userLockFrame:CreateTexture(nil, "OVERLAY", nil, 6)
+    userLockIconStroke:SetSize(13, 13)
+    userLockIconStroke:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", 5, -4)
+    userLockIconStroke:SetTexture("Interface\\AddOns\\GudaBags\\Assets\\lock.png")
+    userLockIconStroke:SetVertexColor(0, 0, 0, 1)
+    userLockIconStroke:Hide()
+    button.userLockIconStroke = userLockIconStroke
 
     -- User lock icon (bottom-right corner)
-    local userLockIcon = button:CreateTexture(nil, "OVERLAY", nil, 5)
-    userLockIcon:SetSize(13, 13)
-    userLockIcon:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", 1, -1)
-    userLockIcon:SetTexture("Interface\\LFGFrame\\UI-LFG-ICON-LOCK")
-    userLockIcon:SetVertexColor(1, 0.85, 0, 1)
+    local userLockIcon = userLockFrame:CreateTexture(nil, "OVERLAY", nil, 7)
+    userLockIcon:SetSize(11, 11)
+    userLockIcon:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", 4, -3)
+    userLockIcon:SetTexture("Interface\\AddOns\\GudaBags\\Assets\\lock.png")
     userLockIcon:Hide()
     button.userLockIcon = userLockIcon
+    button.userLockFrame = userLockFrame
 
     -- Item level text (top-left corner)
     local itemLevelText = button:CreateFontString(nil, "OVERLAY", nil)
@@ -1537,8 +1543,8 @@ function ItemButton:SetItem(button, itemData, size, isReadOnly)
         if button.userLockIcon then
             button.userLockIcon:Hide()
         end
-        if button.userLockIconShadow then
-            button.userLockIconShadow:Hide()
+        if button.userLockIconStroke then
+            button.userLockIconStroke:Hide()
         end
         if button.cooldown then
             CooldownFrame_Set(button.cooldown, 0, 0, false)
@@ -1577,12 +1583,12 @@ function ItemButton:UpdateUserLockIcon(button)
         local Database = ns:GetModule("Database")
         if Database:IsItemLocked(itemData.itemID) then
             button.userLockIcon:Show()
-            if button.userLockIconShadow then button.userLockIconShadow:Show() end
+            if button.userLockIconStroke then button.userLockIconStroke:Show() end
             return
         end
     end
     button.userLockIcon:Hide()
-    if button.userLockIconShadow then button.userLockIconShadow:Hide() end
+    if button.userLockIconStroke then button.userLockIconStroke:Hide() end
 end
 
 function ItemButton:SetEmpty(button, bagID, slot, size, isReadOnly, isGuildBank)
@@ -1665,8 +1671,8 @@ function ItemButton:SetEmpty(button, bagID, slot, size, isReadOnly, isGuildBank)
     if button.userLockIcon then
         button.userLockIcon:Hide()
     end
-    if button.userLockIconShadow then
-        button.userLockIconShadow:Hide()
+    if button.userLockIconStroke then
+        button.userLockIconStroke:Hide()
     end
     if button.cooldown then
         CooldownFrame_Set(button.cooldown, 0, 0, false)
@@ -1871,6 +1877,7 @@ function ItemButton:SyncFrameLevels(owner)
             if button.cooldown then button.cooldown:SetFrameLevel(btnLvl + Constants.FRAME_LEVELS.COOLDOWN) end
             if button.questStarterIcon then button.questStarterIcon:SetFrameLevel(btnLvl + Constants.FRAME_LEVELS.QUEST_ICON) end
             if button.questIcon then button.questIcon:SetFrameLevel(btnLvl + Constants.FRAME_LEVELS.QUEST_ICON) end
+            if button.userLockFrame then button.userLockFrame:SetFrameLevel(btnLvl + Constants.FRAME_LEVELS.BORDER + 2) end
         end
     end
 end
@@ -1899,10 +1906,10 @@ function ItemButton:UpdateLockForItem(bagID, slotID)
             -- Refresh user lock icon using live API data (itemData may be stale)
             if itemInfo and itemInfo.itemID and Database:IsItemLocked(itemInfo.itemID) then
                 if button.userLockIcon then button.userLockIcon:Show() end
-                if button.userLockIconShadow then button.userLockIconShadow:Show() end
+                if button.userLockIconStroke then button.userLockIconStroke:Show() end
             else
                 if button.userLockIcon then button.userLockIcon:Hide() end
-                if button.userLockIconShadow then button.userLockIconShadow:Hide() end
+                if button.userLockIconStroke then button.userLockIconStroke:Hide() end
             end
             return  -- Found the button, done
         end

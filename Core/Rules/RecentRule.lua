@@ -84,6 +84,9 @@ end
 local function MarkItemRecent(itemID)
     if not itemID then return end
 
+    -- Soul Shards should never appear in Recent
+    if itemID == 6265 then return end
+
     -- Don't mark as recent if item has a manual category override
     local CategoryManager = ns:GetModule("CategoryManager")
     if CategoryManager then
@@ -315,6 +318,12 @@ local Events = ns:GetModule("Events")
 if Events then
     Events:OnPlayerLogin(function()
         StartCleanupTimer()
+        -- Remove Soul Shards from recent if already tracked
+        local items = GetRecentItems()
+        if items[6265] then
+            items[6265] = nil
+            SaveRecentItems()
+        end
         -- Do initial cleanup
         C_Timer.After(1, CleanupExpiredItems)
     end, RecentItems)

@@ -48,20 +48,29 @@ local function IsItemProtected(itemID)
     return false
 end
 
--- Hook UseContainerItem to prevent selling protected items at vendor
--- This catches both manual right-click sells and auto-vendor from any addon
-local OriginalUseContainerItem = C_Container.UseContainerItem
-C_Container.UseContainerItem = function(containerIndex, slotIndex, ...)
-    local itemInfo = C_Container.GetContainerItemInfo(containerIndex, slotIndex)
+-- Hook ContainerFrameItemButton_OnClick to prevent selling/disenchanting protected items
+-- Using a pre-hook on the click handler avoids tainting the protected C_Container.UseContainerItem API
+local OriginalContainerFrameItemButton_OnClick = ContainerFrameItemButton_OnClick
+ContainerFrameItemButton_OnClick = function(self, button, ...)
+    local bag = self:GetParent():GetID()
+    local slot = self:GetID()
+    local itemInfo = C_Container.GetContainerItemInfo(bag, slot)
     if itemInfo and itemInfo.itemID and IsItemProtected(itemInfo.itemID) then
-        -- Block the action when at a merchant (selling)
-        if MerchantFrame and MerchantFrame:IsShown() then
+        -- Block selling at merchant
+        if MerchantFrame and MerchantFrame:IsShown() and button == "RightButton" then
             local L = ns.L
             ns:Print(string.format(L["ITEM_LOCKED_CANNOT_SELL"], itemInfo.hyperlink or ""))
             return
         end
+        -- Block disenchant/milling/prospecting (spell targeting an item)
+        if SpellIsTargeting() then
+            SpellStopTargeting()
+            local L = ns.L
+            ns:Print(string.format(L["ITEM_LOCKED_CANNOT_DISENCHANT"], itemInfo.hyperlink or ""))
+            return
+        end
     end
-    return OriginalUseContainerItem(containerIndex, slotIndex, ...)
+    return OriginalContainerFrameItemButton_OnClick(self, button, ...)
 end
 
 -- Hook delete confirmation popups to prevent deleting protected items

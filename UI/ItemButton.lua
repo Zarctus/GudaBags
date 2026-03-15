@@ -924,8 +924,25 @@ local function CreateButton(parent)
         -- Suppress spurious "Item isn't ready yet" errors on retail
         SuppressItemErrors()
 
-        -- On Retail, don't do anything that could taint the secure click path
-        if ns.IsRetail then return end
+        -- On Retail, handle warband bank deposits before the secure click handler
+        if ns.IsRetail then
+            -- Right-click on a bag item while warband tab is active: deposit to warband bank
+            if mouseButton == "RightButton" and not IsAltKeyDown()
+                and self.itemData and self.itemData.bagID ~= nil and self.itemData.slot
+                and not self.itemData.isGuildBank and not self.isReadOnly then
+                local bagID = self.itemData.bagID
+                if bagID >= 0 and bagID <= NUM_BAG_SLOTS then
+                    local BankScannerMod = ns:GetModule("BankScanner")
+                    if BankScannerMod and BankScannerMod:IsBankOpen() then
+                        local BankFooter = ns:GetModule("BankFrame.BankFooter")
+                        if BankFooter and BankFooter:GetCurrentBankType() == "warband" then
+                            C_Container.UseContainerItem(bagID, self.itemData.slot, nil, Enum.BankType.Account)
+                        end
+                    end
+                end
+            end
+            return
+        end
 
         -- For pseudo-item buttons, update to current empty slot BEFORE secure handler runs
         if self.isEmptySlotButton or (self.itemData and self.itemData.isEmptySlots) then

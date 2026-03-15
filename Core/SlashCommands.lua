@@ -232,6 +232,27 @@ commandHandlers["status"] = function()
     ns:Print("GuildBankFrame: " .. (gbFrame and "loaded" or "NOT LOADED"))
 end
 
+-- Profile management
+commandHandlers["profiles"] = function()
+    local profiles = Database:GetProfileList()
+    if #profiles == 0 then
+        ns:Print(L["PROFILE_NO_PROFILES"])
+    else
+        ns:Print(L["PROFILE_LIST"])
+        for _, name in ipairs(profiles) do
+            local profile = Database:GetProfile(name)
+            local info = ""
+            if profile and profile.savedBy then
+                info = " (" .. profile.savedBy .. ")"
+            end
+            if profile and profile.categories then
+                info = info .. " [+cat]"
+            end
+            ns:Print("  - " .. name .. info)
+        end
+    end
+end
+
 -- Help
 commandHandlers["help"] = function()
     ns:Print(L["CMD_COMMANDS"])
@@ -244,6 +265,10 @@ commandHandlers["help"] = function()
     ns:Print("  " .. L["CMD_HELP_COUNT"])
     ns:Print("  " .. L["CMD_HELP_DEBUG"])
     ns:Print("  " .. L["CMD_HELP_HELP"])
+    ns:Print("  /guda profiles - List saved profiles")
+    ns:Print("  /guda profile save <name> - Save current settings")
+    ns:Print("  /guda profile load <name> - Load profile")
+    ns:Print("  /guda profile delete <name> - Delete profile")
     ns:Print("  /guda debugitem - Toggle item data on hover")
     ns:Print("  /guda locale [code|reset] - Test locale")
     ns:Print("  /guda status - Show expansion/feature detection")
@@ -268,6 +293,40 @@ end
 -- Set locale (use original case)
 patternHandlers["^locale%s+(%S+)$"] = function(localeCode)
     ns:SetLocale(localeCode)
+end
+
+-- Profile save
+patternHandlers["^profile%s+save%s+(.+)$"] = function(name)
+    name = name:match("^%s*(.-)%s*$")
+    if not name or name == "" then
+        ns:Print(L["PROFILE_NAME_EMPTY"])
+        return
+    end
+    Database:SaveProfile(name, false)
+    ns:Print(string.format(L["PROFILE_SAVED"], name))
+end
+
+-- Profile load
+patternHandlers["^profile%s+load%s+(.+)$"] = function(name)
+    name = name:match("^%s*(.-)%s*$")
+    if Database:LoadProfile(name) then
+        ns:Print(string.format(L["PROFILE_LOADED"], name))
+        local Events = ns:GetModule("Events")
+        Events:Fire("SETTING_CHANGED", "theme", Database:GetSetting("theme"))
+        Events:Fire("CATEGORIES_UPDATED")
+    else
+        ns:Print(string.format(L["PROFILE_NOT_FOUND"], name))
+    end
+end
+
+-- Profile delete
+patternHandlers["^profile%s+delete%s+(.+)$"] = function(name)
+    name = name:match("^%s*(.-)%s*$")
+    if Database:DeleteProfile(name) then
+        ns:Print(string.format(L["PROFILE_DELETED"], name))
+    else
+        ns:Print(string.format(L["PROFILE_NOT_FOUND"], name))
+    end
 end
 
 -------------------------------------------------

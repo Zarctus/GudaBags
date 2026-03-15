@@ -689,6 +689,94 @@ function Database:SetGlobalSetting(key, value)
     GudaBags_DB.settings[key] = value
 end
 
+-------------------------------------------------
+-- Profiles
+-------------------------------------------------
+
+local function InitializeProfiles()
+    if not GudaBags_DB then return end
+    if not GudaBags_DB.profiles then
+        GudaBags_DB.profiles = {}
+    end
+end
+
+function Database:GetProfileList()
+    InitializeProfiles()
+    local list = {}
+    for name in pairs(GudaBags_DB.profiles) do
+        table.insert(list, name)
+    end
+    table.sort(list)
+    return list
+end
+
+function Database:GetProfile(name)
+    InitializeProfiles()
+    return GudaBags_DB.profiles[name]
+end
+
+function Database:SaveProfile(name, includeCategories)
+    InitializeProfiles()
+    if not name or name == "" then return false end
+
+    local profile = {
+        settings = {},
+        savedAt = time(),
+        savedBy = GetPlayerFullName(),
+    }
+
+    -- Deep copy current settings
+    for key, value in pairs(GudaBags_CharDB.settings) do
+        if type(value) == "table" then
+            profile.settings[key] = CopyTable(value)
+        else
+            profile.settings[key] = value
+        end
+    end
+
+    -- Optionally include categories
+    if includeCategories and GudaBags_CharDB.categories then
+        profile.categories = CopyTable(GudaBags_CharDB.categories)
+    end
+
+    GudaBags_DB.profiles[name] = profile
+    return true
+end
+
+function Database:LoadProfile(name)
+    InitializeProfiles()
+    local profile = GudaBags_DB.profiles[name]
+    if not profile then return false end
+
+    -- Copy settings from profile to current character
+    if profile.settings then
+        for key, value in pairs(profile.settings) do
+            -- Skip per-character position settings
+            if not key:match("^frame") and not key:match("^bankFrame") and not key:match("^guildBankFrame") then
+                if type(value) == "table" then
+                    GudaBags_CharDB.settings[key] = CopyTable(value)
+                else
+                    GudaBags_CharDB.settings[key] = value
+                end
+            end
+        end
+    end
+
+    -- Load categories if present
+    if profile.categories then
+        GudaBags_CharDB.categories = CopyTable(profile.categories)
+    end
+
+    return true
+end
+
+function Database:DeleteProfile(name)
+    InitializeProfiles()
+    if not name or not GudaBags_DB.profiles[name] then return false end
+    GudaBags_DB.profiles[name] = nil
+    return true
+end
+
 Events:OnAddonLoaded(function()
     Database:Initialize()
 end, Database)

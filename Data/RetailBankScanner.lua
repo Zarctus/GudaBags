@@ -367,9 +367,23 @@ function RetailBankScanner:ScanDirtyBags(bagIDs)
         return currentBankType == BANK_TYPE_ACCOUNT and cachedWarbandBank or cachedCharacterBank
     end
 
-    local cache = currentBankType == BANK_TYPE_ACCOUNT and cachedWarbandBank or cachedCharacterBank
-
     for bagID in pairs(bagIDs) do
+        -- Determine the correct cache based on this bag's actual bank type,
+        -- not on which bank is currently being viewed. This ensures that
+        -- warband bank updates always go to cachedWarbandBank and character
+        -- bank updates always go to cachedCharacterBank, regardless of the
+        -- current display state.
+        local isWarbandBag = false
+        if Constants.WARBAND_BANK_TAB_IDS then
+            for _, warbandID in ipairs(Constants.WARBAND_BANK_TAB_IDS) do
+                if bagID == warbandID then
+                    isWarbandBag = true
+                    break
+                end
+            end
+        end
+        local cache = isWarbandBag and cachedWarbandBank or cachedCharacterBank
+
         local numSlots = C_Container.GetContainerNumSlots(bagID)
         if not numSlots or numSlots == 0 then
             if cache[bagID] then
@@ -421,7 +435,7 @@ function RetailBankScanner:ScanDirtyBags(bagIDs)
         end
     end
 
-    return cache
+    return currentBankType == BANK_TYPE_ACCOUNT and cachedWarbandBank or cachedCharacterBank
 end
 
 function RetailBankScanner:GetCachedBank(bankType)
@@ -755,10 +769,10 @@ Events:Register("BAG_UPDATE", function(event, bagID)
 
     local bagBankType = GetBankTypeForBagID(bagID)
     if bagBankType then
-        -- Only process if it's the current bank type being viewed
-        if bagBankType == currentBankType then
-            OnBankUpdate(bagID)
-        end
+        -- Process all bank bag updates regardless of which bank type is currently
+        -- displayed. ScanDirtyBags will route each bag to the correct cache.
+        -- This ensures deposits to either bank always trigger a refresh.
+        OnBankUpdate(bagID)
     end
 end, RetailBankScanner)
 
@@ -768,18 +782,14 @@ if not Constants.CHARACTER_BANK_TABS_ACTIVE then
     -- Only register these if old bank system is active
     if Enum.BagIndex.Bank then
         Events:Register("PLAYERBANKSLOTS_CHANGED", function()
-            if currentBankType == BANK_TYPE_CHARACTER then
-                OnBankUpdate(Enum.BagIndex.Bank)
-            end
+            OnBankUpdate(Enum.BagIndex.Bank)
         end, RetailBankScanner)
 
         Events:Register("PLAYERBANKBAGSLOTS_CHANGED", function()
-            if currentBankType == BANK_TYPE_CHARACTER then
-                for bagID = Constants.BANK_BAG_MIN, Constants.BANK_BAG_MAX do
-                    dirtyBags[bagID] = true
-                end
-                OnBankUpdate(nil)
+            for bagID = Constants.BANK_BAG_MIN, Constants.BANK_BAG_MAX do
+                dirtyBags[bagID] = true
             end
+            OnBankUpdate(nil)
         end, RetailBankScanner)
     end
 end

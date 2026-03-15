@@ -50,6 +50,7 @@ local function GetTabList()
         { id = "icons", label = ns.L["TAB_ICONS"], tooltip = ns.L["TAB_ICONS_TIP"] },
         { id = "bar", label = ns.L["TAB_BAR"], tooltip = ns.L["TAB_BAR_TIP"] },
         { id = "categories", label = ns.L["TAB_CATEGORIES"], tooltip = ns.L["TAB_CATEGORIES_TIP"] },
+        { id = "profiles", label = ns.L["TAB_PROFILES"], tooltip = ns.L["TAB_PROFILES_TIP"] },
         { id = "guide", label = ns.L["TAB_GUIDE"], tooltip = ns.L["TAB_GUIDE_TIP"] },
     }
 end
@@ -1345,6 +1346,282 @@ local function CreateGuideSection(parent, yOffset, imagePath, title, description
     return SECTION_HEIGHT
 end
 
+-------------------------------------------------
+-- Profiles Tab
+-------------------------------------------------
+
+local profilesScrollChild = nil
+local includeCategories = false
+
+local function RefreshProfilesList()
+    if not profilesScrollChild then return end
+
+    -- Clear old children
+    for _, child in ipairs({profilesScrollChild:GetChildren()}) do
+        child:Hide()
+        child:SetParent(nil)
+    end
+
+    local Database = ns:GetModule("Database")
+    local yOffset = 0
+
+    -- --- Create Profile Section ---
+    local createHeader = profilesScrollChild:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    createHeader:SetPoint("TOPLEFT", profilesScrollChild, "TOPLEFT", 0, yOffset)
+    createHeader:SetText(L["PROFILE_SECTION_CREATE"])
+    createHeader:SetTextColor(0.9, 0.75, 0.3)
+    yOffset = yOffset - 20
+
+    -- Name input row
+    local inputRow = CreateFrame("Frame", nil, profilesScrollChild)
+    inputRow:SetHeight(26)
+    inputRow:SetPoint("TOPLEFT", profilesScrollChild, "TOPLEFT", 0, yOffset)
+    inputRow:SetPoint("RIGHT", profilesScrollChild, "RIGHT", 0, 0)
+
+    local nameInput = CreateFrame("EditBox", "GudaProfileNameInput", inputRow, "InputBoxTemplate")
+    nameInput:SetSize(180, 22)
+    nameInput:SetPoint("LEFT", inputRow, "LEFT", 6, 0)
+    nameInput:SetAutoFocus(false)
+    nameInput:SetMaxLetters(30)
+    nameInput:SetFontObject(GameFontHighlightSmall)
+    nameInput:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
+
+    local saveBtn = CreateFrame("Button", nil, inputRow, "UIPanelButtonTemplate")
+    saveBtn:SetSize(70, 22)
+    saveBtn:SetPoint("LEFT", nameInput, "RIGHT", 8, 0)
+    saveBtn:SetText(L["PROFILE_SAVE"])
+    saveBtn:SetScript("OnClick", function()
+        local name = nameInput:GetText()
+        if not name or name:match("^%s*$") then
+            ns:Print(L["PROFILE_NAME_EMPTY"])
+            return
+        end
+        name = name:match("^%s*(.-)%s*$") -- trim
+        Database:SaveProfile(name, includeCategories)
+        ns:Print(string.format(L["PROFILE_SAVED"], name))
+        nameInput:SetText("")
+        nameInput:ClearFocus()
+        RefreshProfilesList()
+    end)
+    saveBtn:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_TOP")
+        GameTooltip:SetText(L["PROFILE_SAVE_TIP"])
+        GameTooltip:Show()
+    end)
+    saveBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
+
+    nameInput:SetScript("OnEnterPressed", function(self)
+        saveBtn:Click()
+    end)
+
+    yOffset = yOffset - 30
+
+    -- Include categories checkbox
+    local catRow = CreateFrame("Frame", nil, profilesScrollChild)
+    catRow:SetHeight(22)
+    catRow:SetPoint("TOPLEFT", profilesScrollChild, "TOPLEFT", 0, yOffset)
+    catRow:SetPoint("RIGHT", profilesScrollChild, "RIGHT", 0, 0)
+
+    local catCB = CreateFrame("CheckButton", nil, catRow, "UICheckButtonTemplate")
+    catCB:SetPoint("LEFT", catRow, "LEFT", 2, 0)
+    catCB:SetSize(22, 22)
+    catCB:SetChecked(includeCategories)
+    catCB:SetScript("OnClick", function(self)
+        includeCategories = self:GetChecked()
+    end)
+
+    local catLabel = catRow:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    catLabel:SetPoint("LEFT", catCB, "RIGHT", 4, 0)
+    catLabel:SetText(L["PROFILE_INCLUDE_CATEGORIES"])
+    catLabel:SetTextColor(0.8, 0.8, 0.8)
+
+    catCB:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_TOP")
+        GameTooltip:SetText(L["PROFILE_INCLUDE_CATEGORIES"])
+        GameTooltip:AddLine(L["PROFILE_INCLUDE_CATEGORIES_TIP"], 1, 1, 1, true)
+        GameTooltip:Show()
+    end)
+    catCB:SetScript("OnLeave", function() GameTooltip:Hide() end)
+
+    yOffset = yOffset - 30
+
+    -- --- Separator ---
+    local sep = profilesScrollChild:CreateTexture(nil, "ARTWORK")
+    sep:SetHeight(1)
+    sep:SetPoint("TOPLEFT", profilesScrollChild, "TOPLEFT", 0, yOffset)
+    sep:SetPoint("RIGHT", profilesScrollChild, "RIGHT", 0, 0)
+    sep:SetColorTexture(0.5, 0.5, 0.5, 0.5)
+    yOffset = yOffset - 10
+
+    -- --- Saved Profiles Section ---
+    local savedHeader = profilesScrollChild:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    savedHeader:SetPoint("TOPLEFT", profilesScrollChild, "TOPLEFT", 0, yOffset)
+    savedHeader:SetText(L["PROFILE_SECTION_SAVED"])
+    savedHeader:SetTextColor(0.9, 0.75, 0.3)
+    yOffset = yOffset - 22
+
+    local profiles = Database:GetProfileList()
+
+    if #profiles == 0 then
+        local noProfiles = profilesScrollChild:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        noProfiles:SetPoint("TOPLEFT", profilesScrollChild, "TOPLEFT", 4, yOffset)
+        noProfiles:SetText(L["PROFILE_NO_PROFILES"])
+        noProfiles:SetTextColor(0.5, 0.5, 0.5)
+        yOffset = yOffset - 20
+    else
+        for _, profileName in ipairs(profiles) do
+            local profile = Database:GetProfile(profileName)
+            local ROW_HEIGHT = 50
+
+            local row = CreateFrame("Frame", nil, profilesScrollChild, "BackdropTemplate")
+            row:SetHeight(ROW_HEIGHT)
+            row:SetPoint("TOPLEFT", profilesScrollChild, "TOPLEFT", 0, yOffset)
+            row:SetPoint("RIGHT", profilesScrollChild, "RIGHT", 0, 0)
+            row:SetBackdrop({
+                bgFile = "Interface\\Buttons\\WHITE8x8",
+                edgeFile = "Interface\\Buttons\\WHITE8x8",
+                edgeSize = 1,
+                insets = { left = 1, right = 1, top = 1, bottom = 1 },
+            })
+            row:SetBackdropColor(0.12, 0.12, 0.12, 0.6)
+            row:SetBackdropBorderColor(0.3, 0.3, 0.3, 0.5)
+
+            -- Profile name
+            local nameText = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+            nameText:SetPoint("TOPLEFT", row, "TOPLEFT", 8, -6)
+            nameText:SetText(profileName)
+            nameText:SetTextColor(1, 1, 1)
+
+            -- Info line
+            local infoText = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+            infoText:SetPoint("TOPLEFT", nameText, "BOTTOMLEFT", 0, -2)
+            local infoStr = ""
+            if profile.savedBy then
+                infoStr = string.format(L["PROFILE_SAVED_BY"], profile.savedBy)
+            end
+            if profile.categories then
+                if infoStr ~= "" then infoStr = infoStr .. "  |  " end
+                infoStr = infoStr .. "|cff00cc00" .. L["PROFILE_HAS_CATEGORIES"] .. "|r"
+            end
+            infoText:SetText(infoStr)
+            infoText:SetTextColor(0.6, 0.6, 0.6)
+
+            -- Delete button
+            local deleteBtn = CreateFrame("Button", nil, row, "UIPanelButtonTemplate")
+            deleteBtn:SetSize(60, 20)
+            deleteBtn:SetPoint("RIGHT", row, "RIGHT", -6, 0)
+            deleteBtn:SetText(L["PROFILE_DELETE"])
+            deleteBtn:SetScript("OnClick", function()
+                StaticPopupDialogs["GUDABAGS_DELETE_PROFILE"] = {
+                    text = string.format(L["PROFILE_CONFIRM_DELETE"], profileName),
+                    button1 = YES,
+                    button2 = NO,
+                    OnAccept = function()
+                        Database:DeleteProfile(profileName)
+                        ns:Print(string.format(L["PROFILE_DELETED"], profileName))
+                        RefreshProfilesList()
+                    end,
+                    timeout = 0,
+                    whileDead = true,
+                    hideOnEscape = true,
+                    preferredIndex = 3,
+                }
+                StaticPopup_Show("GUDABAGS_DELETE_PROFILE")
+            end)
+            deleteBtn:SetScript("OnEnter", function(self)
+                GameTooltip:SetOwner(self, "ANCHOR_TOP")
+                GameTooltip:SetText(L["PROFILE_DELETE_TIP"])
+                GameTooltip:Show()
+            end)
+            deleteBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
+
+            -- Load button
+            local loadBtn = CreateFrame("Button", nil, row, "UIPanelButtonTemplate")
+            loadBtn:SetSize(60, 20)
+            loadBtn:SetPoint("RIGHT", deleteBtn, "LEFT", -4, 0)
+            loadBtn:SetText(L["PROFILE_LOAD"])
+            loadBtn:SetScript("OnClick", function()
+                StaticPopupDialogs["GUDABAGS_LOAD_PROFILE"] = {
+                    text = string.format(L["PROFILE_CONFIRM_LOAD"], profileName),
+                    button1 = YES,
+                    button2 = NO,
+                    OnAccept = function()
+                        if Database:LoadProfile(profileName) then
+                            ns:Print(string.format(L["PROFILE_LOADED"], profileName))
+                            Events:Fire("SETTING_CHANGED", "theme", Database:GetSetting("theme"))
+                            Events:Fire("CATEGORIES_UPDATED")
+                        else
+                            ns:Print(string.format(L["PROFILE_NOT_FOUND"], profileName))
+                        end
+                    end,
+                    timeout = 0,
+                    whileDead = true,
+                    hideOnEscape = true,
+                    preferredIndex = 3,
+                }
+                StaticPopup_Show("GUDABAGS_LOAD_PROFILE")
+            end)
+            loadBtn:SetScript("OnEnter", function(self)
+                GameTooltip:SetOwner(self, "ANCHOR_TOP")
+                GameTooltip:SetText(L["PROFILE_LOAD_TIP"])
+                GameTooltip:Show()
+            end)
+            loadBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
+
+            -- Overwrite button (save current to this profile)
+            local overwriteBtn = CreateFrame("Button", nil, row, "UIPanelButtonTemplate")
+            overwriteBtn:SetSize(60, 20)
+            overwriteBtn:SetPoint("RIGHT", loadBtn, "LEFT", -4, 0)
+            overwriteBtn:SetText(L["PROFILE_SAVE"])
+            overwriteBtn:SetScript("OnClick", function()
+                Database:SaveProfile(profileName, includeCategories)
+                ns:Print(string.format(L["PROFILE_SAVED"], profileName))
+                RefreshProfilesList()
+            end)
+            overwriteBtn:SetScript("OnEnter", function(self)
+                GameTooltip:SetOwner(self, "ANCHOR_TOP")
+                GameTooltip:SetText(L["PROFILE_SAVE_TIP"])
+                GameTooltip:Show()
+            end)
+            overwriteBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
+
+            -- Hover effect
+            row:EnableMouse(true)
+            row:SetScript("OnEnter", function(self)
+                self:SetBackdropColor(0.18, 0.18, 0.18, 0.8)
+                self:SetBackdropBorderColor(0.4, 0.4, 0.4, 0.7)
+            end)
+            row:SetScript("OnLeave", function(self)
+                self:SetBackdropColor(0.12, 0.12, 0.12, 0.6)
+                self:SetBackdropBorderColor(0.3, 0.3, 0.3, 0.5)
+            end)
+
+            yOffset = yOffset - ROW_HEIGHT - 4
+        end
+    end
+
+    profilesScrollChild:SetHeight(math.abs(yOffset) + 10)
+end
+
+local function CreateProfilesTab(parent)
+    local scrollFrame = CreateFrame("ScrollFrame", "GudaProfilesScroll", parent, "UIPanelScrollFrameTemplate")
+    scrollFrame:SetPoint("TOPLEFT", parent, "TOPLEFT", 0, 0)
+    scrollFrame:SetPoint("BOTTOMRIGHT", parent, "BOTTOMRIGHT", -24, 0)
+
+    profilesScrollChild = CreateFrame("Frame", nil, scrollFrame)
+    profilesScrollChild:SetWidth(scrollFrame:GetWidth() or 340)
+    profilesScrollChild:SetHeight(400)
+    scrollFrame:SetScrollChild(profilesScrollChild)
+
+    -- Match width to scroll frame on size change
+    scrollFrame:SetScript("OnSizeChanged", function(self, width)
+        profilesScrollChild:SetWidth(width)
+    end)
+
+    RefreshProfilesList()
+    return scrollFrame
+end
+
 local function CreateGuideTab(parent)
     local content = CreateFrame("Frame", nil, parent)
     local yOffset = 0
@@ -1460,6 +1737,8 @@ local function CreateSettingsFrame()
         onSelect = function(tabId)
             if tabId == "categories" then
                 RefreshCategoriesList()
+            elseif tabId == "profiles" then
+                RefreshProfilesList()
             end
         end,
     })
@@ -1472,6 +1751,7 @@ local function CreateSettingsFrame()
     tabPanel:SetContent("icons", CreateTabFromSchema(f, SettingsSchema.GetIcons()))
     tabPanel:SetContent("bar", CreateTabFromSchema(f, SettingsSchema.GetBar()))
     tabPanel:SetContent("categories", CreateCategoriesTab(f))
+    tabPanel:SetContent("profiles", CreateProfilesTab(f))
     tabPanel:SetContent("guide", CreateGuideTab(f))
 
     tabPanel.SelectTab("general")

@@ -367,6 +367,7 @@ L["NO_DATA"] = "No data"
 
 -- Search
 L["SEARCH_PLACEHOLDER"] = "Search... (q:epic, t:weapon, ilvl>200)"
+L["EQUIP_SET_DROPDOWN_TIP"] = "Equipment Sets"
 L["CHIP_QUALITY_POOR"] = "Poor"
 L["CHIP_QUALITY_COMMON"] = "Common"
 L["CHIP_QUALITY_UNCOMMON"] = "Uncommon"

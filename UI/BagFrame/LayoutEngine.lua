@@ -652,16 +652,23 @@ function LayoutEngine:BuildCategorySections(items, isViewingCached, emptyCount, 
     end
 
     -- Categorize each item and store category order index for merged group sorting
+    local soulCategoryEnabled = sectionMap["Soul"] ~= nil
     for _, item in ipairs(items) do
-        local categoryId = CategoryManager:CategorizeItem(item.itemData, item.bagID, item.slot, isViewingCached)
-        local section = sectionMap[categoryId]
-        if section then
-            -- Store category order index for sorting within merged groups
-            item.categoryOrderIndex = categoryOrderIndex[categoryId] or 999
-            table.insert(section.items, item)
-        elseif sectionMap["Miscellaneous"] then
-            item.categoryOrderIndex = categoryOrderIndex["Miscellaneous"] or 999
-            table.insert(sectionMap["Miscellaneous"].items, item)
+        -- Hide soul bag items from categories when Soul category is enabled
+        -- (they are already shown in the soul bag section)
+        if soulCategoryEnabled and item.isInSoulBag then
+            -- skip: soul bag items are displayed in the Soul section
+        else
+            local categoryId = CategoryManager:CategorizeItem(item.itemData, item.bagID, item.slot, isViewingCached)
+            local section = sectionMap[categoryId]
+            if section then
+                -- Store category order index for sorting within merged groups
+                item.categoryOrderIndex = categoryOrderIndex[categoryId] or 999
+                table.insert(section.items, item)
+            elseif sectionMap["Miscellaneous"] then
+                item.categoryOrderIndex = categoryOrderIndex["Miscellaneous"] or 999
+                table.insert(sectionMap["Miscellaneous"].items, item)
+            end
         end
     end
 
@@ -701,7 +708,7 @@ function LayoutEngine:BuildCategorySections(items, isViewingCached, emptyCount, 
                 isEmptySlots = true,
                 isSoulSlots = true,
                 emptyCount = soulEmptyCount,
-                texture = "Interface\\Icons\\INV_Misc_Gem_Amethyst_02",
+                texture = "Interface\\AddOns\\GudaBags\\Assets\\soul.png",
                 count = soulEmptyCount,
                 name = "Soul Bag Slots",
             },

@@ -63,6 +63,21 @@ function DefaultCategories:GetRuleTypes()
         }},
         { id = "texturePattern", label = L["RULE_ICON_PATTERN"], valueType = "text" },
         { id = "isRecent", label = L["RULE_RECENT_ITEMS"], valueType = "slider", min = 1, max = 60, step = 1, format = "min" },
+        { id = "expansion", label = L["RULE_EXPANSION"], valueType = "dropdown", options = {
+            {value = "Classic",        label = "Classic"},
+            {value = "TBC",            label = "The Burning Crusade"},
+            {value = "WotLK",          label = "Wrath of the Lich King"},
+            {value = "Cataclysm",      label = "Cataclysm"},
+            {value = "MoP",            label = "Mists of Pandaria"},
+            {value = "WoD",            label = "Warlords of Draenor"},
+            {value = "Legion",         label = "Legion"},
+            {value = "BfA",            label = "Battle for Azeroth"},
+            {value = "Shadowlands",    label = "Shadowlands"},
+            {value = "Dragonflight",   label = "Dragonflight"},
+            {value = "The War Within", label = "The War Within"},
+            {value = "Midnight",       label = "Midnight"},
+        }},
+        { id = "isCurrentExpansion", label = L["RULE_CURRENT_EXPANSION"], valueType = "boolean" },
     }
 end
 
@@ -90,14 +105,18 @@ local CATEGORY_LOCALE_KEYS = {
     ["Keyring"] = "CAT_KEYRING",
     ["Empty"] = "CAT_EMPTY",
     ["Soul"] = "CAT_SOUL",
+    ["Current Expansion"] = "CAT_CURRENT_EXPANSION",
+    ["Old Expansions"] = "CAT_OLD_EXPANSIONS",
 }
 
 -- Locale keys for group names
 local GROUP_LOCALE_KEYS = {
     ["Main"] = "GROUP_MAIN",
+    ["Consumables"] = "GROUP_CONSUMABLES",
     ["Sets"] = "GROUP_SETS",
     ["Other"] = "GROUP_OTHER",
     ["Class"] = "GROUP_CLASS",
+    ["Expansion"] = "GROUP_EXPANSION",
 }
 
 -- Get localized category name
@@ -131,8 +150,10 @@ end
 -- Get all localized group names
 function DefaultCategories:GetLocalizedGroupNames()
     return {
-        { id = "Sets", name = self:GetLocalizedGroupName("Sets") },
+        { id = "Consumables", name = self:GetLocalizedGroupName("Consumables") },
         { id = "Main", name = self:GetLocalizedGroupName("Main") },
+        { id = "Expansion", name = self:GetLocalizedGroupName("Expansion") },
+        { id = "Sets", name = self:GetLocalizedGroupName("Sets") },
         { id = "Other", name = self:GetLocalizedGroupName("Other") },
         { id = "Class", name = self:GetLocalizedGroupName("Class") },
     }
@@ -163,7 +184,7 @@ DefaultCategories.DEFINITIONS = {
         priority = 200,  -- Highest priority, shows first
         enabled = true,
         isBuiltIn = true,
-        group = "",
+        group = "Main",
     },
 
     ["BoE"] = {
@@ -215,7 +236,7 @@ DefaultCategories.DEFINITIONS = {
         priority = 50,
         enabled = true,
         isBuiltIn = true,
-        group = "",
+        group = "Consumables",
     },
 
     ["Food"] = {
@@ -229,7 +250,7 @@ DefaultCategories.DEFINITIONS = {
         priority = 55,
         enabled = true,
         isBuiltIn = true,
-        group = "",
+        group = "Consumables",
     },
 
     ["Drink"] = {
@@ -243,7 +264,7 @@ DefaultCategories.DEFINITIONS = {
         priority = 55,
         enabled = true,
         isBuiltIn = true,
-        group = "",
+        group = "Consumables",
     },
 
     ["Trade Goods"] = {
@@ -427,6 +448,32 @@ DefaultCategories.DEFINITIONS = {
         group = "Other",
         hideControls = true,  -- Don't show in category editor
     },
+
+    ["Current Expansion"] = {
+        name = "Current Expansion",
+        icon = "Interface\\Icons\\INV_Misc_Map_01",
+        rules = {
+            { type = "isCurrentExpansion", value = true },
+        },
+        matchMode = "all",
+        priority = 30,
+        enabled = false,  -- Disabled by default, user opts in
+        isBuiltIn = true,
+        group = "Expansion",
+    },
+
+    ["Old Expansions"] = {
+        name = "Old Expansions",
+        icon = "Interface\\Icons\\INV_Misc_Book_09",
+        rules = {
+            { type = "isCurrentExpansion", value = false },
+        },
+        matchMode = "all",
+        priority = 25,
+        enabled = false,  -- Disabled by default, user opts in
+        isBuiltIn = true,
+        group = "Expansion",
+    },
 }
 
 -- Remove expansion-specific categories based on feature availability
@@ -446,10 +493,10 @@ end
 -- Order matching original Guda addon
 -- Built dynamically based on expansion
 DefaultCategories.ORDER = {
-    "Recent",
     "Food",
     "Drink",
     "Consumable",
+    "Recent",
     "BoE",
     "Weapon",
     "Armor",
@@ -467,6 +514,8 @@ end
 local commonOrderContinued = {
     "Container",
     "Soul Bag",
+    "Current Expansion",
+    "Old Expansions",
     "Miscellaneous",
     "Quest",
     "Junk",

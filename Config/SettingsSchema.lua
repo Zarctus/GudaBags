@@ -104,21 +104,6 @@ function SettingsSchema.GetLayout()
         { type = "slider", key = "bankColumns", label = L["SETTINGS_BANK_COLUMNS"], min = 5, max = 36, step = 1 },
         { type = "slider", key = "guildBankColumns", label = L["SETTINGS_GUILD_BANK_COLUMNS"], min = 10, max = 36, step = 1 },
 
-        { type = "separator", label = L["SETTINGS_SECTION_CATEGORY"],
-          hidden = function() local Database = ns:GetModule("Database")
-            return Database:GetSetting("bagViewType") ~= "category" and Database:GetSetting("bankViewType") ~= "category" end },
-        { type = "row", hidden = function() local Database = ns:GetModule("Database")
-            return Database:GetSetting("bagViewType") ~= "category" and Database:GetSetting("bankViewType") ~= "category" end,
-          children = {
-            { type = "checkbox", key = "showCategoryCount", label = L["SETTINGS_SHOW_CAT_COUNT"], tooltip = L["SETTINGS_SHOW_CAT_COUNT_TIP"] },
-            { type = "checkbox", key = "showEquipSetCategories", label = L["SETTINGS_EQUIP_SET_CATEGORIES"], tooltip = L["SETTINGS_EQUIP_SET_CATEGORIES_TIP"] },
-        }},
-        { type = "row", hidden = function() local Database = ns:GetModule("Database")
-            return Database:GetSetting("bagViewType") ~= "category" and Database:GetSetting("bankViewType") ~= "category" end,
-          children = {
-            { type = "checkbox", key = "groupIdenticalItems", label = L["SETTINGS_GROUP_IDENTICAL"], tooltip = L["SETTINGS_GROUP_IDENTICAL_TIP"] },
-        }},
-
         { type = "separator", label = L["SETTINGS_SECTION_OPTIONS"] },
         { type = "row", children = {
             { type = "checkbox", key = "showSearchBar", label = L["SETTINGS_SHOW_SEARCH"], tooltip = L["SETTINGS_SHOW_SEARCH_TIP"] },
@@ -126,6 +111,17 @@ function SettingsSchema.GetLayout()
         }},
         { type = "row", children = {
             { type = "checkbox", key = "showFooter", label = L["SETTINGS_SHOW_FOOTER"], tooltip = L["SETTINGS_SHOW_FOOTER_TIP"] },
+            { type = "checkbox", key = "showCategoryCount", label = L["SETTINGS_SHOW_CAT_COUNT"], tooltip = L["SETTINGS_SHOW_CAT_COUNT_TIP"] },
+        }},
+
+        { type = "row", children = {
+            { type = "checkbox", key = "groupIdenticalItems", label = L["SETTINGS_GROUP_IDENTICAL"], tooltip = L["SETTINGS_GROUP_IDENTICAL_TIP"] },
+            { type = "checkbox", key = "showEquipSetCategories", label = L["SETTINGS_EQUIP_SET_CATEGORIES"], tooltip = L["SETTINGS_EQUIP_SET_CATEGORIES_TIP"] },
+        }},
+        { type = "row", children = {
+            { type = "checkbox", key = "sortByExpansion", label = L["SETTINGS_SORT_BY_EXPANSION"], tooltip = L["SETTINGS_SORT_BY_EXPANSION_TIP"],
+              hidden = function() local Database = ns:GetModule("Database")
+                return Database:GetSetting("bagViewType") ~= "category" and Database:GetSetting("bankViewType") ~= "category" end },
         }},
 
     }
@@ -157,13 +153,12 @@ function SettingsSchema.GetIcons()
         -- Row 3 - Junk and equipment set options
         { type = "row", children = {
             { type = "checkbox", key = "whiteItemsJunk", label = L["SETTINGS_WHITE_JUNK"], tooltip = L["SETTINGS_WHITE_JUNK_TIP"] },
-            { type = "checkbox", key = "showItemLevel", label = L["SETTINGS_SHOW_ITEM_LEVEL"], tooltip = L["SETTINGS_SHOW_ITEM_LEVEL_TIP"] },
+            { type = "checkbox", key = "markEquipmentSets", label = L["SETTINGS_MARK_EQUIP_SETS"], tooltip = L["SETTINGS_MARK_EQUIP_SETS_TIP"] },
         }},
 
-        -- Row 4 - Equipment sets
+        -- Row 4 - Item level
         { type = "row", children = {
-            { type = "checkbox", key = "markEquipmentSets", label = L["SETTINGS_MARK_EQUIP_SETS"], tooltip = L["SETTINGS_MARK_EQUIP_SETS_TIP"] },
-            { type = "checkbox", key = "autoLockSetItems", label = L["SETTINGS_AUTO_LOCK_SET_ITEMS"], tooltip = L["SETTINGS_AUTO_LOCK_SET_ITEMS_TIP"] },
+            { type = "checkbox", key = "showItemLevel", label = L["SETTINGS_SHOW_ITEM_LEVEL"], tooltip = L["SETTINGS_SHOW_ITEM_LEVEL_TIP"] },
         }},
     }
 end

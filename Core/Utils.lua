@@ -161,7 +161,12 @@ function Utils:IsProfessionTool(itemData)
         return true
     end
 
-    -- Check fishing poles by subtype
+    -- Check fishing poles by subClassID (Weapon=2, Fishing Poles=20) for locale-independence
+    if itemData.classID == 2 and itemData.subClassID == 20 then
+        return true
+    end
+
+    -- Fallback: Check fishing poles by subtype string
     local subtype = itemData.itemSubType
     if subtype == "Fishing Poles" or subtype == "Fishing Pole" then
         return true

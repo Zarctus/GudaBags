@@ -311,12 +311,6 @@ function BagFrame:RefreshPinIcons()
     end
 end
 
-function BagFrame:RefreshLockIcons()
-    for _, button in pairs(buttonsBySlot) do
-        ItemButton:UpdateUserLockIcon(button)
-    end
-end
-
 function BagFrame:Refresh()
     if not frame then return end
 
@@ -336,7 +330,6 @@ function BagFrame:Refresh()
     -- else: RefreshCategoryView handles button release/acquire with key-based reuse
 
     ReleaseAllCategoryHeaders()
-
     itemButtons = {}
 
     -- Release pseudo-item buttons BEFORE clearing the table
@@ -698,11 +691,11 @@ function BagFrame:RefreshCategoryView(bags, bagsToShow, settings, hasSearch, isV
         header.text:SetPoint("LEFT", header, "LEFT", 0, 0)
 
         -- Adjust font size based on icon size
-        local fontFile, _, fontFlags = header.text:GetFont()
+        local fontFile = header.text:GetFont()
         if iconSize < Constants.CATEGORY_ICON_SIZE_THRESHOLD then
-            header.text:SetFont(fontFile, Constants.CATEGORY_FONT_SMALL, fontFlags)
+            header.text:SetFont(fontFile, Constants.CATEGORY_FONT_SMALL, "")
         else
-            header.text:SetFont(fontFile, Constants.CATEGORY_FONT_LARGE, fontFlags)
+            header.text:SetFont(fontFile, Constants.CATEGORY_FONT_LARGE, "")
         end
 
         -- Responsive text truncation based on available width
@@ -786,6 +779,69 @@ function BagFrame:RefreshCategoryView(bags, bagsToShow, settings, hasSearch, isV
                         end
                     end
                 end
+            end
+        end)
+
+        table.insert(categoryHeaders, header)
+    end
+
+    -- Render expansion headers (separator labels for expansion tiers)
+    for _, expHeader in ipairs(layout.expansionHeaders) do
+        local header = AcquireCategoryHeader(frame.container)
+        header:SetWidth(expHeader.width)
+        header:SetHeight(20)
+        header:ClearAllPoints()
+        header:SetPoint("TOPLEFT", frame.container, "TOPLEFT", expHeader.x, expHeader.y)
+
+        -- Show expand/collapse arrow icon
+        header.icon:SetSize(12, 12)
+        if expHeader.isCollapsed then
+            header.icon:SetTexture("Interface\\Buttons\\UI-PlusButton-Up")
+        else
+            header.icon:SetTexture("Interface\\Buttons\\UI-MinusButton-Up")
+        end
+        header.icon:SetTexCoord(0, 1, 0, 1)
+        header.icon:SetDesaturated(false)
+        header.icon:ClearAllPoints()
+        header.icon:SetPoint("LEFT", header, "LEFT", 0, 0)
+        header.icon:Show()
+
+        header.text:ClearAllPoints()
+        header.text:SetPoint("LEFT", header.icon, "RIGHT", 3, 0)
+
+        local fontFile, _, fontFlags = header.text:GetFont()
+        header.text:SetFont(fontFile, 13, "OUTLINE")
+
+        -- Show label and item count
+        local countText = expHeader.itemCount and expHeader.itemCount > 0
+            and " |cff888888(" .. expHeader.itemCount .. ")|r" or ""
+        header.text:SetText(expHeader.label .. countText)
+        header.text:SetTextColor(0.4, 0.75, 1.0)
+
+        header.line:ClearAllPoints()
+        header.line:SetPoint("LEFT", header.text, "RIGHT", 6, 0)
+        header.line:SetPoint("RIGHT", header, "RIGHT", 0, 0)
+        header.line:SetHeight(2)
+        header.line:SetVertexColor(0.3, 0.5, 0.7, 0.6)
+        header.line:Show()
+
+        header.categoryId = nil
+        header:EnableMouse(true)
+
+        -- Store tier for click handler
+        local tier = expHeader.expansionTier
+        header:SetScript("OnEnter", function(self)
+            self.text:SetTextColor(0.6, 0.9, 1.0)
+        end)
+        header:SetScript("OnLeave", function(self)
+            self.text:SetTextColor(0.4, 0.75, 1.0)
+        end)
+        header:SetScript("OnMouseDown", function(self, button)
+            if button == "LeftButton" then
+                local collapsed = Database:GetSetting("collapsedExpansionTiers") or {}
+                collapsed[tier] = not collapsed[tier]
+                Database:SetSetting("collapsedExpansionTiers", collapsed)
+                BagFrame:Refresh()
             end
         end)
 
@@ -904,8 +960,19 @@ function BagFrame:RefreshCategoryView(bags, bagsToShow, settings, hasSearch, isV
         end
     end
 
-    ns:Debug(string.format("Category refresh: %d reused, %d acquired, %d released",
-        reusedCount, acquiredCount, #buttonsToRelease))
+    -- Release any kept buttons that weren't reused in this render
+    -- (happens when expansion tiers are collapsed, hiding items that still exist in bags)
+    local orphanedCount = 0
+    for key, buttons in pairs(buttonsToKeep) do
+        local used = usedKeptButtons[key] or 0
+        for i = used + 1, #buttons do
+            ItemButton:Release(buttons[i])
+            orphanedCount = orphanedCount + 1
+        end
+    end
+
+    ns:Debug(string.format("Category refresh: %d reused, %d acquired, %d released, %d orphaned",
+        reusedCount, acquiredCount, #buttonsToRelease, orphanedCount))
 
     -- Save current layout for next incremental update comparison
     lastCategoryLayout = categoryViewItems
@@ -1879,15 +1946,12 @@ local function AutoVendorJunk()
 
     local totalPrice = 0
     local itemsSold = 0
-    local EquipSets = ns:GetModule("EquipmentSets")
-    local autoLockSets = Database:GetSetting("autoLockSetItems")
 
     for bagID = Constants.PLAYER_BAG_MIN, Constants.PLAYER_BAG_MAX do
         local numSlots = C_Container.GetContainerNumSlots(bagID)
         for slot = 1, numSlots do
             local itemInfo = C_Container.GetContainerItemInfo(bagID, slot)
-            if itemInfo and itemInfo.quality == 0 and not Database:IsItemLocked(itemInfo.itemID)
-                and not (autoLockSets and EquipSets and EquipSets:IsInSet(itemInfo.itemID)) then
+            if itemInfo and itemInfo.quality == 0 then
                 local _, _, _, _, _, _, _, _, _, _, sellPrice = GetItemInfo(itemInfo.hyperlink)
                 if sellPrice and sellPrice > 0 then
                     C_Container.UseContainerItem(bagID, slot)

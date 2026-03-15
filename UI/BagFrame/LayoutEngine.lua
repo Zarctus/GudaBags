@@ -399,6 +399,7 @@ end
 -------------------------------------------------
 
 local CATEGORY_HEADER_HEIGHT = Constants.CATEGORY_UI.HEADER_HEIGHT
+local EXPANSION_HEADER_HEIGHT = 22  -- Height of expansion tier separator headers
 
 -- Collect items for category view (skips empty slots but counts them)
 -- Returns array of {bagID, slot, itemData}, emptyCount, firstEmptySlot, soulEmptyCount, firstSoulEmptySlot
@@ -779,6 +780,7 @@ function LayoutEngine:BuildCategorySections(items, isViewingCached, emptyCount, 
                             name = firstItem.itemData.name,
                             itemType = firstItem.itemData.itemType,
                             itemSubType = firstItem.itemData.itemSubType,
+                            expacID = firstItem.itemData.expacID,
                             isGroupedStack = true,
                             groupedLocations = locations,
                         },
@@ -801,6 +803,116 @@ function LayoutEngine:BuildCategorySections(items, isViewingCached, emptyCount, 
         if #section.items > 0 or isCustomCategory or isEmptyCategory or isSoulCategory then
             table.insert(nonEmptySections, section)
         end
+    end
+
+    -- Split sections by expansion if sortByExpansion is enabled
+    local sortByExpansion = Database and Database:GetSetting("sortByExpansion")
+    if sortByExpansion and ns.CURRENT_EXPANSION_ID then
+        local currentExpID = ns.CURRENT_EXPANSION_ID
+        local currentSections = {}
+        local oldSections = {}
+
+        for _, section in ipairs(nonEmptySections) do
+            -- Skip pseudo-categories (Empty, Soul) - keep them unsplit at the end
+            if section.categoryId == "Empty" or section.categoryId == "Soul" then
+                table.insert(oldSections, section)
+            else
+                local currentItems = {}
+                local oldItems = {}
+
+                for _, item in ipairs(section.items) do
+                    local expacID = item.itemData and item.itemData.expacID
+                    if expacID and expacID ~= currentExpID then
+                        table.insert(oldItems, item)
+                    else
+                        -- Current expansion OR unknown (nil) → treat as current
+                        table.insert(currentItems, item)
+                    end
+                end
+
+                if #currentItems > 0 then
+                    local currentSection = {
+                        categoryId = section.categoryId,
+                        categoryName = section.categoryName,
+                        categoryIcon = section.categoryIcon,
+                        items = currentItems,
+                        hideControls = section.hideControls,
+                        isGroup = section.isGroup,
+                        group = section.group,
+                        expansionTier = "current",
+                    }
+                    table.insert(currentSections, currentSection)
+                end
+
+                if #oldItems > 0 then
+                    local oldSection = {
+                        categoryId = section.categoryId,
+                        categoryName = section.categoryName,
+                        categoryIcon = section.categoryIcon,
+                        items = oldItems,
+                        hideControls = section.hideControls,
+                        isGroup = section.isGroup,
+                        group = section.group,
+                        expansionTier = "old",
+                    }
+                    table.insert(oldSections, oldSection)
+                end
+            end
+        end
+
+        -- Rebuild: current expansion header + current sections + old expansion header + old sections
+        local collapsedTiers = Database and Database:GetSetting("collapsedExpansionTiers") or {}
+        local result = {}
+
+        -- Count items per tier for the header label
+        local currentItemCount = 0
+        for _, s in ipairs(currentSections) do
+            currentItemCount = currentItemCount + #s.items
+        end
+        local oldItemCount = 0
+        for _, s in ipairs(oldSections) do
+            for _, item in ipairs(s.items) do
+                if not (item.itemData and item.itemData.isEmptySlots) then
+                    oldItemCount = oldItemCount + 1
+                end
+            end
+        end
+
+        if #currentSections > 0 then
+            local isCollapsed = collapsedTiers["current"] == true
+            table.insert(result, {
+                categoryId = "__expansion_current",
+                categoryName = ns.L and ns.L["CAT_CURRENT_EXPANSION"] or "Current Expansion",
+                items = {},
+                isExpansionHeader = true,
+                expansionTier = "current",
+                isCollapsed = isCollapsed,
+                itemCount = currentItemCount,
+            })
+            if not isCollapsed then
+                for _, s in ipairs(currentSections) do
+                    table.insert(result, s)
+                end
+            end
+        end
+        if #oldSections > 0 then
+            local isCollapsed = collapsedTiers["old"] == true
+            table.insert(result, {
+                categoryId = "__expansion_old",
+                categoryName = ns.L and ns.L["CAT_OLD_EXPANSIONS"] or "Old Expansions",
+                items = {},
+                isExpansionHeader = true,
+                expansionTier = "old",
+                isCollapsed = isCollapsed,
+                itemCount = oldItemCount,
+            })
+            if not isCollapsed then
+                for _, s in ipairs(oldSections) do
+                    table.insert(result, s)
+                end
+            end
+        end
+        return result
     end
 
     return nonEmptySections
@@ -922,63 +1034,78 @@ local function GetCategoryBlockGap(iconSize)
     end
 end
 
--- Shared layout iteration for both FrameSize and Positions
--- Calls visitor(section, blockCols, blockRows, blockWidth, blockHeight, x, y) for each block
-local function IterateCategoryLayout(sections, settings, visitor)
+-- Calculate frame size for category view with inline layout
+-- Returns frameWidth, frameHeight
+function LayoutEngine:CalculateCategoryFrameSize(sections, settings)
     local columns = settings.columns
     local iconSize = settings.iconSize
     local spacing = settings.spacing
+    local showSearchBar = settings.showSearchBar
+    local showFilterChips = settings.showFilterChips
+    local showFooter = settings.showFooter
     local blockGap = GetCategoryBlockGap(iconSize)
-    local totalWidth = (iconSize * columns) + (spacing * (columns - 1))
 
+    local totalWidth = (iconSize * columns) + (spacing * (columns - 1))
     local currentX = 0
     local currentY = 0
     local rowMaxHeight = 0
+
     local lastGroup = nil
 
     for _, section in ipairs(sections) do
-        if #section.items > 0 then
-            if section.group ~= lastGroup and currentX > 0 then
+        -- Handle expansion header sections (full-width separator)
+        if section.isExpansionHeader then
+            -- Force new row
+            if currentX > 0 then
                 currentX = 0
                 currentY = currentY + rowMaxHeight
                 rowMaxHeight = 0
             end
-            lastGroup = section.group
-
-            local blockCols = math.min(#section.items, columns)
-            local blockRows = math.ceil(#section.items / columns)
+            currentY = currentY + EXPANSION_HEADER_HEIGHT
+            lastGroup = nil  -- Reset group tracking after expansion header
+        elseif #section.items > 0 then
+            -- Calculate block dimensions
+            local numItems = #section.items
+            local blockCols = numItems
+            if blockCols > columns then blockCols = columns end
+            local blockRows = math.ceil(numItems / columns)
+            -- Block width: N icons + (N-1) spacing between them
             local blockWidth = (blockCols * iconSize) + (math.max(0, blockCols - 1) * spacing)
             local blockHeight = CATEGORY_HEADER_HEIGHT + (blockRows * iconSize) + (math.max(0, blockRows - 1) * spacing) + 5
 
-            if currentX > 0 and currentX + blockWidth > totalWidth then
+            -- Check if group changed (entering or leaving a group requires new row)
+            local currentGroup = section.group
+            local groupChanged = currentGroup ~= lastGroup
+
+            if groupChanged and currentX > 0 then
+                -- Group boundary - start new row
+                currentX = 0
+                currentY = currentY + rowMaxHeight
+                rowMaxHeight = 0
+            -- Check if block fits in current row (gap only needed between blocks, not at end)
+            elseif currentX > 0 and currentX + blockWidth > totalWidth then
+                -- Start new row
                 currentX = 0
                 currentY = currentY + rowMaxHeight
                 rowMaxHeight = 0
             end
 
-            visitor(section, blockCols, blockRows, blockWidth, blockHeight, currentX, currentY)
+            lastGroup = currentGroup
 
-            if blockHeight > rowMaxHeight then rowMaxHeight = blockHeight end
+            -- Track max height for this row
+            if blockHeight > rowMaxHeight then
+                rowMaxHeight = blockHeight
+            end
+
+            -- Move X for next block (add gap for spacing to next block)
             currentX = currentX + blockWidth + blockGap
         end
     end
 
-    return currentY + rowMaxHeight
-end
-
--- Calculate frame size for category view
-function LayoutEngine:CalculateCategoryFrameSize(sections, settings)
-    local showSearchBar = settings.showSearchBar
-    local showFilterChips = settings.showFilterChips
-    local showFooter = settings.showFooter
-    local columns = settings.columns
-    local iconSize = settings.iconSize
-    local spacing = settings.spacing
-
-    local contentHeight = IterateCategoryLayout(sections, settings, function() end)
+    -- Add final row height
+    local contentHeight = currentY + rowMaxHeight
     if contentHeight < iconSize then contentHeight = iconSize end
 
-    local totalWidth = (iconSize * columns) + (spacing * (columns - 1))
     local chipHeight = (showSearchBar and showFilterChips) and (Constants.FRAME.CHIP_STRIP_HEIGHT + 1) or 0
     local searchBarHeight = showSearchBar and (Constants.FRAME.SEARCH_BAR_HEIGHT + chipHeight + 4) or 0
     local footerHeight = showFooter and (Constants.FRAME.FOOTER_HEIGHT + 6) or Constants.FRAME.PADDING
@@ -992,46 +1119,118 @@ function LayoutEngine:CalculateCategoryFrameSize(sections, settings)
     return frameWidth, frameHeight
 end
 
--- Calculate positions for category view
+-- Calculate positions for category view with inline layout
 -- Returns { headers = { {section, x, y, width} }, items = { {item, x, y} } }
 function LayoutEngine:CalculateCategoryPositions(sections, settings)
+    local columns = settings.columns
     local iconSize = settings.iconSize
     local spacing = settings.spacing
+    local blockGap = GetCategoryBlockGap(iconSize)
 
     local result = {
         headers = {},
         items = {},
+        expansionHeaders = {},
     }
 
-    local sortSelf = self
-    IterateCategoryLayout(sections, settings, function(section, blockCols, blockRows, blockWidth, blockHeight, x, y)
-        sortSelf:SortCategoryItems(section.items, section.isGroup)
+    local totalWidth = (iconSize * columns) + (spacing * (columns - 1))
+    local currentX = 0
+    local currentY = 0
+    local rowMaxHeight = 0
 
-        table.insert(result.headers, {
-            section = section,
-            x = x,
-            y = -y,
-            width = blockWidth,
-        })
+    local lastGroup = nil
 
-        local itemStartY = y + CATEGORY_HEADER_HEIGHT
-        local col = 0
-        local row = 0
-        for _, item in ipairs(section.items) do
-            table.insert(result.items, {
-                item = item,
-                x = x + (col * (iconSize + spacing)),
-                y = -(itemStartY + (row * (iconSize + spacing))),
-                categoryId = section.categoryId,
+    for _, section in ipairs(sections) do
+        -- Handle expansion header sections (full-width separator)
+        if section.isExpansionHeader then
+            -- Force new row
+            if currentX > 0 then
+                currentX = 0
+                currentY = currentY + rowMaxHeight
+                rowMaxHeight = 0
+            end
+            table.insert(result.expansionHeaders, {
+                label = section.categoryName,
+                x = 0,
+                y = -currentY,
+                width = totalWidth,
+                expansionTier = section.expansionTier,
+                isCollapsed = section.isCollapsed,
+                itemCount = section.itemCount,
+            })
+            currentY = currentY + EXPANSION_HEADER_HEIGHT
+            lastGroup = nil  -- Reset group tracking after expansion header
+        elseif #section.items > 0 then
+            -- Sort items within category (merged groups sort by category order first)
+            self:SortCategoryItems(section.items, section.isGroup)
+
+            -- Calculate block dimensions
+            local numItems = #section.items
+            local blockCols = numItems
+            if blockCols > columns then blockCols = columns end
+            local blockRows = math.ceil(numItems / columns)
+            -- Block width: N icons + (N-1) spacing between them
+            local blockWidth = (blockCols * iconSize) + (math.max(0, blockCols - 1) * spacing)
+            local blockHeight = CATEGORY_HEADER_HEIGHT + (blockRows * iconSize) + (math.max(0, blockRows - 1) * spacing) + 5
+
+            -- Check if group changed (entering or leaving a group requires new row)
+            local currentGroup = section.group
+            local groupChanged = currentGroup ~= lastGroup
+
+            if groupChanged and currentX > 0 then
+                -- Group boundary - start new row
+                currentX = 0
+                currentY = currentY + rowMaxHeight
+                rowMaxHeight = 0
+            -- Check if block fits in current row (gap only needed between blocks, not at end)
+            elseif currentX > 0 and currentX + blockWidth > totalWidth then
+                -- Start new row
+                currentX = 0
+                currentY = currentY + rowMaxHeight
+                rowMaxHeight = 0
+            end
+
+            lastGroup = currentGroup
+
+            -- Header position (y is negative offset from top)
+            table.insert(result.headers, {
+                section = section,
+                x = currentX,
+                y = -currentY,
+                width = blockWidth,
             })
 
-            col = col + 1
-            if col >= settings.columns then
-                col = 0
-                row = row + 1
+            -- Item positions within this block
+            local itemStartY = currentY + CATEGORY_HEADER_HEIGHT
+            local col = 0
+            local row = 0
+            for _, item in ipairs(section.items) do
+                local x = currentX + (col * (iconSize + spacing))
+                local y = -(itemStartY + (row * (iconSize + spacing)))
+
+                table.insert(result.items, {
+                    item = item,
+                    x = x,
+                    y = y,
+                    categoryId = section.categoryId,
+                })
+
+                col = col + 1
+                if col >= blockCols then
+                    col = 0
+                    row = row + 1
+                end
             end
+
+            -- Track max height for this row
+            if blockHeight > rowMaxHeight then
+                rowMaxHeight = blockHeight
+            end
+
+            -- Move X for next block
+            currentX = currentX + blockWidth + blockGap
         end
-    end)
+    end
 
     return result
 end

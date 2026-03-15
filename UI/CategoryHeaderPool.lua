@@ -74,6 +74,31 @@ local function ReleaseHeader(header)
     header.fullName = nil
     header.isShortened = nil
 
+    -- Reset header dimensions (expansion headers may have changed these)
+    local layoutEngine = GetLayoutEngine()
+    if layoutEngine then
+        header:SetHeight(layoutEngine:GetCategoryHeaderHeight())
+    else
+        header:SetHeight(18)
+    end
+
+    -- Reset line appearance (expansion headers change height and color)
+    header.line:ClearAllPoints()
+    header.line:SetPoint("LEFT", header.text, "RIGHT", 6, 0)
+    header.line:SetPoint("RIGHT", header, "RIGHT", 0, 0)
+    header.line:SetHeight(1)
+    header.line:SetVertexColor(0.3, 0.3, 0.3, 0.8)
+
+    -- Reset icon (expansion headers show it, category headers hide it)
+    header.icon:SetSize(16, 16)
+    header.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+    header.icon:SetDesaturated(false)
+    header.icon:ClearAllPoints()
+    header.icon:SetPoint("LEFT", header, "LEFT", 0, 0)
+
+    -- Reset text color and font flags
+    header.text:SetTextColor(1, 0.82, 0)
+
     -- Clear scripts to prevent memory leaks
     header:SetScript("OnEnter", nil)
     header:SetScript("OnLeave", nil)

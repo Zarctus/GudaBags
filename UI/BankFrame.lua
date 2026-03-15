@@ -978,12 +978,6 @@ function BankFrame:RefreshPinIcons()
     end
 end
 
-function BankFrame:RefreshLockIcons()
-    for _, button in pairs(buttonsBySlot) do
-        ItemButton:UpdateUserLockIcon(button)
-    end
-end
-
 function BankFrame:Refresh()
     if not frame then return end
 
@@ -1414,11 +1408,11 @@ function BankFrame:RefreshSplitView(bank, bagsToShow, settings, hasSearch, isRea
         end
         header.text:SetText(section.displayInfo.name or "")
 
-        local fontFile, _, fontFlags = header.text:GetFont()
+        local fontFile = header.text:GetFont()
         if iconSize < Constants.CATEGORY_ICON_SIZE_THRESHOLD then
-            header.text:SetFont(fontFile, Constants.CATEGORY_FONT_SMALL, fontFlags)
+            header.text:SetFont(fontFile, Constants.CATEGORY_FONT_SMALL, "")
         else
-            header.text:SetFont(fontFile, Constants.CATEGORY_FONT_LARGE, fontFlags)
+            header.text:SetFont(fontFile, Constants.CATEGORY_FONT_LARGE, "")
         end
 
         header.line:Show()
@@ -1616,11 +1610,11 @@ function BankFrame:RefreshSingleViewWithTabs(bank, settings, hasSearch, isReadOn
         header.text:SetText(section.name)
 
         -- Adjust font size based on icon size
-        local fontFile, _, fontFlags = header.text:GetFont()
+        local fontFile = header.text:GetFont()
         if iconSize < Constants.CATEGORY_ICON_SIZE_THRESHOLD then
-            header.text:SetFont(fontFile, Constants.CATEGORY_FONT_SMALL, fontFlags)
+            header.text:SetFont(fontFile, Constants.CATEGORY_FONT_SMALL, "")
         else
-            header.text:SetFont(fontFile, Constants.CATEGORY_FONT_LARGE, fontFlags)
+            header.text:SetFont(fontFile, Constants.CATEGORY_FONT_LARGE, "")
         end
 
         header.line:Show()
@@ -1771,11 +1765,11 @@ function BankFrame:RefreshCategoryView(bank, bagsToShow, settings, hasSearch, is
         header.text:SetPoint("LEFT", header, "LEFT", 0, 0)
 
         -- Adjust font size based on icon size
-        local fontFile, _, fontFlags = header.text:GetFont()
+        local fontFile = header.text:GetFont()
         if iconSize < Constants.CATEGORY_ICON_SIZE_THRESHOLD then
-            header.text:SetFont(fontFile, Constants.CATEGORY_FONT_SMALL, fontFlags)
+            header.text:SetFont(fontFile, Constants.CATEGORY_FONT_SMALL, "")
         else
-            header.text:SetFont(fontFile, Constants.CATEGORY_FONT_LARGE, fontFlags)
+            header.text:SetFont(fontFile, Constants.CATEGORY_FONT_LARGE, "")
         end
 
         -- Responsive text truncation based on available width
@@ -1867,6 +1861,71 @@ function BankFrame:RefreshCategoryView(bank, bagsToShow, settings, hasSearch, is
         end)
 
         table.insert(categoryHeaders, header)
+    end
+
+    -- Render expansion headers (separator labels for expansion tiers)
+    if layout.expansionHeaders then
+        for _, expHeader in ipairs(layout.expansionHeaders) do
+            local header = AcquireCategoryHeader(frame.container)
+            header:SetWidth(expHeader.width)
+            header:SetHeight(20)
+            header:ClearAllPoints()
+            header:SetPoint("TOPLEFT", frame.container, "TOPLEFT", expHeader.x, expHeader.y)
+
+            -- Show expand/collapse arrow icon
+            header.icon:SetSize(12, 12)
+            if expHeader.isCollapsed then
+                header.icon:SetTexture("Interface\\Buttons\\UI-PlusButton-Up")
+            else
+                header.icon:SetTexture("Interface\\Buttons\\UI-MinusButton-Up")
+            end
+            header.icon:SetTexCoord(0, 1, 0, 1)
+            header.icon:SetDesaturated(false)
+            header.icon:ClearAllPoints()
+            header.icon:SetPoint("LEFT", header, "LEFT", 0, 0)
+            header.icon:Show()
+
+            header.text:ClearAllPoints()
+            header.text:SetPoint("LEFT", header.icon, "RIGHT", 3, 0)
+
+            local fontFile, _, fontFlags = header.text:GetFont()
+            header.text:SetFont(fontFile, 13, "OUTLINE")
+
+            -- Show label and item count
+            local countText = expHeader.itemCount and expHeader.itemCount > 0
+                and " |cff888888(" .. expHeader.itemCount .. ")|r" or ""
+            header.text:SetText(expHeader.label .. countText)
+            header.text:SetTextColor(0.4, 0.75, 1.0)
+
+            header.line:ClearAllPoints()
+            header.line:SetPoint("LEFT", header.text, "RIGHT", 6, 0)
+            header.line:SetPoint("RIGHT", header, "RIGHT", 0, 0)
+            header.line:SetHeight(2)
+            header.line:SetVertexColor(0.3, 0.5, 0.7, 0.6)
+            header.line:Show()
+
+            header.categoryId = nil
+            header:EnableMouse(true)
+
+            -- Store tier for click handler
+            local tier = expHeader.expansionTier
+            header:SetScript("OnEnter", function(self)
+                self.text:SetTextColor(0.6, 0.9, 1.0)
+            end)
+            header:SetScript("OnLeave", function(self)
+                self.text:SetTextColor(0.4, 0.75, 1.0)
+            end)
+            header:SetScript("OnMouseDown", function(self, button)
+                if button == "LeftButton" then
+                    local collapsed = Database:GetSetting("collapsedExpansionTiers") or {}
+                    collapsed[tier] = not collapsed[tier]
+                    Database:SetSetting("collapsedExpansionTiers", collapsed)
+                    BankFrame:Refresh()
+                end
+            end)
+
+            table.insert(categoryHeaders, header)
+        end
     end
 
     -- Reset last button tracking for drop indicator

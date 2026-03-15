@@ -235,7 +235,7 @@ function ItemScanner:ScanSlotFast(bagID, slot)
 
     -- If we have cached tooltip data, use it (item moved, properties unchanged)
     if cached then
-        local itemName, _, itemQuality, itemLevel, itemMinLevel, itemType, itemSubType, maxStack, equipSlot, _, _, classID, subClassID = GetItemInfo(itemLink)
+        local itemName, _, itemQuality, itemLevel, itemMinLevel, itemType, itemSubType, maxStack, equipSlot, _, _, classID, subClassID, bindType, expacID = GetItemInfo(itemLink)
 
         return {
             slot = slot,
@@ -255,6 +255,7 @@ function ItemScanner:ScanSlotFast(bagID, slot)
             maxStack = maxStack or 1,
             classID = classID or 15,
             subClassID = subClassID or 0,
+            expacID = expacID,
             isUsable = cached.isUsable,
             isQuestItem = cached.isQuestItem,
             isQuestStarter = cached.isQuestStarter,
@@ -280,7 +281,7 @@ function ItemScanner:ScanSlot(bagID, slot)
         return nil
     end
 
-    local itemName, _, itemQuality, itemLevel, itemMinLevel, itemType, itemSubType, maxStack, equipSlot, itemTexture, sellPrice, classID, subClassID = GetItemInfo(itemLink)
+    local itemName, _, itemQuality, itemLevel, itemMinLevel, itemType, itemSubType, maxStack, equipSlot, itemTexture, sellPrice, classID, subClassID, bindType, expacID = GetItemInfo(itemLink)
     -- GetItemInfo can return nil if item data isn't cached yet
     if not itemName then
         -- Fallback to basic info from container API
@@ -293,6 +294,7 @@ function ItemScanner:ScanSlot(bagID, slot)
         equipSlot = ""
         classID = 15  -- Default to Miscellaneous
         subClassID = 0
+        expacID = nil
     end
 
     -- Get quality from multiple sources (API differs between expansions)
@@ -321,6 +323,7 @@ function ItemScanner:ScanSlot(bagID, slot)
         maxStack = maxStack or 1,
         classID = classID or 15,  -- Default to Miscellaneous
         subClassID = subClassID or 0,
+        expacID = expacID,
         isUsable = isUsable,
         isQuestItem = isQuestItem,
         isQuestStarter = isQuestStarter,

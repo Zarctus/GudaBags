@@ -148,27 +148,15 @@ function CategoryManager:MigrateCategories(categories)
         end
     end
 
-    -- Ungrouped built-in categories (always at top, no group)
-    local ungroupedCategories = {
-        "Recent", "Food", "Drink", "Consumable"
-    }
-    for _, catId in ipairs(ungroupedCategories) do
-        local cat = categories.definitions[catId]
-        if cat and cat.isBuiltIn and (cat.group == nil or cat.group == "Main" or cat.group == "Recent" or cat.group == "Consumables") then
-            cat.group = ""
-            migrated = true
-        end
-    end
-
-    -- Add Main group to built-in categories (nil = never had a group, "" = intentionally ungrouped)
+    -- Add Main group to built-in categories
     local mainGroupCategories = {
-        "BoE", "Weapon", "Armor",
+        "Recent", "BoE", "Weapon", "Armor", "Consumable", "Food", "Drink",
         "Trade Goods", "Reagent", "Recipe", "Quiver", "Container",
         "Soul Bag", "Miscellaneous", "Quest", "Junk"
     }
     for _, catId in ipairs(mainGroupCategories) do
         local cat = categories.definitions[catId]
-        if cat and cat.isBuiltIn and cat.group == nil then
+        if cat and cat.isBuiltIn and not cat.group then
             cat.group = "Main"
             migrated = true
         end
@@ -180,7 +168,7 @@ function CategoryManager:MigrateCategories(categories)
     }
     for _, catId in ipairs(otherGroupCategories) do
         local cat = categories.definitions[catId]
-        if cat and cat.isBuiltIn and cat.group == nil then
+        if cat and cat.isBuiltIn and not cat.group then
             cat.group = "Other"
             migrated = true
         end
@@ -193,11 +181,23 @@ function CategoryManager:MigrateCategories(categories)
     for _, catId in ipairs(classGroupCategories) do
         local cat = categories.definitions[catId]
         if cat and cat.isBuiltIn then
-            -- Only migrate from nil or old "Character" group name, not from "" (intentionally ungrouped)
-            if cat.group == nil or cat.group == "Character" then
+            -- Only migrate from empty or old "Character" group name, not from valid user choices
+            if not cat.group or cat.group == "" or cat.group == "Character" then
                 cat.group = "Class"
                 migrated = true
             end
+        end
+    end
+
+    -- Add Expansion group to expansion categories
+    local expansionGroupCategories = {
+        "Current Expansion", "Old Expansions"
+    }
+    for _, catId in ipairs(expansionGroupCategories) do
+        local cat = categories.definitions[catId]
+        if cat and cat.isBuiltIn and not cat.group then
+            cat.group = "Expansion"
+            migrated = true
         end
     end
 
@@ -209,9 +209,9 @@ function CategoryManager:MigrateCategories(categories)
         end
     end
 
-    -- Add default group to custom categories without a group (nil only, not "" which is intentional)
+    -- Add default group to custom categories without a group
     for catId, cat in pairs(categories.definitions) do
-        if not cat.isBuiltIn and cat.group == nil then
+        if not cat.isBuiltIn and not cat.group then
             cat.group = "Main"
             migrated = true
         end
@@ -459,11 +459,11 @@ function CategoryManager:SyncEquipmentSetCategories()
             if categories.savedEquipSetProps then
                 categories.savedEquipSetProps[catId] = nil
             end
-            -- Insert after Consumable category so Sets group appears before Main
+            -- Insert before Miscellaneous in order
             local insertIdx = #categories.order + 1
             for i, id in ipairs(categories.order) do
-                if id == "Consumable" then
-                    insertIdx = i + 1
+                if id == "Miscellaneous" then
+                    insertIdx = i
                     break
                 end
             end

@@ -9,6 +9,11 @@ local function IsSoulShard(itemData)
 end
 
 local function IsProjectile(itemData)
+    -- classID 6 = Projectile (locale-independent)
+    if itemData.classID == 6 then
+        return true
+    end
+    -- Fallback to string match
     return itemData.itemType == "Projectile" or
            itemData.itemSubType == "Arrow" or
            itemData.itemSubType == "Bullet"

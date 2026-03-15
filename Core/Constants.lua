@@ -242,6 +242,8 @@ Constants.DEFAULTS = {
     showCategoryCount = true,
     groupIdenticalItems = false,  -- Group identical items into single slot in category view
     showEquipSetCategories = true,  -- Show equipment set items as named categories
+    sortByExpansion = false,  -- Group items by current vs old expansion in category view
+    collapsedExpansionTiers = {},  -- { ["current"] = true/false, ["old"] = true/false }
     mergedGroups = {},  -- Per-group merge settings: { ["Main"] = true, ["Other"] = false }
     recentDuration = 15,  -- Minutes items stay in Recent category
     showSoulBag = true,  -- Show soul bag in single view (Warlock only)
@@ -265,7 +267,6 @@ Constants.DEFAULTS = {
     otherBorders = true,
     markUnusableItems = true,
     markEquipmentSets = true,
-    autoLockSetItems = true,  -- Prevent selling/deleting equipment set items
     showItemLevel = true,
     reverseStackSort = false,
     sortRightToLeft = false,
@@ -332,7 +333,7 @@ Constants.CATEGORY_UI = {
 
     -- Settings popup
     POPUP_WIDTH = 500,
-    POPUP_HEIGHT = 565,
+    POPUP_HEIGHT = 535,
     POPUP_PADDING = 16,
 
     -- Editor

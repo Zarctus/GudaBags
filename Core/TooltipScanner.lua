@@ -173,6 +173,15 @@ function TooltipScanner:GetRestoreTag(bagID, slotID, itemData)
             if textLower:find("mana") then hasMana = true end
         end
 
+        -- Buff food: "eating" or "well fed" implies food
+        if textLower:find("eating") or textLower:find("well fed") then
+            hasHealth = true
+        end
+        -- Buff drink: "drinking" implies drink
+        if textLower:find("drinking") then
+            hasMana = true
+        end
+
         if textLower:find("must remain seated") then
             mustRemainSeated = true
         end

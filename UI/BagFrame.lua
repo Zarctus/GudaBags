@@ -1062,6 +1062,35 @@ function BagFrame:IncrementalUpdate(dirtyBags)
     end
 
     local bags = BagScanner:GetCachedBags()
+
+    -- Detect bag configuration changes (bag swapped, slots added/removed)
+    -- Check live API directly to avoid stale scanner cache on bag removal
+    do
+        local configChanged = false
+        for _, bagID in ipairs(Constants.BAG_IDS) do
+            local slotButtons = buttonsByBag[bagID]
+            local renderedCount = 0
+            if slotButtons then
+                for _ in pairs(slotButtons) do
+                    renderedCount = renderedCount + 1
+                end
+            end
+            local actualCount = C_Container.GetContainerNumSlots(bagID) or 0
+            if renderedCount ~= actualCount then
+                ns:Debug("Bag config changed: bag", bagID, "rendered=", renderedCount, "actual=", actualCount)
+                configChanged = true
+                break
+            end
+        end
+        if configChanged then
+            -- Re-scan so Refresh() sees up-to-date slot counts
+            BagScanner:ScanAllBags()
+            layoutCached = false
+            self:Refresh()
+            return
+        end
+    end
+
     -- Cache settings once at start (avoid repeated GetSetting calls)
     local iconSize = Database:GetSetting("iconSize")
     local hasSearch = SearchBar:HasActiveFilters(frame)

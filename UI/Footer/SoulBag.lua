@@ -30,6 +30,16 @@ local button = nil
 local onSoulBagToggle = nil
 local mainBagFrame = nil
 
+-- Check if we're currently in category view
+local function IsCategoryView()
+    return (Database:GetSetting("bagViewType") or "single") == "category"
+end
+
+-- Check if soul shard items are shown in category view
+local function IsSoulItemsVisible()
+    return not Database:GetSetting("hideSoulItems")
+end
+
 -- Get all soul bag IDs from BagClassifier
 local function GetSoulBagIDs()
     local BagClassifier = ns:GetModule("BagFrame.BagClassifier")
@@ -151,14 +161,22 @@ function SoulBag:Init(parent)
     button:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_TOP")
         GameTooltip:SetText(L["SOULBAG"] or "Soul Bag")
-        if IsAnySoulBagVisible() then
-            GameTooltip:AddLine(L["CLICK_HIDE_SOULBAG"] or "Click to hide all soul bags", 0.7, 0.7, 0.7)
+        if IsCategoryView() then
+            if IsSoulItemsVisible() then
+                GameTooltip:AddLine(L["CLICK_HIDE_SOUL_CATEGORY"] or "Click to hide soul shards", 0.7, 0.7, 0.7)
+            else
+                GameTooltip:AddLine(L["CLICK_SHOW_SOUL_CATEGORY"] or "Click to show soul shards", 0.7, 0.7, 0.7)
+            end
         else
-            GameTooltip:AddLine(L["CLICK_SHOW_SOULBAG"] or "Click to show all soul bags", 0.7, 0.7, 0.7)
+            if IsAnySoulBagVisible() then
+                GameTooltip:AddLine(L["CLICK_HIDE_SOULBAG"] or "Click to hide all soul bags", 0.7, 0.7, 0.7)
+            else
+                GameTooltip:AddLine(L["CLICK_SHOW_SOULBAG"] or "Click to show all soul bags", 0.7, 0.7, 0.7)
+            end
         end
         GameTooltip:Show()
 
-        if IsAnySoulBagVisible() then
+        if not IsCategoryView() and IsAnySoulBagVisible() then
             local ItemButton = ns:GetModule("ItemButton")
             local BagClassifier = ns:GetModule("BagFrame.BagClassifier")
             if ItemButton and BagClassifier and mainBagFrame and mainBagFrame.container then
@@ -183,18 +201,30 @@ function SoulBag:Init(parent)
     end)
 
     button:SetScript("OnClick", function(self)
-        local newValue = not IsAnySoulBagVisible()
-        SetShowingSoulBag(newValue)
-        SoulBag:UpdateState()
+        if IsCategoryView() then
+            -- In category view, toggle soul shard item visibility
+            local wasVisible = IsSoulItemsVisible()
+            Database:SetSetting("hideSoulItems", wasVisible)
+            SoulBag:UpdateState()
 
-        -- Update BagSlots visual states for soul bags
-        local BagSlots = ns:GetModule("Footer.BagSlots")
-        if BagSlots then
-            BagSlots:UpdateAllVisualStates()
-        end
+            if onSoulBagToggle then
+                onSoulBagToggle(not wasVisible)
+            end
+        else
+            -- In single/split view, toggle soul bag visibility
+            local newValue = not IsAnySoulBagVisible()
+            SetShowingSoulBag(newValue)
+            SoulBag:UpdateState()
 
-        if onSoulBagToggle then
-            onSoulBagToggle(newValue)
+            -- Update BagSlots visual states for soul bags
+            local BagSlots = ns:GetModule("Footer.BagSlots")
+            if BagSlots then
+                BagSlots:UpdateAllVisualStates()
+            end
+
+            if onSoulBagToggle then
+                onSoulBagToggle(newValue)
+            end
         end
     end)
 
@@ -221,7 +251,14 @@ end
 
 function SoulBag:UpdateState()
     if not button then return end
-    if IsAnySoulBagVisible() then
+    local isActive
+    if IsCategoryView() then
+        isActive = IsSoulItemsVisible()
+    else
+        isActive = IsAnySoulBagVisible()
+    end
+
+    if isActive then
         button:SetBackdropBorderColor(0.5, 0.3, 0.8, 1)  -- Purple border when showing
         button.icon:SetDesaturated(false)
         button.icon:SetAlpha(1.0)
@@ -237,6 +274,9 @@ function SoulBag:SetCallback(callback)
 end
 
 function SoulBag:IsVisible()
+    -- Always return bag-level visibility (used by BuildDisplayOrder to include soul bags)
+    -- In category view, soul bags should always be included so empty slot counting works;
+    -- item-level hiding is handled separately by the hideSoulItems setting in LayoutEngine
     return IsShowingSoulBag()
 end
 

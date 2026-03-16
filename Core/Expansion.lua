@@ -45,6 +45,7 @@ Expansion.Features = {
     HasNativeBagSort = Expansion.IsRetail,  -- C_Container.SortBags() available
     HasReagentBank = Expansion.IsRetail,
     HasWarbandBank = Expansion.IsRetail,
+    HasCurrency = Expansion.IsRetail or Expansion.IsMoP,
 }
 
 -- Convenience exports to namespace root

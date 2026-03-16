@@ -2,7 +2,7 @@
 ## Title: GudaBags
 ## Notes: Clean, unified bag management for all WoW versions
 ## Author: Vati
-## Version: 1.5.8
+## Version: 1.5.9
 ## SavedVariables: GudaBags_DB
 ## SavedVariablesPerCharacter: GudaBags_CharDB
 ## IconTexture: Interface\AddOns\GudaBags\Assets\bags.png
@@ -89,6 +89,7 @@ UI\Footer\BagSlots.lua
 UI\Footer\Keyring.lua
 UI\Footer\SoulBag.lua
 UI\Footer\Money.lua
+UI\Footer\Currency.lua
 UI\Footer.lua
 UI\SearchBar.lua
 UI\Header.lua

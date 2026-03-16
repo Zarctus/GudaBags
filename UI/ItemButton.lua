@@ -2065,7 +2065,7 @@ function ItemButton:UpdateLockForItem(bagID, slotID)
             end
 
             -- Refresh user lock icon using live API data (itemData may be stale)
-            if itemInfo and itemInfo.itemID and Database:IsItemLocked(itemInfo.itemID) then
+            if itemInfo and itemInfo.itemID and IsItemProtected(itemInfo.itemID) then
                 if button.userLockIcon then button.userLockIcon:Show() end
                 if button.userLockIconStroke then button.userLockIconStroke:Show() end
             else

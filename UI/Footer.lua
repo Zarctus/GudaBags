@@ -244,7 +244,7 @@ function Footer:Update()
         local bagAnchor = BagSlots:GetAnchor()
         local keyringButton = Keyring:GetButton()
 
-        if viewType == "single" then
+        if viewType == "single" or viewType == "category" then
             -- Show soul bag and reposition chain
             SoulBag:SetAnchor(bagAnchor)
             SoulBag:Show()

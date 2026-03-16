@@ -98,3 +98,21 @@ function Events:Fire(event, ...)
         end
     end
 end
+
+-------------------------------------------------
+-- Throttle helper: coalesce rapid fires of the same event
+-- Returns a function that, when called, fires the event
+-- after `delay` seconds, resetting the timer on each call.
+-------------------------------------------------
+local throttleTimers = {}
+
+function Events:FireThrottled(event, delay, ...)
+    if throttleTimers[event] then
+        throttleTimers[event]:Cancel()
+    end
+    local args = {...}
+    throttleTimers[event] = C_Timer.NewTimer(delay, function()
+        throttleTimers[event] = nil
+        self:Fire(event, unpack(args))
+    end)
+end

@@ -42,17 +42,21 @@ local function DebouncedSaveCategories(categories)
     end)
 end
 
--- Tab list is built dynamically to get localized labels after ADDON_LOADED
+-- Tab list is built once after locales are loaded, then cached
+local cachedTabList = nil
 local function GetTabList()
-    return {
-        { id = "general", label = ns.L["TAB_GENERAL"], tooltip = ns.L["TAB_GENERAL_TIP"] },
-        { id = "layout", label = ns.L["TAB_LAYOUT"], tooltip = ns.L["TAB_LAYOUT_TIP"] },
-        { id = "icons", label = ns.L["TAB_ICONS"], tooltip = ns.L["TAB_ICONS_TIP"] },
-        { id = "bar", label = ns.L["TAB_BAR"], tooltip = ns.L["TAB_BAR_TIP"] },
-        { id = "categories", label = ns.L["TAB_CATEGORIES"], tooltip = ns.L["TAB_CATEGORIES_TIP"] },
-        { id = "profiles", label = ns.L["TAB_PROFILES"], tooltip = ns.L["TAB_PROFILES_TIP"] },
-        { id = "guide", label = ns.L["TAB_GUIDE"], tooltip = ns.L["TAB_GUIDE_TIP"] },
-    }
+    if not cachedTabList then
+        cachedTabList = {
+            { id = "general", label = ns.L["TAB_GENERAL"], tooltip = ns.L["TAB_GENERAL_TIP"] },
+            { id = "layout", label = ns.L["TAB_LAYOUT"], tooltip = ns.L["TAB_LAYOUT_TIP"] },
+            { id = "icons", label = ns.L["TAB_ICONS"], tooltip = ns.L["TAB_ICONS_TIP"] },
+            { id = "bar", label = ns.L["TAB_BAR"], tooltip = ns.L["TAB_BAR_TIP"] },
+            { id = "categories", label = ns.L["TAB_CATEGORIES"], tooltip = ns.L["TAB_CATEGORIES_TIP"] },
+            { id = "profiles", label = ns.L["TAB_PROFILES"], tooltip = ns.L["TAB_PROFILES_TIP"] },
+            { id = "guide", label = ns.L["TAB_GUIDE"], tooltip = ns.L["TAB_GUIDE_TIP"] },
+        }
+    end
+    return cachedTabList
 end
 
 -------------------------------------------------
@@ -134,8 +138,39 @@ end
 -------------------------------------------------
 -- Create Tab from Schema
 -------------------------------------------------
+local settingsScrollCounter = 0
+
 local function CreateTabFromSchema(parent, schemaOrFunc)
-    local stack = VerticalStack:Create(parent, { spacing = 10 })
+    settingsScrollCounter = settingsScrollCounter + 1
+    local scrollName = "GudaSettingsScroll" .. settingsScrollCounter
+
+    -- Scroll frame wrapper for scrollable content
+    local scrollFrame = CreateFrame("ScrollFrame", scrollName, parent, "UIPanelScrollFrameTemplate")
+
+    local scrollBar = scrollFrame.ScrollBar or _G[scrollName .. "ScrollBar"]
+    if scrollBar then
+        scrollBar:SetAlpha(0.7)
+    end
+
+    local scrollChild = CreateFrame("Frame", nil, scrollFrame)
+    scrollChild:SetWidth(scrollFrame:GetWidth() or 400)
+    scrollChild:SetHeight(1)
+    scrollFrame:SetScrollChild(scrollChild)
+
+    scrollFrame:SetScript("OnSizeChanged", function(self, width)
+        scrollChild:SetWidth(width)
+    end)
+
+    local stack = VerticalStack:Create(scrollChild, { spacing = 10 })
+    stack:SetPoint("TOPLEFT", scrollChild, "TOPLEFT", 0, 0)
+    stack:SetPoint("TOPRIGHT", scrollChild, "TOPRIGHT", -18, 0)
+
+    local function UpdateScrollHeight()
+        local height = stack:GetHeight()
+        if height and height > 0 then
+            scrollChild:SetHeight(height)
+        end
+    end
 
     local function BuildFromSchema(schema)
         for _, item in ipairs(schema) do
@@ -144,19 +179,20 @@ local function CreateTabFromSchema(parent, schemaOrFunc)
                 stack:AddChild(control)
             end
         end
+        UpdateScrollHeight()
     end
 
     if type(schemaOrFunc) == "function" then
         BuildFromSchema(schemaOrFunc())
-        stack.RefreshAll = function(self)
-            self:Clear()
+        scrollFrame.RefreshAll = function(self)
+            stack:Clear()
             BuildFromSchema(schemaOrFunc())
         end
     else
         BuildFromSchema(schemaOrFunc)
     end
 
-    return stack
+    return scrollFrame
 end
 
 -------------------------------------------------
@@ -1330,7 +1366,7 @@ local function CreateGuideSection(parent, yOffset, imagePath, title, description
     -- Title
     local titleText = parent:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
     titleText:SetPoint("TOPLEFT", image, "TOPRIGHT", 10, 0)
-    titleText:SetPoint("RIGHT", parent, "RIGHT", 0, 0)
+    titleText:SetPoint("RIGHT", parent, "RIGHT", -24, 0)
     titleText:SetJustifyH("LEFT")
     titleText:SetTextColor(1, 0.82, 0)
     titleText:SetText(title)
@@ -1338,7 +1374,7 @@ local function CreateGuideSection(parent, yOffset, imagePath, title, description
     -- Description
     local descText = parent:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     descText:SetPoint("TOPLEFT", titleText, "BOTTOMLEFT", 0, -4)
-    descText:SetPoint("RIGHT", parent, "RIGHT", 0, 0)
+    descText:SetPoint("RIGHT", parent, "RIGHT", -24, 0)
     descText:SetJustifyH("LEFT")
     descText:SetSpacing(2)
     descText:SetText(description)
@@ -1352,6 +1388,7 @@ end
 
 local profilesScrollChild = nil
 local includeCategories = false
+local includePositions = false
 
 local function RefreshProfilesList()
     if not profilesScrollChild then return end
@@ -1443,6 +1480,35 @@ local function RefreshProfilesList()
     end)
     catCB:SetScript("OnLeave", function() GameTooltip:Hide() end)
 
+    yOffset = yOffset - 24
+
+    -- Include positions checkbox
+    local posRow = CreateFrame("Frame", nil, profilesScrollChild)
+    posRow:SetHeight(22)
+    posRow:SetPoint("TOPLEFT", profilesScrollChild, "TOPLEFT", 0, yOffset)
+    posRow:SetPoint("RIGHT", profilesScrollChild, "RIGHT", 0, 0)
+
+    local posCB = CreateFrame("CheckButton", nil, posRow, "UICheckButtonTemplate")
+    posCB:SetPoint("LEFT", posRow, "LEFT", 2, 0)
+    posCB:SetSize(22, 22)
+    posCB:SetChecked(includePositions)
+    posCB:SetScript("OnClick", function(self)
+        includePositions = self:GetChecked()
+    end)
+
+    local posLabel = posRow:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    posLabel:SetPoint("LEFT", posCB, "RIGHT", 4, 0)
+    posLabel:SetText(L["PROFILE_INCLUDE_POSITIONS"])
+    posLabel:SetTextColor(0.8, 0.8, 0.8)
+
+    posCB:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_TOP")
+        GameTooltip:SetText(L["PROFILE_INCLUDE_POSITIONS"])
+        GameTooltip:AddLine(L["PROFILE_INCLUDE_POSITIONS_TIP"], 1, 1, 1, true)
+        GameTooltip:Show()
+    end)
+    posCB:SetScript("OnLeave", function() GameTooltip:Hide() end)
+
     yOffset = yOffset - 30
 
     -- --- Separator ---
@@ -1508,9 +1574,9 @@ local function RefreshProfilesList()
 
             -- Delete button
             local deleteBtn = CreateFrame("Button", nil, row, "UIPanelButtonTemplate")
-            deleteBtn:SetSize(60, 20)
-            deleteBtn:SetPoint("RIGHT", row, "RIGHT", -6, 0)
             deleteBtn:SetText(L["PROFILE_DELETE"])
+            deleteBtn:SetSize(deleteBtn:GetFontString():GetStringWidth() + 20, 20)
+            deleteBtn:SetPoint("RIGHT", row, "RIGHT", -6, 0)
             deleteBtn:SetScript("OnClick", function()
                 StaticPopupDialogs["GUDABAGS_DELETE_PROFILE"] = {
                     text = string.format(L["PROFILE_CONFIRM_DELETE"], profileName),
@@ -1537,16 +1603,16 @@ local function RefreshProfilesList()
 
             -- Load button
             local loadBtn = CreateFrame("Button", nil, row, "UIPanelButtonTemplate")
-            loadBtn:SetSize(60, 20)
-            loadBtn:SetPoint("RIGHT", deleteBtn, "LEFT", -4, 0)
             loadBtn:SetText(L["PROFILE_LOAD"])
+            loadBtn:SetSize(loadBtn:GetFontString():GetStringWidth() + 20, 20)
+            loadBtn:SetPoint("RIGHT", deleteBtn, "LEFT", -4, 0)
             loadBtn:SetScript("OnClick", function()
                 StaticPopupDialogs["GUDABAGS_LOAD_PROFILE"] = {
                     text = string.format(L["PROFILE_CONFIRM_LOAD"], profileName),
                     button1 = YES,
                     button2 = NO,
                     OnAccept = function()
-                        if Database:LoadProfile(profileName) then
+                        if Database:LoadProfile(profileName, includePositions) then
                             ns:Print(string.format(L["PROFILE_LOADED"], profileName))
                             Events:Fire("SETTING_CHANGED", "theme", Database:GetSetting("theme"))
                             Events:Fire("CATEGORIES_UPDATED")
@@ -1570,9 +1636,9 @@ local function RefreshProfilesList()
 
             -- Overwrite button (save current to this profile)
             local overwriteBtn = CreateFrame("Button", nil, row, "UIPanelButtonTemplate")
-            overwriteBtn:SetSize(60, 20)
-            overwriteBtn:SetPoint("RIGHT", loadBtn, "LEFT", -4, 0)
             overwriteBtn:SetText(L["PROFILE_SAVE"])
+            overwriteBtn:SetSize(overwriteBtn:GetFontString():GetStringWidth() + 20, 20)
+            overwriteBtn:SetPoint("RIGHT", loadBtn, "LEFT", -4, 0)
             overwriteBtn:SetScript("OnClick", function()
                 Database:SaveProfile(profileName, includeCategories)
                 ns:Print(string.format(L["PROFILE_SAVED"], profileName))
@@ -1584,6 +1650,43 @@ local function RefreshProfilesList()
                 GameTooltip:Show()
             end)
             overwriteBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
+
+            -- Export button
+            local exportBtn = CreateFrame("Button", nil, row, "UIPanelButtonTemplate")
+            exportBtn:SetText(L["PROFILE_EXPORT"])
+            exportBtn:SetSize(exportBtn:GetFontString():GetStringWidth() + 20, 20)
+            exportBtn:SetPoint("RIGHT", overwriteBtn, "LEFT", -4, 0)
+            exportBtn:SetScript("OnClick", function()
+                local encoded = Database:ExportProfile(profileName)
+                if encoded then
+                    -- Show a dialog with the export string
+                    StaticPopupDialogs["GUDABAGS_EXPORT_PROFILE"] = {
+                        text = string.format(L["PROFILE_EXPORT_TIP"], profileName),
+                        button1 = CLOSE,
+                        hasEditBox = true,
+                        editBoxWidth = 280,
+                        OnShow = function(dialog)
+                            dialog.editBox:SetText(encoded)
+                            dialog.editBox:HighlightText()
+                            dialog.editBox:SetFocus()
+                        end,
+                        EditBoxOnEscapePressed = function(self)
+                            self:GetParent():Hide()
+                        end,
+                        timeout = 0,
+                        whileDead = true,
+                        hideOnEscape = true,
+                        preferredIndex = 3,
+                    }
+                    StaticPopup_Show("GUDABAGS_EXPORT_PROFILE")
+                end
+            end)
+            exportBtn:SetScript("OnEnter", function(self)
+                GameTooltip:SetOwner(self, "ANCHOR_TOP")
+                GameTooltip:SetText(L["PROFILE_EXPORT"])
+                GameTooltip:Show()
+            end)
+            exportBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
 
             -- Hover effect
             row:EnableMouse(true)
@@ -1600,16 +1703,71 @@ local function RefreshProfilesList()
         end
     end
 
+    -- --- Import Profile Section ---
+    yOffset = yOffset - 10
+    local importSep = profilesScrollChild:CreateTexture(nil, "ARTWORK")
+    importSep:SetHeight(1)
+    importSep:SetPoint("TOPLEFT", profilesScrollChild, "TOPLEFT", 0, yOffset)
+    importSep:SetPoint("RIGHT", profilesScrollChild, "RIGHT", 0, 0)
+    importSep:SetColorTexture(0.5, 0.5, 0.5, 0.5)
+    yOffset = yOffset - 10
+
+    local importHeader = profilesScrollChild:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    importHeader:SetPoint("TOPLEFT", profilesScrollChild, "TOPLEFT", 0, yOffset)
+    importHeader:SetText(L["PROFILE_IMPORT"])
+    importHeader:SetTextColor(0.9, 0.75, 0.3)
+    yOffset = yOffset - 22
+
+    local importInput = CreateFrame("EditBox", "GudaProfileImportInput", profilesScrollChild, "InputBoxTemplate")
+    importInput:SetSize(240, 22)
+    importInput:SetPoint("TOPLEFT", profilesScrollChild, "TOPLEFT", 6, yOffset)
+    importInput:SetAutoFocus(false)
+    importInput:SetMaxLetters(10000)
+    importInput:SetFontObject(GameFontHighlightSmall)
+    importInput:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
+
+    local importBtn = CreateFrame("Button", nil, profilesScrollChild, "UIPanelButtonTemplate")
+    importBtn:SetSize(70, 22)
+    importBtn:SetPoint("LEFT", importInput, "RIGHT", 8, 0)
+    importBtn:SetText(L["PROFILE_IMPORT"])
+    importBtn:SetScript("OnClick", function()
+        local text = importInput:GetText()
+        if not text or text == "" then return end
+        local success, result = Database:ImportProfile(text)
+        if success then
+            ns:Print(string.format(L["PROFILE_IMPORTED"], result))
+            importInput:SetText("")
+            importInput:ClearFocus()
+            RefreshProfilesList()
+        else
+            ns:Print(L["PROFILE_IMPORT_FAILED"])
+        end
+    end)
+    importInput:SetScript("OnEnterPressed", function()
+        importBtn:Click()
+    end)
+
+    yOffset = yOffset - 30
+
+    local importTip = profilesScrollChild:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    importTip:SetPoint("TOPLEFT", profilesScrollChild, "TOPLEFT", 4, yOffset)
+    importTip:SetText(L["PROFILE_IMPORT_TIP"])
+    importTip:SetTextColor(0.5, 0.5, 0.5)
+    yOffset = yOffset - 20
+
     profilesScrollChild:SetHeight(math.abs(yOffset) + 10)
 end
 
 local function CreateProfilesTab(parent)
     local scrollFrame = CreateFrame("ScrollFrame", "GudaProfilesScroll", parent, "UIPanelScrollFrameTemplate")
-    scrollFrame:SetPoint("TOPLEFT", parent, "TOPLEFT", 0, 0)
-    scrollFrame:SetPoint("BOTTOMRIGHT", parent, "BOTTOMRIGHT", -24, 0)
+
+    local scrollBar = scrollFrame.ScrollBar or _G["GudaProfilesScrollScrollBar"]
+    if scrollBar then
+        scrollBar:SetAlpha(0.7)
+    end
 
     profilesScrollChild = CreateFrame("Frame", nil, scrollFrame)
-    profilesScrollChild:SetWidth(scrollFrame:GetWidth() or 340)
+    profilesScrollChild:SetWidth(1)
     profilesScrollChild:SetHeight(400)
     scrollFrame:SetScrollChild(profilesScrollChild)
 
@@ -1623,7 +1781,22 @@ local function CreateProfilesTab(parent)
 end
 
 local function CreateGuideTab(parent)
-    local content = CreateFrame("Frame", nil, parent)
+    local scrollFrame = CreateFrame("ScrollFrame", "GudaGuideScroll", parent, "UIPanelScrollFrameTemplate")
+
+    local scrollBar = scrollFrame.ScrollBar or _G["GudaGuideScrollScrollBar"]
+    if scrollBar then
+        scrollBar:SetAlpha(0.7)
+    end
+
+    local content = CreateFrame("Frame", nil, scrollFrame)
+    content:SetWidth(1)
+    content:SetHeight(1)
+    scrollFrame:SetScrollChild(content)
+
+    scrollFrame:SetScript("OnSizeChanged", function(self, width)
+        content:SetWidth(width)
+    end)
+
     local yOffset = 0
 
     -- Quest Item Bar Section
@@ -1665,7 +1838,9 @@ local function CreateGuideTab(parent)
         pinTitle,
         L["GUIDE_PIN_SLOT_DESC"])
 
-    return content
+    content:SetHeight(math.abs(yOffset) + 10)
+
+    return scrollFrame
 end
 
 -------------------------------------------------
@@ -1729,12 +1904,33 @@ local function CreateSettingsFrame()
     -- Store Tabs array for PanelTemplates
     f.Tabs = {}
 
+    -- Tab content factories for lazy loading (content created on first tab select)
+    local tabFactories = {
+        general = function() return CreateTabFromSchema(f, function() return SettingsSchema.GetGeneral() end) end,
+        layout = function() return CreateTabFromSchema(f, function() return SettingsSchema.GetLayout() end) end,
+        icons = function() return CreateTabFromSchema(f, SettingsSchema.GetIcons()) end,
+        bar = function() return CreateTabFromSchema(f, SettingsSchema.GetBar()) end,
+        categories = function() return CreateCategoriesTab(f) end,
+        profiles = function() return CreateProfilesTab(f) end,
+        guide = function() return CreateGuideTab(f) end,
+    }
+
+    local function EnsureTabContent(tabId)
+        if not tabPanel then return end
+        if not tabPanel:GetContent(tabId) and tabFactories[tabId] then
+            local content = tabFactories[tabId]()
+            tabPanel:SetContent(tabId, content)
+            content:Show()
+        end
+    end
+
     -- Create TabPanel
     tabPanel = TabPanel:Create(f, {
         tabs = GetTabList(),
         topMargin = 4,
         padding = PADDING,
         onSelect = function(tabId)
+            EnsureTabContent(tabId)
             if tabId == "categories" then
                 RefreshCategoriesList()
             elseif tabId == "profiles" then
@@ -1745,15 +1941,8 @@ local function CreateSettingsFrame()
     tabPanel:SetPoint("TOPLEFT", f, "TOPLEFT", 0, -20)
     tabPanel:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", 0, 8)
 
-    -- Create tab contents
-    tabPanel:SetContent("general", CreateTabFromSchema(f, function() return SettingsSchema.GetGeneral() end))
-    tabPanel:SetContent("layout", CreateTabFromSchema(f, function() return SettingsSchema.GetLayout() end))
-    tabPanel:SetContent("icons", CreateTabFromSchema(f, SettingsSchema.GetIcons()))
-    tabPanel:SetContent("bar", CreateTabFromSchema(f, SettingsSchema.GetBar()))
-    tabPanel:SetContent("categories", CreateCategoriesTab(f))
-    tabPanel:SetContent("profiles", CreateProfilesTab(f))
-    tabPanel:SetContent("guide", CreateGuideTab(f))
-
+    -- Eagerly create only the default tab
+    EnsureTabContent("general")
     tabPanel.SelectTab("general")
 
     -- Rebuild layout tab when view type changes (to show/hide split column sliders)

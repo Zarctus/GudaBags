@@ -49,6 +49,12 @@ function CategoryHeaderPool:Acquire(parent)
         header.line:SetPoint("RIGHT", header, "RIGHT", 0, 0)
         header.line:SetTexture("Interface\\Buttons\\WHITE8x8")
         header.line:SetVertexColor(0.3, 0.3, 0.3, 0.8)
+
+        -- Highlight texture for hover effect
+        header.highlight = header:CreateTexture(nil, "HIGHLIGHT")
+        header.highlight:SetAllPoints()
+        header.highlight:SetTexture("Interface\\Buttons\\WHITE8x8")
+        header.highlight:SetVertexColor(1, 1, 1, 0.06)
     end
 
     header:SetParent(parent)

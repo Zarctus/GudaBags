@@ -690,6 +690,33 @@ function Database:SetGlobalSetting(key, value)
 end
 
 -------------------------------------------------
+-- Favorites
+-------------------------------------------------
+
+function Database:ToggleFavorite(itemID)
+    if not itemID or not GudaBags_CharDB then return false end
+    if not GudaBags_CharDB.favoriteItems then
+        GudaBags_CharDB.favoriteItems = {}
+    end
+    if GudaBags_CharDB.favoriteItems[itemID] then
+        GudaBags_CharDB.favoriteItems[itemID] = nil
+    else
+        GudaBags_CharDB.favoriteItems[itemID] = true
+    end
+    return GudaBags_CharDB.favoriteItems[itemID] or false
+end
+
+function Database:IsFavorite(itemID)
+    if not itemID or not GudaBags_CharDB or not GudaBags_CharDB.favoriteItems then return false end
+    return GudaBags_CharDB.favoriteItems[itemID] or false
+end
+
+function Database:GetFavorites()
+    if not GudaBags_CharDB or not GudaBags_CharDB.favoriteItems then return {} end
+    return GudaBags_CharDB.favoriteItems
+end
+
+-------------------------------------------------
 -- Profiles
 -------------------------------------------------
 
@@ -743,7 +770,7 @@ function Database:SaveProfile(name, includeCategories)
     return true
 end
 
-function Database:LoadProfile(name)
+function Database:LoadProfile(name, includePositions)
     InitializeProfiles()
     local profile = GudaBags_DB.profiles[name]
     if not profile then return false end
@@ -751,8 +778,10 @@ function Database:LoadProfile(name)
     -- Copy settings from profile to current character
     if profile.settings then
         for key, value in pairs(profile.settings) do
-            -- Skip per-character position settings
-            if not key:match("^frame") and not key:match("^bankFrame") and not key:match("^guildBankFrame") then
+            -- Skip per-character position settings unless explicitly requested
+            local isPosition = key:match("^frame") or key:match("^bankFrame") or
+                              key:match("^guildBankFrame") or key:match("^mailFrame")
+            if includePositions or not isPosition then
                 if type(value) == "table" then
                     GudaBags_CharDB.settings[key] = CopyTable(value)
                 else
@@ -775,6 +804,199 @@ function Database:DeleteProfile(name)
     if not name or not GudaBags_DB.profiles[name] then return false end
     GudaBags_DB.profiles[name] = nil
     return true
+end
+
+-------------------------------------------------
+-- Frame Position (shared by all frame types)
+-------------------------------------------------
+
+function Database:SaveFramePosition(frame, prefix)
+    if not frame then return end
+    local point, _, relativePoint, x, y = frame:GetPoint()
+    self:SetSetting(prefix .. "Point", point)
+    self:SetSetting(prefix .. "RelativePoint", relativePoint)
+    self:SetSetting(prefix .. "X", x)
+    self:SetSetting(prefix .. "Y", y)
+end
+
+function Database:RestoreFramePosition(frame, prefix, defaultPoint, defaultRelativePoint, defaultX, defaultY)
+    if not frame then return end
+    local point = self:GetSetting(prefix .. "Point")
+    local relativePoint = self:GetSetting(prefix .. "RelativePoint")
+    local x = self:GetSetting(prefix .. "X")
+    local y = self:GetSetting(prefix .. "Y")
+
+    if point and x and y then
+        frame:ClearAllPoints()
+        frame:SetPoint(point, UIParent, relativePoint, x, y)
+    elseif defaultPoint then
+        frame:ClearAllPoints()
+        frame:SetPoint(defaultPoint, UIParent, defaultRelativePoint, defaultX, defaultY)
+    end
+end
+
+-------------------------------------------------
+-- Profile Import/Export
+-------------------------------------------------
+
+-- Simple serialization: converts a Lua table to a compact string
+local function SerializeValue(val)
+    local t = type(val)
+    if t == "string" then
+        return "s" .. val:gsub("\\", "\\\\"):gsub("\n", "\\n"):gsub("|", "\\|")
+    elseif t == "number" then
+        return "n" .. tostring(val)
+    elseif t == "boolean" then
+        return val and "b1" or "b0"
+    elseif t == "table" then
+        local parts = {}
+        -- Check if array
+        local isArray = true
+        local maxN = 0
+        for k in pairs(val) do
+            if type(k) ~= "number" or k < 1 or math.floor(k) ~= k then
+                isArray = false
+                break
+            end
+            if k > maxN then maxN = k end
+        end
+        if isArray and maxN == #val then
+            -- Serialize as array
+            for i = 1, #val do
+                parts[i] = SerializeValue(val[i])
+            end
+            return "a{" .. table.concat(parts, "|") .. "}"
+        else
+            -- Serialize as dictionary
+            for k, v in pairs(val) do
+                table.insert(parts, SerializeValue(k) .. "=" .. SerializeValue(v))
+            end
+            return "t{" .. table.concat(parts, "|") .. "}"
+        end
+    end
+    return "x"  -- nil/unknown
+end
+
+local function DeserializeValue(str, pos)
+    if not str or pos > #str then return nil, pos end
+    local tag = str:sub(pos, pos)
+
+    if tag == "s" then
+        -- String: find next unescaped | or = or } or end
+        local result = {}
+        local i = pos + 1
+        while i <= #str do
+            local c = str:sub(i, i)
+            if c == "\\" then
+                local next = str:sub(i + 1, i + 1)
+                if next == "\\" then
+                    table.insert(result, "\\")
+                elseif next == "n" then
+                    table.insert(result, "\n")
+                elseif next == "|" then
+                    table.insert(result, "|")
+                else
+                    table.insert(result, next)
+                end
+                i = i + 2
+            elseif c == "|" or c == "=" or c == "}" then
+                break
+            else
+                table.insert(result, c)
+                i = i + 1
+            end
+        end
+        return table.concat(result), i
+    elseif tag == "n" then
+        local i = pos + 1
+        local numStr = {}
+        while i <= #str do
+            local c = str:sub(i, i)
+            if c == "|" or c == "=" or c == "}" then break end
+            table.insert(numStr, c)
+            i = i + 1
+        end
+        return tonumber(table.concat(numStr)), i
+    elseif tag == "b" then
+        local val = str:sub(pos + 1, pos + 1) == "1"
+        return val, pos + 2
+    elseif tag == "a" or tag == "t" then
+        -- Array or table
+        local isArray = (tag == "a")
+        if str:sub(pos + 1, pos + 1) ~= "{" then return nil, pos + 1 end
+        local i = pos + 2
+        local result = {}
+        local idx = 1
+        while i <= #str and str:sub(i, i) ~= "}" do
+            if str:sub(i, i) == "|" then i = i + 1 end
+            if i > #str or str:sub(i, i) == "}" then break end
+            if isArray then
+                local val
+                val, i = DeserializeValue(str, i)
+                result[idx] = val
+                idx = idx + 1
+            else
+                local key
+                key, i = DeserializeValue(str, i)
+                if i <= #str and str:sub(i, i) == "=" then
+                    i = i + 1
+                    local val
+                    val, i = DeserializeValue(str, i)
+                    result[key] = val
+                end
+            end
+        end
+        if i <= #str and str:sub(i, i) == "}" then i = i + 1 end
+        return result, i
+    end
+    return nil, pos + 1
+end
+
+function Database:ExportProfile(name)
+    InitializeProfiles()
+    local profile = GudaBags_DB.profiles[name]
+    if not profile then return nil end
+
+    local exportData = {
+        v = 1,  -- Version for future compatibility
+        name = name,
+        settings = profile.settings,
+    }
+    if profile.categories then
+        exportData.categories = profile.categories
+    end
+
+    return "GUDA1:" .. SerializeValue(exportData)
+end
+
+function Database:ImportProfile(encodedString)
+    if not encodedString or encodedString == "" then return false, "empty" end
+
+    -- Validate prefix
+    if not encodedString:match("^GUDA1:") then
+        return false, "invalid_format"
+    end
+
+    local dataStr = encodedString:sub(7)  -- Remove "GUDA1:" prefix
+    local data = DeserializeValue(dataStr, 1)
+    if not data or type(data) ~= "table" or not data.settings then
+        return false, "corrupt"
+    end
+
+    local profileName = data.name or "Imported"
+    InitializeProfiles()
+
+    local profile = {
+        settings = data.settings,
+        savedAt = time(),
+        savedBy = "imported",
+    }
+    if data.categories then
+        profile.categories = data.categories
+    end
+
+    GudaBags_DB.profiles[profileName] = profile
+    return true, profileName
 end
 
 Events:OnAddonLoaded(function()

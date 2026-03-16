@@ -16,7 +16,9 @@ local MailScanner = nil
 
 local frame = nil
 local viewingCharacter = nil
-local mailRows = {}  -- Pre-created row frames
+local mailRowPool = nil  -- Object pool for mail row frames
+local activeMailRows = {}  -- Currently acquired rows
+local mailRowIndex = 0  -- Counter for unique row names
 local currentMailData = {}  -- Currently displayed data
 
 local ROW_HEIGHT = 44
@@ -36,30 +38,6 @@ end
 -------------------------------------------------
 -- Frame Position
 -------------------------------------------------
-
-local function SaveFramePosition()
-    if not frame then return end
-
-    local point, _, relativePoint, x, y = frame:GetPoint()
-    Database:SetSetting("mailFramePoint", point)
-    Database:SetSetting("mailFrameRelativePoint", relativePoint)
-    Database:SetSetting("mailFrameX", x)
-    Database:SetSetting("mailFrameY", y)
-end
-
-local function RestoreFramePosition()
-    if not frame then return end
-
-    local point = Database:GetSetting("mailFramePoint")
-    local relativePoint = Database:GetSetting("mailFrameRelativePoint")
-    local x = Database:GetSetting("mailFrameX")
-    local y = Database:GetSetting("mailFrameY")
-
-    if point and relativePoint and x and y then
-        frame:ClearAllPoints()
-        frame:SetPoint(point, UIParent, relativePoint, x, y)
-    end
-end
 
 -------------------------------------------------
 -- Frame Appearance
@@ -227,6 +205,18 @@ local function CreateMailRow(parent, index)
     return row
 end
 
+local function ResetMailRow(pool, row)
+    row:Hide()
+    row:ClearAllPoints()
+    row.mailData = nil
+    row.nameText:SetText("")
+    row.senderText:SetText("")
+    row.expiryText:SetText("")
+    row.moneyText:SetText("")
+    row.icon:SetTexture(nil)
+    row.iconBorder:Hide()
+end
+
 local function UpdateMailRow(row, data, index)
     if not data then
         row:Hide()
@@ -365,7 +355,7 @@ local function CreateMailFrame()
 
     -- Header
     f.titleBar = MailHeader:Init(f)
-    MailHeader:SetDragCallback(SaveFramePosition)
+    MailHeader:SetDragCallback(function() Database:SaveFramePosition(frame, "mailFrame") end)
     MailHeader:SetCharacterCallback(function(fullName, charData)
         MailFrame:ViewCharacter(fullName, charData)
     end)
@@ -395,14 +385,21 @@ local function CreateMailFrame()
     scrollFrame:SetScrollChild(container)
     f.container = container
 
-    -- Pre-create row frames
-    local containerWidth = 420 - Constants.FRAME.PADDING * 2 - 20
-    for i = 1, MAX_VISIBLE_ROWS * 2 do  -- Pre-create enough for scrolling
-        local row = CreateMailRow(container, i)
-        row:SetPoint("TOPLEFT", container, "TOPLEFT", 0, -((i - 1) * ROW_HEIGHT))
-        row:SetPoint("RIGHT", container, "RIGHT", 0, 0)
-        table.insert(mailRows, row)
+    -- Initialize row pool
+    mailRowPool = CreateObjectPool(
+        function()
+            mailRowIndex = mailRowIndex + 1
+            return CreateMailRow(container, mailRowIndex)
+        end,
+        ResetMailRow
+    )
+
+    -- Pre-warm pool
+    for i = 1, MAX_VISIBLE_ROWS do
+        local row = mailRowPool:Acquire()
+        row:SetParent(container)
     end
+    mailRowPool:ReleaseAll()
 
     -- Empty state message
     local emptyMessage = CreateFrame("Frame", nil, f)
@@ -441,7 +438,7 @@ end
 function MailFrame:Toggle()
     if not frame then
         frame = CreateMailFrame()
-        RestoreFramePosition()
+        Database:RestoreFramePosition(frame, "mailFrame")
         UpdateFrameAppearance()
     end
 
@@ -455,7 +452,7 @@ end
 function MailFrame:Show()
     if not frame then
         frame = CreateMailFrame()
-        RestoreFramePosition()
+        Database:RestoreFramePosition(frame, "mailFrame")
         UpdateFrameAppearance()
     end
 
@@ -527,22 +524,21 @@ function MailFrame:Refresh()
         frame.emptyMessage:Hide()
     end
 
-    -- Ensure enough row frames
-    while #mailRows < #filteredData do
-        local i = #mailRows + 1
-        local row = CreateMailRow(frame.container, i)
+    -- Release all previous rows back to pool
+    for _, row in ipairs(activeMailRows) do
+        mailRowPool:Release(row)
+    end
+    wipe(activeMailRows)
+
+    -- Acquire and display rows for current data
+    for i, data in ipairs(filteredData) do
+        local row = mailRowPool:Acquire()
+        row:SetParent(frame.container)
+        row:ClearAllPoints()
         row:SetPoint("TOPLEFT", frame.container, "TOPLEFT", 0, -((i - 1) * ROW_HEIGHT))
         row:SetPoint("RIGHT", frame.container, "RIGHT", 0, 0)
-        table.insert(mailRows, row)
-    end
-
-    -- Update rows
-    for i, row in ipairs(mailRows) do
-        if i <= #filteredData then
-            UpdateMailRow(row, filteredData[i], i)
-        else
-            row:Hide()
-        end
+        UpdateMailRow(row, data, i)
+        table.insert(activeMailRows, row)
     end
 
     -- Resize container for scrolling

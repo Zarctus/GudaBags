@@ -6,6 +6,7 @@
 ## SavedVariables: GudaBags_DB
 ## SavedVariablesPerCharacter: GudaBags_CharDB
 ## IconTexture: Interface\AddOns\GudaBags\Assets\bags.png
+## OptionalDeps: LibDataBroker-1.1
 
 ## Category: Guda
 
@@ -25,6 +26,7 @@ Core\Database.lua
 Core\Theme.lua
 Core\Bindings.lua
 Core\SlashCommands.lua
+Core\DataBroker.lua
 
 # Compatibility Layer
 Compatibility\API.lua
@@ -42,6 +44,7 @@ Core\Rules\PatternRule.lua
 Core\Rules\BooleanRule.lua
 Core\Rules\RecentRule.lua
 Core\Rules\ExpansionRule.lua
+Core\Rules\FavoriteRule.lua
 Core\CategoryManager.lua
 Core\CategoryService.lua
 Core\SearchParser.lua

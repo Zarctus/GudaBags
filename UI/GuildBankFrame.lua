@@ -63,30 +63,6 @@ end
 -- Frame Position
 -------------------------------------------------
 
-local function SaveFramePosition()
-    if not frame then return end
-
-    local point, _, relativePoint, x, y = frame:GetPoint()
-    Database:SetSetting("guildBankFramePoint", point)
-    Database:SetSetting("guildBankFrameRelativePoint", relativePoint)
-    Database:SetSetting("guildBankFrameX", x)
-    Database:SetSetting("guildBankFrameY", y)
-end
-
-local function RestoreFramePosition()
-    if not frame then return end
-
-    local point = Database:GetSetting("guildBankFramePoint")
-    local relativePoint = Database:GetSetting("guildBankFrameRelativePoint")
-    local x = Database:GetSetting("guildBankFrameX")
-    local y = Database:GetSetting("guildBankFrameY")
-
-    if point and relativePoint and x and y then
-        frame:ClearAllPoints()
-        frame:SetPoint(point, UIParent, relativePoint, x, y)
-    end
-end
-
 -------------------------------------------------
 -- Frame Appearance
 -------------------------------------------------
@@ -94,11 +70,24 @@ end
 local function UpdateFrameAppearance()
     if not frame then return end
 
+    -- UI Scale
+    local uiScale = Database:GetSetting("uiScale") / 100
+    frame:SetScale(uiScale)
+
     local bgAlpha = Database:GetSetting("bgAlpha") / 100
     local showBorders = Database:GetSetting("showBorders")
+    local borderOpacity = Database:GetSetting("borderOpacity") / 100
 
-    -- Apply theme background (ButtonFrameTemplate for Blizzard, backdrop for Guda)
-    Theme:ApplyFrameBackground(frame, bgAlpha, showBorders)
+    local customBgColor = nil
+    local bgR = Database:GetSetting("bgColorR")
+    local bgG = Database:GetSetting("bgColorG")
+    local bgB = Database:GetSetting("bgColorB")
+    if bgR and bgG and bgB and (bgR + bgG + bgB) > 0 then
+        customBgColor = { bgR / 255, bgG / 255, bgB / 255 }
+    end
+
+    -- Apply theme background
+    Theme:ApplyFrameBackground(frame, bgAlpha, showBorders, customBgColor, borderOpacity)
 
     local ItemButton = ns:GetModule("ItemButton")
     if ItemButton then ItemButton:ApplyThemeTextures() end
@@ -670,7 +659,7 @@ local function CreateGuildBankFrame()
 
     -- Header
     f.titleBar = GuildBankHeader:Init(f)
-    GuildBankHeader:SetDragCallback(SaveFramePosition)
+    GuildBankHeader:SetDragCallback(function() Database:SaveFramePosition(frame, "guildBankFrame") end)
 
     -- Search bar
     searchBar = SearchBar:Init(f)
@@ -1204,7 +1193,7 @@ function GuildBankFrame:Toggle()
 
     if not frame then
         frame = CreateGuildBankFrame()
-        RestoreFramePosition()
+        Database:RestoreFramePosition(frame, "guildBankFrame")
     end
 
     if frame:IsShown() then
@@ -1231,7 +1220,7 @@ function GuildBankFrame:Show()
 
     if not frame then
         frame = CreateGuildBankFrame()
-        RestoreFramePosition()
+        Database:RestoreFramePosition(frame, "guildBankFrame")
     end
 
     if GuildBankScanner and GuildBankScanner:IsGuildBankOpen() then
@@ -1404,6 +1393,11 @@ local appearanceSettings = {
     showBorders = true,
     theme = true,
     retailEmptySlots = true,
+    uiScale = true,
+    bgColorR = true,
+    bgColorG = true,
+    bgColorB = true,
+    borderOpacity = true,
 }
 
 -- Handle setting changes (live update)
@@ -1412,7 +1406,7 @@ local function OnSettingChanged(event, key, value)
 
     if appearanceSettings[key] then
         UpdateFrameAppearance()
-    elseif key == "guildBankColumns" or key == "iconSize" or key == "iconSpacing" then
+    elseif key == "guildBankColumns" or key == "iconSize" or key == "iconSpacing" or key == "compactMode" then
         -- Column/size changes need full refresh
         UpdateFrameAppearance()
         GuildBankFrame:Refresh()

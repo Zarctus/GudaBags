@@ -61,6 +61,9 @@ end
 -- Scan only specific bags that are marked dirty
 -- Optimized: only scans slots that actually changed, not the entire bag
 function BagScanner:ScanDirtyBags(bagIDs)
+    -- Cache module reference once for the entire scan batch
+    local RecentItems = ns:GetModule("RecentItems")
+
     for bagID in pairs(bagIDs) do
         local numSlots = C_Container.GetContainerNumSlots(bagID)
         if not numSlots or numSlots == 0 then
@@ -72,7 +75,6 @@ function BagScanner:ScanDirtyBags(bagIDs)
                         if knownItemIDs[itemData.itemID] <= 0 then
                             knownItemIDs[itemData.itemID] = nil
                             -- Item completely removed from inventory - remove from Recent
-                            local RecentItems = ns:GetModule("RecentItems")
                             if RecentItems then
                                 RecentItems:RemoveRecent(itemData.itemID)
                             end
@@ -90,7 +92,6 @@ function BagScanner:ScanDirtyBags(bagIDs)
                     cachedBags[bagID] = bagData
                     -- Track item IDs from this bag
                     if bagData.slots then
-                        local RecentItems = ns:GetModule("RecentItems")
                         for slot, itemData in pairs(bagData.slots) do
                             if itemData and itemData.itemID then
                                 local wasNew = not knownItemIDs[itemData.itemID]
@@ -121,7 +122,6 @@ function BagScanner:ScanDirtyBags(bagIDs)
                             if knownItemIDs[cachedItemID] <= 0 then
                                 knownItemIDs[cachedItemID] = nil
                                 -- Item completely removed from inventory - remove from Recent
-                                local RecentItems = ns:GetModule("RecentItems")
                                 if RecentItems then
                                     RecentItems:RemoveRecent(cachedItemID)
                                 end
@@ -134,11 +134,8 @@ function BagScanner:ScanDirtyBags(bagIDs)
                                 local wasNew = not knownItemIDs[currentItemID]
                                 knownItemIDs[currentItemID] = (knownItemIDs[currentItemID] or 0) + 1
                                 -- Mark truly new items as Recent (backup for loot detection)
-                                if wasNew then
-                                    local RecentItems = ns:GetModule("RecentItems")
-                                    if RecentItems then
-                                        RecentItems:MarkRecent(currentItemID)
-                                    end
+                                if wasNew and RecentItems then
+                                    RecentItems:MarkRecent(currentItemID)
                                 end
                             end
 
@@ -300,14 +297,42 @@ local function ProcessBatchedUpdates()
     updateFrame:Hide()
 
     -- Scan only the dirty bags
+    local scanStart = debugprofilestop()
     BagScanner:ScanDirtyBags(bagsToScan)
+    local scanElapsed = debugprofilestop() - scanStart
+    ns.perfStats.lastScanTime = scanElapsed
+    ns.perfStats.scanCount = ns.perfStats.scanCount + 1
 
     -- Schedule deferred save instead of immediate save
     ScheduleDeferredSave()
 
+    -- Check bag full threshold and notify
+    local Database = ns:GetModule("Database")
+    local threshold = Database and Database:GetSetting("bagFullThreshold") or 0
+    if threshold > 0 then
+        local total, free = BagScanner:GetTotalSlots()
+        if total > 0 then
+            local usedPct = ((total - free) / total) * 100
+            local wasOver = BagScanner._wasOverThreshold
+            if usedPct >= threshold and not wasOver then
+                local L = ns.L
+                UIErrorsFrame:AddMessage(format(L["BAG_FULL_WARNING"], math.floor(usedPct)), 1.0, 0.5, 0.0, 1.0)
+                BagScanner._wasOverThreshold = true
+            elseif usedPct < threshold then
+                BagScanner._wasOverThreshold = false
+            end
+        end
+    end
+
     -- Notify with list of updated bags for incremental updates
     if ns.OnBagsUpdated then
         ns.OnBagsUpdated(bagsToScan)
+    end
+
+    -- Fire event for listeners (DataBroker, etc.)
+    local Events = ns:GetModule("Events")
+    if Events then
+        Events:FireThrottled("BAGS_UPDATED", 0.5)
     end
 end
 

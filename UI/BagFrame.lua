@@ -17,6 +17,7 @@ local LayoutEngine = ns:GetModule("BagFrame.LayoutEngine")
 local Utils = ns:GetModule("Utils")
 local CategoryHeaderPool = ns:GetModule("CategoryHeaderPool")
 local Theme = ns:GetModule("Theme")
+local GetItemInfo = ns:GetModule("Compatibility.API").GetItemInfo
 
 local frame
 local itemButtons = {}
@@ -82,8 +83,6 @@ end
 
 -- Forward declarations
 local UpdateFrameAppearance
-local SaveFramePosition
-local RestoreFramePosition
 local RegisterCombatEndCallback
 
 -------------------------------------------------
@@ -202,7 +201,7 @@ local function CreateBagFrame()
 
     -- Initialize header component
     f.titleBar = Header:Init(f)
-    Header:SetDragCallback(SaveFramePosition)
+    Header:SetDragCallback(function() Database:SaveFramePosition(frame, "frame") end)
 
     -- Initialize search bar component
     f.searchBar = SearchBar:Init(f)
@@ -313,6 +312,7 @@ end
 
 function BagFrame:Refresh()
     if not frame then return end
+    local refreshStart = debugprofilestop()
 
     local viewType = Database:GetSetting("bagViewType") or "single"
 
@@ -366,6 +366,12 @@ function BagFrame:Refresh()
     local columns = Database:GetSetting("bagColumns")
     local hasSearch = SearchBar:HasActiveFilters(frame)
     -- viewType already declared at top of function
+
+    -- Compact mode reduces spacing
+    local compactMode = Database:GetSetting("compactMode")
+    if compactMode then
+        spacing = math.max(0, spacing - 2)
+    end
 
     -- Calculate common settings
     local showSearchBar = Database:GetSetting("showSearchBar")
@@ -443,6 +449,10 @@ function BagFrame:Refresh()
 
     -- Save current view type for detecting view switches
     lastLayoutSettings = { viewType = viewType }
+
+    -- Track refresh performance
+    ns.perfStats.lastRefreshTime = debugprofilestop() - refreshStart
+    ns.perfStats.refreshCount = ns.perfStats.refreshCount + 1
 end
 
 function BagFrame:RefreshSingleView(bags, bagsToShow, settings, hasSearch, isViewingCached)
@@ -1007,7 +1017,7 @@ end
 function BagFrame:Toggle()
     if not frame then
         frame = CreateBagFrame()
-        RestoreFramePosition()
+        Database:RestoreFramePosition(frame, "frame", "BOTTOMRIGHT", "BOTTOMRIGHT", -5, 5)
     end
 
     if frame:IsShown() then
@@ -1030,7 +1040,7 @@ end
 function BagFrame:Show()
     if not frame then
         frame = CreateBagFrame()
-        RestoreFramePosition()
+        Database:RestoreFramePosition(frame, "frame", "BOTTOMRIGHT", "BOTTOMRIGHT", -5, 5)
     end
 
     BagScanner:ScanAllBags()
@@ -1588,12 +1598,25 @@ UpdateFrameAppearance = function()
 
     local isViewingCached = viewingCharacter ~= nil
 
-    -- Background alpha
+    -- UI Scale
+    local uiScale = Database:GetSetting("uiScale") / 100
+    frame:SetScale(uiScale)
+
+    -- Background alpha and custom color
     local bgAlpha = Database:GetSetting("bgAlpha") / 100
     local showBorders = Database:GetSetting("showBorders")
+    local borderOpacity = Database:GetSetting("borderOpacity") / 100
 
-    -- Apply theme background (ButtonFrameTemplate for Blizzard, backdrop for Guda)
-    Theme:ApplyFrameBackground(frame, bgAlpha, showBorders)
+    local customBgColor = nil
+    local bgR = Database:GetSetting("bgColorR")
+    local bgG = Database:GetSetting("bgColorG")
+    local bgB = Database:GetSetting("bgColorB")
+    if bgR and bgG and bgB and (bgR + bgG + bgB) > 0 then
+        customBgColor = { bgR / 255, bgG / 255, bgB / 255 }
+    end
+
+    -- Apply theme background
+    Theme:ApplyFrameBackground(frame, bgAlpha, showBorders, customBgColor, borderOpacity)
 
     Header:SetBackdropAlpha(bgAlpha)
 
@@ -1656,6 +1679,11 @@ local appearanceSettings = {
     questBarColumns = true,
     theme = true,
     retailEmptySlots = true,
+    uiScale = true,
+    bgColorR = true,
+    bgColorG = true,
+    bgColorB = true,
+    borderOpacity = true,
 }
 
 -- Settings that need both appearance update AND resize
@@ -1663,6 +1691,7 @@ local resizeSettings = {
     showFooter = true,
     showSearchBar = true,
     showFilterChips = true,
+    compactMode = true,
 }
 
 -- Debounce state for QuestBar toggle
@@ -1724,31 +1753,6 @@ local function OnSettingChanged(event, key, value)
         BagFrame:Refresh()
     else
         BagFrame:Refresh()
-    end
-end
-
-SaveFramePosition = function()
-    if not frame then return end
-    local point, _, relativePoint, x, y = frame:GetPoint()
-    Database:SetSetting("framePoint", point)
-    Database:SetSetting("frameRelativePoint", relativePoint)
-    Database:SetSetting("frameX", x)
-    Database:SetSetting("frameY", y)
-end
-
-RestoreFramePosition = function()
-    if not frame then return end
-    local point = Database:GetSetting("framePoint")
-    local relativePoint = Database:GetSetting("frameRelativePoint")
-    local x = Database:GetSetting("frameX")
-    local y = Database:GetSetting("frameY")
-
-    frame:ClearAllPoints()
-    if point and x and y then
-        frame:SetPoint(point, UIParent, relativePoint, x, y)
-    else
-        -- Default position: bottom-right corner
-        frame:SetPoint("BOTTOMRIGHT", UIParent, "BOTTOMRIGHT", -5, 5)
     end
 end
 
@@ -2087,7 +2091,7 @@ Events:OnPlayerLogin(function()
     -- (ContainerFrameItemButtonTemplate is a secure template that cannot be created during combat)
     if not frame then
         frame = CreateBagFrame()
-        RestoreFramePosition()
+        Database:RestoreFramePosition(frame, "frame", "BOTTOMRIGHT", "BOTTOMRIGHT", -5, 5)
     end
     ItemButton:PreWarm(frame.container, 200)
 

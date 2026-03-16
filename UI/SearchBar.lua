@@ -543,6 +543,10 @@ local function CreateSearchBar(parent)
         searchBox:ClearFocus()
     end)
 
+    -- Debounce timer for search callbacks (avoid re-filtering on every keystroke)
+    local searchDebounceTimer = nil
+    local SEARCH_DEBOUNCE_DELAY = 0.15  -- 150ms
+
     searchBox:SetScript("OnTextChanged", function(self)
         local text = self:GetText()
         if text == "" then
@@ -556,7 +560,7 @@ local function CreateSearchBar(parent)
         end
         searchBar.searchText = text
 
-        -- Parse search input through SearchParser
+        -- Parse search input through SearchParser (cheap, cached)
         if SearchParser then
             searchBar.filterState.parsed = SearchParser:ParseSearchInput(text)
         else
@@ -565,8 +569,23 @@ local function CreateSearchBar(parent)
 
         UpdateTransferButton(searchBar)
 
-        if searchBar.onSearchChanged then
-            searchBar.onSearchChanged(text)
+        -- Debounce the expensive callback (re-filters all items)
+        if searchDebounceTimer then
+            searchDebounceTimer:Cancel()
+        end
+
+        if text == "" then
+            -- Immediate callback on clear for responsive feel
+            if searchBar.onSearchChanged then
+                searchBar.onSearchChanged(text)
+            end
+        else
+            searchDebounceTimer = C_Timer.NewTimer(SEARCH_DEBOUNCE_DELAY, function()
+                searchDebounceTimer = nil
+                if searchBar.onSearchChanged then
+                    searchBar.onSearchChanged(searchBar.searchText)
+                end
+            end)
         end
     end)
 

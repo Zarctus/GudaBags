@@ -279,7 +279,10 @@ end
 --- @param frame table The main addon frame
 --- @param bgAlpha number 0-1 opacity
 --- @param showBorders boolean Whether borders are visible
-function Theme:ApplyFrameBackground(frame, bgAlpha, showBorders)
+--- @param customBgColor table|nil Optional {r, g, b} override for background color
+--- @param borderOpacity number|nil 0-1 border opacity (defaults to bgAlpha)
+function Theme:ApplyFrameBackground(frame, bgAlpha, showBorders, customBgColor, borderOpacity)
+    borderOpacity = borderOpacity or bgAlpha
     local useMetal = self:GetValue("useMetalFrame")
     if useMetal then
         -- Hide other theme elements
@@ -295,7 +298,7 @@ function Theme:ApplyFrameBackground(frame, bgAlpha, showBorders)
         -- Show/hide border pieces
         for _, piece in ipairs(mf.edges) do
             piece:SetShown(showBorders)
-            piece:SetAlpha(showBorders and bgAlpha or 0)
+            piece:SetAlpha(showBorders and borderOpacity or 0)
         end
         return
     end
@@ -307,10 +310,6 @@ function Theme:ApplyFrameBackground(frame, bgAlpha, showBorders)
         if frame.metalFrame then frame.metalFrame:Hide() end
         -- Blizzard theme: ButtonFrameTemplate child provides bg + border
         local bliz = EnsureBlizzardBg(frame)
-        -- Match the frame's own level so the Blizzard bg covers frames below,
-        -- just like SetBackdrop does for the Guda theme.  The frame's children
-        -- (header, item buttons, scroll child) already have higher explicit
-        -- levels so they render on top.
         local baseLvl = frame:GetFrameLevel()
         bliz:SetFrameLevel(baseLvl)
         bliz:SetAllPoints(frame)
@@ -318,6 +317,9 @@ function Theme:ApplyFrameBackground(frame, bgAlpha, showBorders)
 
         -- Background texture
         bliz.Bg:SetAlpha(bgAlpha)
+        if customBgColor then
+            bliz.Bg:SetVertexColor(customBgColor[1], customBgColor[2], customBgColor[3])
+        end
         bliz.Bg:ClearAllPoints()
         if bliz.TopTileStreaks then
             bliz.TopTileStreaks:Hide()
@@ -340,7 +342,7 @@ function Theme:ApplyFrameBackground(frame, bgAlpha, showBorders)
         for _, key in ipairs(classicBorderKeys) do
             if bliz[key] then
                 bliz[key]:SetShown(showBorders)
-                bliz[key]:SetAlpha(bgAlpha)
+                bliz[key]:SetAlpha(borderOpacity)
             end
         end
 
@@ -349,7 +351,7 @@ function Theme:ApplyFrameBackground(frame, bgAlpha, showBorders)
         -- since Bg handles the background.
         if bliz.NineSlice then
             bliz.NineSlice:SetShown(showBorders)
-            bliz.NineSlice:SetAlpha(bgAlpha)
+            bliz.NineSlice:SetAlpha(borderOpacity)
             bliz.NineSlice:SetFrameLevel(baseLvl)
             bliz.NineSlice:ClearAllPoints()
             bliz.NineSlice:SetPoint("TOPLEFT", bliz, "TOPLEFT", -BLIZ_EXTEND_LEFT, BLIZ_EXTEND_TOP)
@@ -373,12 +375,12 @@ function Theme:ApplyFrameBackground(frame, bgAlpha, showBorders)
         if frame.themeBg then frame.themeBg:Hide() end
 
         frame:SetBackdrop(self:GetValue("backdrop"))
-        local bg = self:GetValue("frameBg")
+        local bg = customBgColor or self:GetValue("frameBg")
         frame:SetBackdropColor(bg[1], bg[2], bg[3], bgAlpha)
 
         if showBorders then
             local border = self:GetValue("frameBorder")
-            frame:SetBackdropBorderColor(border[1], border[2], border[3], border[4])
+            frame:SetBackdropBorderColor(border[1], border[2], border[3], borderOpacity)
         else
             frame:SetBackdropBorderColor(0, 0, 0, 0)
         end

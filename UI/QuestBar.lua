@@ -7,6 +7,7 @@ local Constants = ns.Constants
 local Database = ns:GetModule("Database")
 local Events = ns:GetModule("Events")
 local Utils = ns:GetModule("Utils")
+local GetItemInfo = ns:GetModule("Compatibility.API").GetItemInfo
 
 -- Local state
 local frame = nil

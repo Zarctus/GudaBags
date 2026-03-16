@@ -7,6 +7,7 @@ local L = ns.L
 local Database = ns:GetModule("Database")
 local Events = ns:GetModule("Events")
 local Utils = ns:GetModule("Utils")
+local GetItemInfo = ns:GetModule("Compatibility.API").GetItemInfo
 
 -- Track if we've already added inventory section to prevent duplicates
 local tooltipReady = true
@@ -274,6 +275,7 @@ function Tooltip:ShowForItem(button)
                 GameTooltip:AddLine(L["HINT_TRACK"], 0.7, 0.7, 0.7)
             end
         end
+        GameTooltip:AddLine(L["HINT_FAVORITE"], 0.7, 0.7, 0.7)
     end
 
     GameTooltip:Show()

@@ -120,7 +120,9 @@ local function ResetButton(pool, button)
     if button.craftingQualityIcon then button.craftingQualityIcon:Hide() end
     if button.pinIcon then button.pinIcon:Hide() end
     if button.pinIconShadow then button.pinIconShadow:Hide() end
+    if button.favoriteStar then button.favoriteStar:Hide() end
     if button.searchGlow then button.searchGlow:Hide() end
+    if button.newItemGlow then button.newItemGlow:Hide(); if button.newItemGlow.animGroup then button.newItemGlow.animGroup:Stop() end end
     if button.cooldown then CooldownFrame_Set(button.cooldown, 0, 0, false) end
 end
 
@@ -137,21 +139,19 @@ local function ApplyFontSize(button, fontSize)
     end
 end
 
+-- Pre-compiled tool name patterns for fast lookup
+local TOOL_PATTERNS = {
+    "mining pick", "fishing pole", "fishing rod", "skinning knife",
+    "blacksmith hammer", "jumper cables", "gnomish", "goblin",
+    "arclight spanner", "gyromatic",
+}
+
 local function IsTool(itemName)
     if not itemName then return false end
     local nameLower = string.lower(itemName)
-
-    if string.find(nameLower, "mining pick") then return true end
-    if string.find(nameLower, "fishing pole") then return true end
-    if string.find(nameLower, "fishing rod") then return true end
-    if string.find(nameLower, "skinning knife") then return true end
-    if string.find(nameLower, "blacksmith hammer") then return true end
-    if string.find(nameLower, "jumper cables") then return true end
-    if string.find(nameLower, "gnomish") then return true end
-    if string.find(nameLower, "goblin") then return true end
-    if string.find(nameLower, "arclight spanner") then return true end
-    if string.find(nameLower, "gyromatic") then return true end
-
+    for _, pattern in ipairs(TOOL_PATTERNS) do
+        if string.find(nameLower, pattern, 1, true) then return true end
+    end
     return false
 end
 
@@ -303,19 +303,16 @@ local function CreateButton(parent)
         end
     end
 
-    DisableOverlay(button.ItemContextOverlay)
-    DisableOverlay(button.SearchOverlay)
-    DisableOverlay(button.ExtendedSlot)
-    DisableOverlay(button.UpgradeIcon)
-    DisableOverlay(button.ItemSlotBackground)
-    DisableOverlay(button.JunkIcon)
-    DisableOverlay(button.flash)
-    DisableOverlay(button.NewItem)
-    DisableOverlay(button.Cooldown)  -- Template's cooldown (we create our own)
-    DisableOverlay(button.WidgetContainer)  -- Retail widget container
-    DisableOverlay(button.LevelLinkLockIcon)
-    DisableOverlay(button.BagIndicator)
-    DisableOverlay(button.StackSplitFrame)
+    -- Batch disable all template overlays from a pre-defined list
+    local TEMPLATE_OVERLAYS = {
+        "ItemContextOverlay", "SearchOverlay", "ExtendedSlot",
+        "UpgradeIcon", "ItemSlotBackground", "JunkIcon", "flash",
+        "NewItem", "Cooldown", "WidgetContainer",
+        "LevelLinkLockIcon", "BagIndicator", "StackSplitFrame",
+    }
+    for _, name in ipairs(TEMPLATE_OVERLAYS) do
+        DisableOverlay(button[name])
+    end
 
     -- Disable any mouse blocking on the icon texture layer
     if button.icon then button.icon:SetDrawLayer("ARTWORK", 0) end
@@ -521,6 +518,14 @@ local function CreateButton(parent)
     pinIcon:Hide()
     button.pinIcon = pinIcon
 
+    -- Favorite star icon (top-right corner)
+    local favoriteStar = button:CreateTexture(nil, "OVERLAY", nil, 5)
+    favoriteStar:SetSize(14, 14)
+    favoriteStar:SetPoint("TOPRIGHT", button, "TOPRIGHT", -1, -1)
+    favoriteStar:SetAtlas("PetJournal-FavoritesIcon")
+    favoriteStar:Hide()
+    button.favoriteStar = favoriteStar
+
     -- Item level text (top-left corner)
     local itemLevelText = button:CreateFontString(nil, "OVERLAY", nil)
     itemLevelText:SetFont(Constants.FONTS.DEFAULT, 12, "OUTLINE")
@@ -573,6 +578,18 @@ local function CreateButton(parent)
             -- Don't show tooltip for Empty/Soul pseudo-item buttons
             if not self.isEmptySlotButton and not (self.itemData and self.itemData.isEmptySlots) then
                 Tooltip:ShowForItem(self)
+            end
+
+            -- Dismiss new-item glow on hover
+            if self.itemData and self.itemData.itemID then
+                local RecentItems = ns:GetModule("RecentItems")
+                if RecentItems and RecentItems:IsRecent(self.itemData.itemID) then
+                    RecentItems:RemoveRecent(self.itemData.itemID)
+                    if self.newItemGlow then
+                        self.newItemGlow.animGroup:Stop()
+                        self.newItemGlow:Hide()
+                    end
+                end
             end
 
 
@@ -758,6 +775,25 @@ local function CreateButton(parent)
                     if TrackedBar then
                         TrackedBar:ToggleTrackItem(self.itemData.itemID)
                     end
+                end
+                return
+            end
+
+            -- Toggle favorite with Ctrl+Click (without Alt)
+            if mouseButton == "LeftButton" and IsControlKeyDown() and not IsAltKeyDown() and not IsShiftKeyDown() then
+                if self.itemData and self.itemData.itemID and not self.isReadOnly then
+                    local isFav = Database:ToggleFavorite(self.itemData.itemID)
+                    if self.favoriteStar then
+                        self.favoriteStar:SetShown(isFav)
+                    end
+                    local L = ns.L
+                    if isFav then
+                        ns:Print(format(L["FAVORITE_ADDED"], self.itemData.name or ""))
+                    else
+                        ns:Print(format(L["FAVORITE_REMOVED"], self.itemData.name or ""))
+                    end
+                    -- Refresh to update category assignment
+                    Events:Fire("CATEGORIES_UPDATED")
                 end
                 return
             end
@@ -1124,6 +1160,65 @@ function ItemButton:InvalidateSettingsCache()
     cachedSettings = nil
 end
 
+-- New-item glow: bright pulsing golden border + full-coverage overlay for maximum visibility
+local function EnsureNewItemGlow(button)
+    if button.newItemGlow then return button.newItemGlow end
+
+    local glow = CreateFrame("Frame", nil, button)
+    glow:SetPoint("TOPLEFT", button, "TOPLEFT", -6, 6)
+    glow:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", 6, -6)
+    glow:SetFrameLevel(button:GetFrameLevel() + Constants.FRAME_LEVELS.BORDER + 1)
+
+    -- Full-coverage golden overlay texture on the item icon itself
+    local overlay = glow:CreateTexture(nil, "ARTWORK", nil, 7)
+    overlay:SetPoint("TOPLEFT", button, "TOPLEFT", 0, 0)
+    overlay:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", 0, 0)
+    overlay:SetTexture("Interface\\Buttons\\WHITE8x8")
+    overlay:SetVertexColor(1, 0.85, 0.3, 0.25)
+    overlay:SetBlendMode("ADD")
+
+    -- Inner border layer (tighter, very bright gold)
+    local inner = CreateFrame("Frame", nil, glow, "BackdropTemplate")
+    inner:SetPoint("TOPLEFT", glow, "TOPLEFT", 3, -3)
+    inner:SetPoint("BOTTOMRIGHT", glow, "BOTTOMRIGHT", -3, 3)
+    inner:SetBackdrop({
+        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+        edgeSize = 14,
+        insets = { left = 3, right = 3, top = 3, bottom = 3 },
+    })
+    inner:SetBackdropBorderColor(1, 0.9, 0.3, 1)
+
+    -- Outer border layer (wider, bright golden glow)
+    local outer = CreateFrame("Frame", nil, glow, "BackdropTemplate")
+    outer:SetAllPoints(glow)
+    outer:SetBackdrop({
+        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+        edgeSize = 16,
+        insets = { left = 3, right = 3, top = 3, bottom = 3 },
+    })
+    outer:SetBackdropBorderColor(1, 0.8, 0.2, 0.7)
+
+    -- Blinking animation: pulse alpha between 0.35 and 1.0 (never fully invisible)
+    local animGroup = glow:CreateAnimationGroup()
+    local fadeOut = animGroup:CreateAnimation("Alpha")
+    fadeOut:SetFromAlpha(1)
+    fadeOut:SetToAlpha(0.35)
+    fadeOut:SetDuration(0.5)
+    fadeOut:SetOrder(1)
+    fadeOut:SetSmoothing("IN_OUT")
+    local fadeIn = animGroup:CreateAnimation("Alpha")
+    fadeIn:SetFromAlpha(0.35)
+    fadeIn:SetToAlpha(1)
+    fadeIn:SetDuration(0.5)
+    fadeIn:SetOrder(2)
+    fadeIn:SetSmoothing("IN_OUT")
+    animGroup:SetLooping("REPEAT")
+    glow.animGroup = animGroup
+    glow:Hide()
+    button.newItemGlow = glow
+    return glow
+end
+
 function ItemButton:SetItem(button, itemData, size, isReadOnly)
     -- Hide Blizzard template's built-in textures (they may re-show from events)
     if button.IconBorder then button.IconBorder:Hide() end
@@ -1410,6 +1505,24 @@ function ItemButton:SetItem(button, itemData, size, isReadOnly)
 
         -- Pin icon (bottom-right corner)
         ItemButton:UpdatePinIcon(button)
+        -- Favorite star (top-right corner)
+        ItemButton:UpdateFavoriteStar(button)
+
+        -- New item glow (pulsing golden border for recently acquired items)
+        if not isReadOnly and itemData.itemID then
+            local RecentItems = ns:GetModule("RecentItems")
+            if RecentItems and RecentItems:IsRecent(itemData.itemID) then
+                local glow = EnsureNewItemGlow(button)
+                glow:Show()
+                glow.animGroup:Play()
+            elseif button.newItemGlow then
+                button.newItemGlow.animGroup:Stop()
+                button.newItemGlow:Hide()
+            end
+        elseif button.newItemGlow then
+            button.newItemGlow.animGroup:Stop()
+            button.newItemGlow:Hide()
+        end
     else
         button.wrapper:SetID(0)
         button:SetID(0)
@@ -1478,6 +1591,18 @@ function ItemButton:UpdatePinIcon(button)
     end
     button.pinIcon:Hide()
     if button.pinIconShadow then button.pinIconShadow:Hide() end
+end
+
+function ItemButton:UpdateFavoriteStar(button)
+    if not button.favoriteStar then return end
+    local itemData = button.itemData
+    if itemData and itemData.itemID and not button.isReadOnly then
+        if Database:IsFavorite(itemData.itemID) then
+            button.favoriteStar:Show()
+            return
+        end
+    end
+    button.favoriteStar:Hide()
 end
 
 function ItemButton:SetEmpty(button, bagID, slot, size, isReadOnly, isGuildBank)
@@ -1560,9 +1685,15 @@ function ItemButton:SetEmpty(button, bagID, slot, size, isReadOnly, isGuildBank)
     if button.cooldown then
         CooldownFrame_Set(button.cooldown, 0, 0, false)
     end
+    if button.newItemGlow then
+        button.newItemGlow.animGroup:Stop()
+        button.newItemGlow:Hide()
+    end
 
     -- Show pin icon for empty pinned slots
     ItemButton:UpdatePinIcon(button)
+    -- Hide favorite star on empty slots
+    if button.favoriteStar then button.favoriteStar:Hide() end
 end
 
 function ItemButton:UpdateSlotAlpha(alpha)

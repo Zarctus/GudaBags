@@ -78,6 +78,7 @@ function DefaultCategories:GetRuleTypes()
             {value = "Midnight",       label = "Midnight"},
         }},
         { id = "isCurrentExpansion", label = L["RULE_CURRENT_EXPANSION"], valueType = "boolean" },
+        { id = "isFavorite", label = L["RULE_FAVORITE"], valueType = "boolean" },
     }
 end
 
@@ -107,6 +108,7 @@ local CATEGORY_LOCALE_KEYS = {
     ["Soul"] = "CAT_SOUL",
     ["Current Expansion"] = "CAT_CURRENT_EXPANSION",
     ["Old Expansions"] = "CAT_OLD_EXPANSIONS",
+    ["Favorites"] = "CAT_FAVORITES",
 }
 
 -- Locale keys for group names
@@ -172,6 +174,19 @@ DefaultCategories.DEFINITIONS = {
         enabled = true,
         isBuiltIn = true,
         group = "Other",
+    },
+
+    ["Favorites"] = {
+        name = "Favorites",
+        icon = "Interface\\Icons\\Achievement_GuildPerk_HappyHour",
+        rules = {
+            { type = "isFavorite", value = true },
+        },
+        matchMode = "all",
+        priority = 95,
+        enabled = true,
+        isBuiltIn = true,
+        group = "Main",
     },
 
     ["Recent"] = {

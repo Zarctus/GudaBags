@@ -228,6 +228,12 @@ Constants.DEFAULTS = {
     splitFullWidthReagent = true,
     splitFullWidthKeyring = true,
     bgAlpha = 85,
+    uiScale = 100,
+    bgColorR = nil,
+    bgColorG = nil,
+    bgColorB = nil,
+    borderOpacity = 100,
+    compactMode = false,
     locked = false,
     showBorders = true,
     showSearchBar = true,
@@ -252,6 +258,8 @@ Constants.DEFAULTS = {
     autoVendorJunk = true,  -- Auto sell gray items at merchants
     retailEmptySlots = false,  -- Use retail-style empty slot textures (Classic only)
     gudaSort = false,  -- Use GudaBags custom sort engine instead of Blizzard's (Retail only)
+    categorySortOrder = "quality",  -- Sort order within categories: quality, name, itemLevel, type
+    bagFullThreshold = 0,  -- Bag full warning threshold (0=disabled, 50-100%)
 
     -- Icons
     iconSize = 37,
@@ -289,6 +297,12 @@ Constants.DEFAULTS = {
     guildBankFrameRelativePoint = nil,
     guildBankFrameX = nil,
     guildBankFrameY = nil,
+
+    -- Mail frame position
+    mailFramePoint = nil,
+    mailFrameRelativePoint = nil,
+    mailFrameX = nil,
+    mailFrameY = nil,
 }
 
 Constants.ICON = {

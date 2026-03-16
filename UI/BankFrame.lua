@@ -166,8 +166,6 @@ function BankFrame:HandleContainerDrop()
 end
 
 local UpdateFrameAppearance
-local SaveFramePosition
-local RestoreFramePosition
 local RegisterCombatEndCallback
 
 local function CreateBankFrame()
@@ -239,7 +237,7 @@ local function CreateBankFrame()
     end)
 
     f.titleBar = BankHeader:Init(f)
-    BankHeader:SetDragCallback(SaveFramePosition)
+    BankHeader:SetDragCallback(function() Database:SaveFramePosition(frame, "bankFrame") end)
 
     searchBar = SearchBar:Init(f)
     SearchBar:SetSearchCallback(f, function(text)
@@ -2017,7 +2015,7 @@ function BankFrame:Toggle()
 
     if not frame then
         frame = CreateBankFrame()
-        RestoreFramePosition()
+        Database:RestoreFramePosition(frame, "bankFrame", "CENTER", "CENTER", 0, 0)
     end
 
     if frame:IsShown() then
@@ -2037,7 +2035,7 @@ function BankFrame:Show()
 
     if not frame then
         frame = CreateBankFrame()
-        RestoreFramePosition()
+        Database:RestoreFramePosition(frame, "bankFrame", "CENTER", "CENTER", 0, 0)
     end
 
     if BankScanner:IsBankOpen() then
@@ -2481,7 +2479,7 @@ ns.OnBankOpened = function()
 
     if not frame then
         frame = CreateBankFrame()
-        RestoreFramePosition()
+        Database:RestoreFramePosition(frame, "bankFrame", "CENTER", "CENTER", 0, 0)
     end
 
     -- Always reset to current character's bank when opening the banker
@@ -2506,11 +2504,24 @@ UpdateFrameAppearance = function()
     local isViewingCached = viewingCharacter ~= nil
     local isBankOpen = BankScanner:IsBankOpen()
 
+    -- UI Scale
+    local uiScale = Database:GetSetting("uiScale") / 100
+    frame:SetScale(uiScale)
+
     local bgAlpha = Database:GetSetting("bgAlpha") / 100
     local showBorders = Database:GetSetting("showBorders")
+    local borderOpacity = Database:GetSetting("borderOpacity") / 100
 
-    -- Apply theme background (ButtonFrameTemplate for Blizzard, backdrop for Guda)
-    Theme:ApplyFrameBackground(frame, bgAlpha, showBorders)
+    local customBgColor = nil
+    local bgR = Database:GetSetting("bgColorR")
+    local bgG = Database:GetSetting("bgColorG")
+    local bgB = Database:GetSetting("bgColorB")
+    if bgR and bgG and bgB and (bgR + bgG + bgB) > 0 then
+        customBgColor = { bgR / 255, bgG / 255, bgB / 255 }
+    end
+
+    -- Apply theme background
+    Theme:ApplyFrameBackground(frame, bgAlpha, showBorders, customBgColor, borderOpacity)
 
     BankHeader:SetBackdropAlpha(bgAlpha)
 
@@ -2586,12 +2597,18 @@ local appearanceSettings = {
     questBarColumns = true,
     theme = true,
     retailEmptySlots = true,
+    uiScale = true,
+    bgColorR = true,
+    bgColorG = true,
+    bgColorB = true,
+    borderOpacity = true,
 }
 
 local resizeSettings = {
     showFooter = true,
     showSearchBar = true,
     showFilterChips = true,
+    compactMode = true,
 }
 
 local function OnSettingChanged(event, key, value)
@@ -2617,30 +2634,6 @@ local function OnSettingChanged(event, key, value)
         BankFrame:Refresh()
     else
         BankFrame:Refresh()
-    end
-end
-
-SaveFramePosition = function()
-    if not frame then return end
-    local point, _, relativePoint, x, y = frame:GetPoint()
-    Database:SetSetting("bankFramePoint", point)
-    Database:SetSetting("bankFrameRelativePoint", relativePoint)
-    Database:SetSetting("bankFrameX", x)
-    Database:SetSetting("bankFrameY", y)
-end
-
-RestoreFramePosition = function()
-    if not frame then return end
-    local point = Database:GetSetting("bankFramePoint")
-    local relativePoint = Database:GetSetting("bankFrameRelativePoint")
-    local x = Database:GetSetting("bankFrameX")
-    local y = Database:GetSetting("bankFrameY")
-
-    frame:ClearAllPoints()
-    if point and x and y then
-        frame:SetPoint(point, UIParent, relativePoint, x, y)
-    else
-        frame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
     end
 end
 

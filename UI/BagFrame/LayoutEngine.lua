@@ -4,6 +4,7 @@ local LayoutEngine = {}
 ns:RegisterModule("BagFrame.LayoutEngine", LayoutEngine)
 
 local Constants = ns.Constants
+local GetItemInfo = ns:GetModule("Compatibility.API").GetItemInfo
 
 -- Check if an interaction window is open (bank, trade, mail, merchant, auction)
 -- When these are open, items should be shown ungrouped for easier interaction
@@ -951,6 +952,9 @@ end
 -- Sort items within a category section
 -- For merged groups, items are sorted by category order first to maintain category grouping
 function LayoutEngine:SortCategoryItems(items, isMergedGroup)
+    local Database = ns:GetModule("Database")
+    local sortOrder = Database and Database:GetSetting("categorySortOrder") or "quality"
+
     table.sort(items, function(a, b)
         -- For merged groups, sort by category order first
         if isMergedGroup then
@@ -964,7 +968,81 @@ function LayoutEngine:SortCategoryItems(items, isMergedGroup)
         local aData = a.itemData
         local bData = b.itemData
 
-        -- Quality (descending)
+        -- Dynamic sort based on categorySortOrder setting
+        if sortOrder == "name" then
+            -- Name → Quality → Item Level → Item ID → Count
+            local aName = aData.name or ""
+            local bName = bData.name or ""
+            if aName ~= bName then return aName < bName end
+
+            local aQuality = aData.quality or 0
+            local bQuality = bData.quality or 0
+            if aQuality ~= bQuality then return aQuality > bQuality end
+
+            local aKey = GetCategorySortKey(aData)
+            local bKey = GetCategorySortKey(bData)
+            if aKey and bKey and aKey.itemLevel ~= bKey.itemLevel then
+                return aKey.itemLevel > bKey.itemLevel
+            end
+
+            local aID = aData.itemID or 0
+            local bID = bData.itemID or 0
+            if aID ~= bID then return aID < bID end
+
+            return (aData.count or 1) > (bData.count or 1)
+
+        elseif sortOrder == "itemLevel" then
+            -- Item Level → Quality → ClassID → SubClassID → Type → Name → Count
+            local aKey = GetCategorySortKey(aData)
+            local bKey = GetCategorySortKey(bData)
+            if aKey and bKey then
+                if aKey.itemLevel ~= bKey.itemLevel then return aKey.itemLevel > bKey.itemLevel end
+            end
+
+            local aQuality = aData.quality or 0
+            local bQuality = bData.quality or 0
+            if aQuality ~= bQuality then return aQuality > bQuality end
+
+            if aKey and bKey then
+                if aKey.classID ~= bKey.classID then return aKey.classID < bKey.classID end
+                if aKey.subClassID ~= bKey.subClassID then return aKey.subClassID < bKey.subClassID end
+            end
+
+            local aType = aData.itemType or ""
+            local bType = bData.itemType or ""
+            if aType ~= bType then return aType < bType end
+
+            local aName = aData.name or ""
+            local bName = bData.name or ""
+            if aName ~= bName then return aName < bName end
+
+            return (aData.count or 1) > (bData.count or 1)
+
+        elseif sortOrder == "type" then
+            -- ClassID → SubClassID → Quality → Item Level → Name → Count
+            local aKey = GetCategorySortKey(aData)
+            local bKey = GetCategorySortKey(bData)
+            if aKey and bKey then
+                if aKey.classID ~= bKey.classID then return aKey.classID < bKey.classID end
+                if aKey.subClassID ~= bKey.subClassID then return aKey.subClassID < bKey.subClassID end
+            end
+
+            local aQuality = aData.quality or 0
+            local bQuality = bData.quality or 0
+            if aQuality ~= bQuality then return aQuality > bQuality end
+
+            if aKey and bKey and aKey.itemLevel ~= bKey.itemLevel then
+                return aKey.itemLevel > bKey.itemLevel
+            end
+
+            local aName = aData.name or ""
+            local bName = bData.name or ""
+            if aName ~= bName then return aName < bName end
+
+            return (aData.count or 1) > (bData.count or 1)
+
+        else
+            -- Default "quality": Quality → ClassID → SubClassID → Item Level → Type → SubType → ItemID → Name → Count
         local aQuality = aData.quality or 0
         local bQuality = bData.quality or 0
         if aQuality ~= bQuality then
@@ -1022,6 +1100,7 @@ function LayoutEngine:SortCategoryItems(items, isMergedGroup)
 
         -- Stack count (higher stacks first)
         return (aData.count or 1) > (bData.count or 1)
+        end -- end of sort order branches
     end)
 end
 

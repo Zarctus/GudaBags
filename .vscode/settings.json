@@ -84,7 +84,8 @@
         "PanelTemplates_TabResize",
         "PanelTemplates_DeselectTab",
         "TooltipDataProcessor",
-        "ItemRefTooltip"
+        "ItemRefTooltip",
+        "CLOSE"
     ],
     "Lua.type.weakUnionCheck": true
 }

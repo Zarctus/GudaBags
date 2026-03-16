@@ -110,7 +110,7 @@ local function CreateRetailTab(container, tabInfo, index, prevTab, selectFn)
 
     -- Auto-size based on text
     local textWidth = label:GetStringWidth()
-    tab:SetSize(textWidth + 36, 32)
+    tab:SetSize(textWidth + 20, 32)
 
     -- Tint all tab textures
     function tab:SetTint(r, g, b)

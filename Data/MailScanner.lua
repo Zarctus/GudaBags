@@ -5,6 +5,7 @@ ns:RegisterModule("MailScanner", MailScanner)
 
 local Database = ns:GetModule("Database")
 local Events = ns:GetModule("Events")
+local GetItemInfo = ns:GetModule("Compatibility.API").GetItemInfo
 
 -- State
 local isMailboxOpen = false

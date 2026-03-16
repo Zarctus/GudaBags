@@ -28,3 +28,11 @@ function ns:Debug(...)
 end
 
 ns.debugMode = false
+
+-- Performance tracking
+ns.perfStats = {
+    lastScanTime = 0,      -- ms for last BagScanner:ScanDirtyBags
+    lastRefreshTime = 0,   -- ms for last BagFrame:Refresh
+    scanCount = 0,         -- total scans since login
+    refreshCount = 0,      -- total refreshes since login
+}

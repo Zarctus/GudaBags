@@ -4,6 +4,7 @@ local BagClassifier = {}
 ns:RegisterModule("BagFrame.BagClassifier", BagClassifier)
 
 local Constants = ns.Constants
+local GetItemInfoInstant = ns:GetModule("Compatibility.API").GetItemInfoInstant
 
 -- Map bag container subClassID to bag type string
 local subClassToBagType = {
@@ -30,7 +31,7 @@ function BagClassifier:GetBagTypeFromItemID(itemID)
         return "regular"
     end
 
-    local _, _, _, _, _, classID, subClassID = C_Item.GetItemInfoInstant(itemID)
+    local _, _, _, _, _, classID, subClassID = GetItemInfoInstant(itemID)
 
     -- If item info isn't available, default to regular
     if not classID then

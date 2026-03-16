@@ -4,6 +4,7 @@ local ItemScanner = {}
 ns:RegisterModule("ItemScanner", ItemScanner)
 
 local Constants = ns.Constants
+local GetItemInfo = ns:GetModule("Compatibility.API").GetItemInfo
 
 -- Get inventory slot for bank bag (same logic as BankFooter for API consistency)
 local function GetBankBagInvSlot(bankBagIndex)
@@ -23,6 +24,11 @@ local durabilityPattern
 if DURABILITY_TEMPLATE then
     durabilityPattern = string.gsub(DURABILITY_TEMPLATE, "%%[^%s]+", "(.+)")
 end
+
+-- Local references for hot-path functions
+local strfind = string.find
+local strlower = string.lower
+local mathabs = math.abs
 
 -- Tooltip result caching to avoid repeated expensive scans
 -- Cache by itemLink since the same item has the same properties
@@ -53,12 +59,18 @@ function ItemScanner:ClearTooltipCache()
     tooltipCache = {}
 end
 
+function ItemScanner:GetTooltipCacheSize()
+    local count = 0
+    for _ in pairs(tooltipCache) do count = count + 1 end
+    return count
+end
+
 local function IsRedColor(r, g, b)
     if not r or not g or not b then return false end
     if RED_FONT_COLOR then
-        local dr = math.abs(r - RED_FONT_COLOR.r)
-        local dg = math.abs(g - RED_FONT_COLOR.g)
-        local db = math.abs(b - RED_FONT_COLOR.b)
+        local dr = mathabs(r - RED_FONT_COLOR.r)
+        local dg = mathabs(g - RED_FONT_COLOR.g)
+        local db = mathabs(b - RED_FONT_COLOR.b)
         if dr < 0.1 and dg < 0.1 and db < 0.1 then
             return true
         end
@@ -133,35 +145,35 @@ local function ScanTooltipForItem(bagID, slot, itemType, itemID, itemLink, itemQ
                 if text then
                     -- Check for red text (unusable) - skip durability lines
                     if IsRedColor(r, g, b) then
-                        if not durabilityPattern or not string.find(text, durabilityPattern) then
+                        if not durabilityPattern or not strfind(text, durabilityPattern) then
                             isUsable = false
                         end
                     end
 
                     -- Check for quest item indicators (respect ignore list)
                     if not isQuestIgnored then
-                        if text == ITEM_BIND_QUEST or text:find("Quest Item") then
+                        if text == ITEM_BIND_QUEST or strfind(text, "Quest Item", 1, true) then
                             isQuestItem = true
                         end
-                        if text == ITEM_STARTS_QUEST or text:find("This Item Begins a Quest") then
+                        if text == ITEM_STARTS_QUEST or strfind(text, "This Item Begins a Quest", 1, true) then
                             isQuestStarter = true
                             isQuestItem = true
                         end
                     end
 
                     -- Check for item duration (e.g. "Duration: 1 hour")
-                    if not hasDuration and text:find("^Duration:") then
+                    if not hasDuration and strfind(text, "^Duration:") then
                         hasDuration = true
                     end
 
                     -- Check for special properties only for gray/white items (junk detection)
                     if needSpecialPropertiesCheck and not hasSpecialProperties then
-                        local textLower = text:lower()
+                        local textLower = strlower(text)
                         -- Use: or Equip: effects
-                        if textLower:find("use:") or textLower:find("equip:") then
+                        if strfind(textLower, "use:", 1, true) or strfind(textLower, "equip:", 1, true) then
                             hasSpecialProperties = true
                         -- Unique items
-                        elseif textLower:find("^unique") or textLower:find("unique%-equipped") then
+                        elseif strfind(textLower, "^unique") or strfind(textLower, "unique%-equipped") then
                             hasSpecialProperties = true
                         -- Green text (special effects)
                         elseif IsGreenColor(r, g, b) then
@@ -170,7 +182,7 @@ local function ScanTooltipForItem(bagID, slot, itemType, itemID, itemLink, itemQ
                         -- Also skip common non-special yellow text like "Crafting Reagent"
                         elseif i > 1 and IsYellowColor(r, g, b) then
                             -- Exclude common crafting/trade labels that aren't special
-                            if not textLower:find("crafting reagent") and not textLower:find("sell price") then
+                            if not strfind(textLower, "crafting reagent", 1, true) and not strfind(textLower, "sell price", 1, true) then
                                 hasSpecialProperties = true
                             end
                         end
@@ -184,7 +196,7 @@ local function ScanTooltipForItem(bagID, slot, itemType, itemID, itemLink, itemQ
                 local text = rightText:GetText()
                 local r, g, b = rightText:GetTextColor()
                 if text and IsRedColor(r, g, b) then
-                    if not durabilityPattern or not string.find(text, durabilityPattern) then
+                    if not durabilityPattern or not strfind(text, durabilityPattern) then
                         isUsable = false
                     end
                 end

@@ -232,6 +232,31 @@ commandHandlers["status"] = function()
     ns:Print("GuildBankFrame: " .. (gbFrame and "loaded" or "NOT LOADED"))
 end
 
+-- Performance stats
+commandHandlers["perf"] = function()
+    local stats = ns.perfStats
+    ns:Print("=== GudaBags Performance ===")
+    ns:Print(string.format("Last scan: %.2f ms (%d total scans)", stats.lastScanTime, stats.scanCount))
+    ns:Print(string.format("Last refresh: %.2f ms (%d total refreshes)", stats.lastRefreshTime, stats.refreshCount))
+
+    -- Memory usage
+    UpdateAddOnMemoryUsage()
+    local mem = GetAddOnMemoryUsage(addonName)
+    if mem then
+        if mem > 1024 then
+            ns:Print(string.format("Memory: %.1f MB", mem / 1024))
+        else
+            ns:Print(string.format("Memory: %.0f KB", mem))
+        end
+    end
+
+    -- Tooltip cache size
+    local ItemScanner = ns:GetModule("ItemScanner")
+    if ItemScanner and ItemScanner.GetTooltipCacheSize then
+        ns:Print("Tooltip cache: " .. ItemScanner:GetTooltipCacheSize() .. " entries")
+    end
+end
+
 -- Profile management
 commandHandlers["profiles"] = function()
     local profiles = Database:GetProfileList()
@@ -269,6 +294,7 @@ commandHandlers["help"] = function()
     ns:Print("  /guda profile save <name> - Save current settings")
     ns:Print("  /guda profile load <name> - Load profile")
     ns:Print("  /guda profile delete <name> - Delete profile")
+    ns:Print("  /guda perf - Show performance stats")
     ns:Print("  /guda debugitem - Toggle item data on hover")
     ns:Print("  /guda locale [code|reset] - Test locale")
     ns:Print("  /guda status - Show expansion/feature detection")

@@ -120,11 +120,29 @@ local function CompareNum(actual, op, target)
 end
 
 -------------------------------------------------
+-- Parse cache: avoid re-parsing the same search text
+-------------------------------------------------
+local parseCache = {}
+local PARSE_CACHE_MAX = 32
+local parseCacheCount = 0
+
+function SearchParser:ClearCache()
+    parseCache = {}
+    parseCacheCount = 0
+end
+
+-------------------------------------------------
 -- ParseSearchInput(text) → parsed result table
 -------------------------------------------------
 function SearchParser:ParseSearchInput(text)
     if not text or text == "" then
         return nil
+    end
+
+    -- Check cache first (search bar calls this on every keystroke)
+    local cached = parseCache[text]
+    if cached ~= nil then
+        return cached  -- cached can be false (meaning nil result was cached)
     end
 
     local result = {
@@ -172,7 +190,7 @@ function SearchParser:ParseSearchInput(text)
                         end
                     elseif key == "t" or key == "type" then
                         local resolved = TYPE_ALIASES[valLower] or val
-                        table.insert(result.operators, {type = "itemType", op = "=", value = resolved})
+                        table.insert(result.operators, {type = "itemType", op = "=", value = strlower(resolved)})
                         handled = true
                     elseif key == "st" or key == "subtype" then
                         table.insert(result.operators, {type = "itemSubType", op = "=", value = valLower})
@@ -215,8 +233,23 @@ function SearchParser:ParseSearchInput(text)
 
     -- Return nil if nothing was parsed
     if not result.textSearch and #result.operators == 0 and #result.keywords == 0 then
+        -- Cache nil result as false to distinguish from "not cached"
+        if parseCacheCount >= PARSE_CACHE_MAX then
+            parseCache = {}
+            parseCacheCount = 0
+        end
+        parseCache[text] = false
+        parseCacheCount = parseCacheCount + 1
         return nil
     end
+
+    -- Cache the parsed result
+    if parseCacheCount >= PARSE_CACHE_MAX then
+        parseCache = {}
+        parseCacheCount = 0
+    end
+    parseCache[text] = result
+    parseCacheCount = parseCacheCount + 1
 
     return result
 end
@@ -234,7 +267,8 @@ function SearchParser:MatchOperator(operator, itemData)
 
     elseif t == "itemType" then
         if not itemData.itemType then return false end
-        return strlower(itemData.itemType) == strlower(operator.value)
+        -- operator.value is already lowercased during parsing
+        return strlower(itemData.itemType) == operator.value
 
     elseif t == "itemSubType" then
         if not itemData.itemSubType then return false end

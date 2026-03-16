@@ -109,3 +109,17 @@ function API:IsInscriptionBag(bagFamily)
     if not Expansion.Features.HasInscriptionBags then return false end
     return bit.band(bagFamily or 0, 16) ~= 0
 end
+
+-------------------------------------------------
+-- Item Info API Wrappers
+-- Central wrappers for future C_Item migration
+-- All GetItemInfo usage should go through these
+-------------------------------------------------
+
+function API.GetItemInfo(itemOrLink)
+    return GetItemInfo(itemOrLink)
+end
+
+function API.GetItemInfoInstant(itemOrLink)
+    return C_Item.GetItemInfoInstant(itemOrLink)
+end

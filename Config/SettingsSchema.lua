@@ -22,8 +22,18 @@ function SettingsSchema.GetGeneral()
             return opts
         end)()},
         { type = "slider", key = "bgAlpha", label = L["SETTINGS_BG_OPACITY"], min = 0, max = 100, step = 5, format = "%" },
+        { type = "slider", key = "borderOpacity", label = L["SETTINGS_BORDER_OPACITY"], min = 0, max = 100, step = 5, format = "%" },
+        { type = "slider", key = "uiScale", label = L["SETTINGS_UI_SCALE"], tooltip = L["SETTINGS_UI_SCALE_TIP"], min = 50, max = 150, step = 5, format = "%" },
         { type = "checkbox", key = "retailEmptySlots", label = L["SETTINGS_RETAIL_EMPTY_SLOTS"], tooltip = L["SETTINGS_RETAIL_EMPTY_SLOTS_TIP"],
           hidden = function() return ns.IsRetail end },
+
+        { type = "separator", label = L["SETTINGS_SECTION_CUSTOM_BG"] },
+        { type = "row", children = {
+            { type = "slider", key = "bgColorR", label = L["SETTINGS_BG_RED"], min = 0, max = 255, step = 1, format = "" },
+            { type = "slider", key = "bgColorG", label = L["SETTINGS_BG_GREEN"], min = 0, max = 255, step = 1, format = "" },
+        }},
+        { type = "slider", key = "bgColorB", label = L["SETTINGS_BG_BLUE"], min = 0, max = 255, step = 1, format = "" },
+        { type = "description", text = L["SETTINGS_BG_COLOR_TIP"], height = 20 },
 
         { type = "separator", label = L["SETTINGS_SECTION_OPTIONS"] },
         { type = "row", children = {
@@ -35,8 +45,17 @@ function SettingsSchema.GetGeneral()
             { type = "checkbox", key = "hoverBagline", label = L["SETTINGS_SHOW_ALL_BAGS"], tooltip = L["SETTINGS_SHOW_ALL_BAGS_TIP"] },
             { type = "checkbox", key = "showTooltipCounts", label = L["SETTINGS_INVENTORY_COUNTS"], tooltip = L["SETTINGS_INVENTORY_COUNTS_TIP"] },
         }},
+        { type = "row", children = {
+            { type = "checkbox", key = "compactMode", label = L["SETTINGS_COMPACT_MODE"], tooltip = L["SETTINGS_COMPACT_MODE_TIP"] },
+        }},
 
         { type = "separator", label = L["SETTINGS_SECTION_SORT"] },
+        { type = "select", key = "categorySortOrder", label = L["SETTINGS_CATEGORY_SORT_ORDER"], tooltip = L["SETTINGS_CATEGORY_SORT_ORDER_TIP"], options = {
+            { value = "quality", label = L["SETTINGS_SORT_BY_QUALITY"] },
+            { value = "name", label = L["SETTINGS_SORT_BY_NAME"] },
+            { value = "itemLevel", label = L["SETTINGS_SORT_BY_ILVL"] },
+            { value = "type", label = L["SETTINGS_SORT_BY_TYPE"] },
+        }},
         { type = "row", children = {
             { type = "checkbox", key = "gudaSort", label = L["SETTINGS_GUDA_SORT"], tooltip = L["SETTINGS_GUDA_SORT_TIP"],
               hidden = function() local Expansion = ns:GetModule("Expansion") return not (Expansion and Expansion.IsRetail) end },
@@ -61,6 +80,7 @@ function SettingsSchema.GetGeneral()
         { type = "row", children = {
             { type = "checkbox", key = "autoVendorJunk", label = L["SETTINGS_AUTO_VENDOR_JUNK"], tooltip = L["SETTINGS_AUTO_VENDOR_JUNK_TIP"] },
         }},
+        { type = "slider", key = "bagFullThreshold", label = L["SETTINGS_BAG_FULL_THRESHOLD"], tooltip = L["SETTINGS_BAG_FULL_THRESHOLD_TIP"], min = 0, max = 100, step = 5, format = "%" },
     }
 end
 

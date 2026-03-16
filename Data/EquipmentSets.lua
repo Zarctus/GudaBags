@@ -131,6 +131,14 @@ local function RebuildAll()
         ScanBlizzardSets()
     end
 
+    -- Prune stale set protection exceptions
+    local Database = ns:GetModule("Database")
+    if Database then
+        Database:PruneSetProtectionExceptions(function(itemID)
+            return itemSets[itemID] ~= nil
+        end)
+    end
+
     -- Sync persisted equipment set categories and invalidate caches
     local CategoryManager = ns:GetModule("CategoryManager")
     if CategoryManager then

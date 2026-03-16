@@ -49,6 +49,7 @@ local function InitializeCharDB()
 
     GudaBags_CharDB.pinnedSlots = GudaBags_CharDB.pinnedSlots or {}
     GudaBags_CharDB.lockedItems = GudaBags_CharDB.lockedItems or {}
+    GudaBags_CharDB.setProtectionExceptions = GudaBags_CharDB.setProtectionExceptions or {}
 
     for key, default in pairs(Constants.DEFAULTS) do
         if GudaBags_CharDB.settings[key] == nil then
@@ -242,6 +243,36 @@ function Database:ToggleItemLock(itemID)
     else
         GudaBags_CharDB.lockedItems[itemID] = true
         return true
+    end
+end
+
+-------------------------------------------------
+-- Set Protection Exceptions (per-character, itemID-based)
+-------------------------------------------------
+
+function Database:IsSetProtectionException(itemID)
+    if not itemID or not GudaBags_CharDB or not GudaBags_CharDB.setProtectionExceptions then return false end
+    return GudaBags_CharDB.setProtectionExceptions[itemID] or false
+end
+
+function Database:ToggleSetProtectionException(itemID)
+    if not itemID or not GudaBags_CharDB then return false end
+    GudaBags_CharDB.setProtectionExceptions = GudaBags_CharDB.setProtectionExceptions or {}
+    if GudaBags_CharDB.setProtectionExceptions[itemID] then
+        GudaBags_CharDB.setProtectionExceptions[itemID] = nil
+        return false
+    else
+        GudaBags_CharDB.setProtectionExceptions[itemID] = true
+        return true
+    end
+end
+
+function Database:PruneSetProtectionExceptions(isInSetFunc)
+    if not GudaBags_CharDB or not GudaBags_CharDB.setProtectionExceptions then return end
+    for itemID in pairs(GudaBags_CharDB.setProtectionExceptions) do
+        if not isInSetFunc(itemID) then
+            GudaBags_CharDB.setProtectionExceptions[itemID] = nil
+        end
     end
 end
 

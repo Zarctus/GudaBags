@@ -43,7 +43,10 @@ local function IsItemProtected(itemID)
     if Database:IsItemLocked(itemID) then return true end
     if Database:GetSetting("autoLockSetItems") then
         local EquipSets = ns:GetModule("EquipmentSets")
-        if EquipSets and EquipSets:IsInSet(itemID) then return true end
+        if EquipSets and EquipSets:IsInSet(itemID)
+           and not Database:IsSetProtectionException(itemID) then
+            return true
+        end
     end
     return false
 end
@@ -705,7 +708,7 @@ local function CreateButton(parent)
 
     -- User lock icon stroke (bottom-right corner, slightly larger black copy for outline)
     local userLockIconStroke = userLockFrame:CreateTexture(nil, "OVERLAY", nil, 6)
-    userLockIconStroke:SetSize(13, 13)
+    userLockIconStroke:SetSize(11, 11)
     userLockIconStroke:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", 5, -4)
     userLockIconStroke:SetTexture("Interface\\AddOns\\GudaBags\\Assets\\lock.png")
     userLockIconStroke:SetVertexColor(0, 0, 0, 1)
@@ -714,7 +717,7 @@ local function CreateButton(parent)
 
     -- User lock icon (bottom-right corner)
     local userLockIcon = userLockFrame:CreateTexture(nil, "OVERLAY", nil, 7)
-    userLockIcon:SetSize(11, 11)
+    userLockIcon:SetSize(9, 9)
     userLockIcon:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", 4, -3)
     userLockIcon:SetTexture("Interface\\AddOns\\GudaBags\\Assets\\lock.png")
     userLockIcon:Hide()
@@ -966,12 +969,26 @@ local function CreateButton(parent)
             if mouseButton == "RightButton" and IsControlKeyDown() and not IsAltKeyDown() and not self.isReadOnly then
                 if self.itemData and self.itemData.itemID then
                     local Database = ns:GetModule("Database")
-                    -- Skip if already protected by equipment set
+                    -- Equipment set items: toggle exception instead of manual lock
                     if Database:GetSetting("autoLockSetItems") then
                         local EquipSets = ns:GetModule("EquipmentSets")
                         if EquipSets and EquipSets:IsInSet(self.itemData.itemID) then
+                            local isNowExcepted = Database:ToggleSetProtectionException(self.itemData.itemID)
                             local L = ns.L
-                            ns:Print(string.format(L["ITEM_ALREADY_SET_PROTECTED"], self.itemData.link or self.itemData.name or ""))
+                            local itemRef = self.itemData.link or self.itemData.name or ""
+                            if isNowExcepted then
+                                ns:Print(string.format(L["ITEM_SET_PROTECTION_REMOVED"], itemRef))
+                            else
+                                ns:Print(string.format(L["ITEM_SET_PROTECTION_RESTORED"], itemRef))
+                            end
+                            local BagFrame = ns:GetModule("BagFrame")
+                            if BagFrame and BagFrame.RefreshLockIcons then
+                                BagFrame:RefreshLockIcons()
+                            end
+                            local BankFrame = ns:GetModule("BankFrame")
+                            if BankFrame and BankFrame.RefreshLockIcons then
+                                BankFrame:RefreshLockIcons()
+                            end
                             return
                         end
                     end
@@ -1717,6 +1734,17 @@ function ItemButton:UpdateUserLockIcon(button)
             UpdateSpellOverlay(button)
             return
         end
+        if Database:GetSetting("autoLockSetItems") then
+            local EquipSets = ns:GetModule("EquipmentSets")
+            if EquipSets and EquipSets:IsInSet(itemData.itemID)
+               and not Database:IsSetProtectionException(itemData.itemID) then
+                button.userLockIcon:Show()
+                if button.userLockIconStroke then button.userLockIconStroke:Show() end
+                UpdateMerchantOverlay(button)
+                UpdateSpellOverlay(button)
+                return
+            end
+        end
     end
     button.userLockIcon:Hide()
     if button.userLockIconStroke then button.userLockIconStroke:Hide() end
@@ -2037,7 +2065,7 @@ function ItemButton:UpdateLockForItem(bagID, slotID)
             end
 
             -- Refresh user lock icon using live API data (itemData may be stale)
-            if itemInfo and itemInfo.itemID and Database:IsItemLocked(itemInfo.itemID) then
+            if itemInfo and itemInfo.itemID and IsItemProtected(itemInfo.itemID) then
                 if button.userLockIcon then button.userLockIcon:Show() end
                 if button.userLockIconStroke then button.userLockIconStroke:Show() end
             else

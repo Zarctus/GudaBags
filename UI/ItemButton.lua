@@ -960,23 +960,9 @@ local function CreateButton(parent)
         -- Suppress spurious "Item isn't ready yet" errors on retail
         SuppressItemErrors()
 
-        -- On Retail, handle warband bank deposits before the secure click handler
+        -- On Retail, the warband bank deposit is handled via the GetActiveBankType hook
+        -- in BankFrame.lua, so no special PreClick logic is needed here
         if ns.IsRetail then
-            -- Right-click on a bag item while warband tab is active: deposit to warband bank
-            if mouseButton == "RightButton" and not IsAltKeyDown()
-                and self.itemData and self.itemData.bagID ~= nil and self.itemData.slot
-                and not self.itemData.isGuildBank and not self.isReadOnly then
-                local bagID = self.itemData.bagID
-                if bagID >= 0 and bagID <= NUM_BAG_SLOTS then
-                    local BankScannerMod = ns:GetModule("BankScanner")
-                    if BankScannerMod and BankScannerMod:IsBankOpen() then
-                        local BankFooter = ns:GetModule("BankFrame.BankFooter")
-                        if BankFooter and BankFooter:GetCurrentBankType() == "warband" then
-                            C_Container.UseContainerItem(bagID, self.itemData.slot, nil, Enum.BankType.Account)
-                        end
-                    end
-                end
-            end
             return
         end
 

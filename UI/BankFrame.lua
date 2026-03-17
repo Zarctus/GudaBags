@@ -68,7 +68,16 @@ local function GetSlotKey(bagID, slot)
     return Utils:GetSlotKey(bagID, slot)
 end
 
--- Hidden frame to reparent Blizzard bank UI
+-- Off-screen parent for Blizzard bank UI: must be SHOWN so that
+-- BankFrame:IsShown() returns true when :Show() is called.
+-- This lets the original GetActiveBankType() work without overriding it.
+local offscreenParent = CreateFrame("Frame", nil, UIParent)
+offscreenParent:SetPoint("TOPLEFT", UIParent, "TOPLEFT", -10000, 10000)
+offscreenParent:SetSize(1, 1)
+offscreenParent:SetAlpha(0)
+offscreenParent:Show()
+
+-- Legacy hidden parent kept for non-Retail or fallback use
 local hiddenParent = CreateFrame("Frame")
 hiddenParent:Hide()
 
@@ -2488,6 +2497,16 @@ ns.OnBankOpened = function()
         BankHeader:SetViewingCharacter(nil, nil)
     end
 
+    -- Show Blizzard's BankFrame off-screen so GetActiveBankType() returns
+    -- the correct bank type for ContainerFrameItemButton_OnClick deposits
+    if ns.IsRetail and _G.BankFrame then
+        _G.BankFrame:Show()
+        if _G.BankFrame.BankPanel then
+            _G.BankFrame.BankPanel:Show()
+            _G.BankFrame.BankPanel.bankType = Enum.BankType.Character
+        end
+    end
+
     BankFrame:Show()
 end
 
@@ -2495,6 +2514,12 @@ ns.OnBankClosed = function()
     if frame and frame:IsShown() then
         BankScanner:SaveToDatabase()
         BankFrame:Hide()
+    end
+
+    -- Hide Blizzard's BankFrame so GetActiveBankType() returns nil,
+    -- allowing normal item use (food, potions, containers) via right-click
+    if ns.IsRetail and _G.BankFrame then
+        _G.BankFrame:Hide()
     end
 end
 
@@ -2785,6 +2810,12 @@ ns.OnBankTypeChanged = function(bankType)
     if frame and frame:IsShown() then
         ns:Debug("Bank type changed to:", bankType)
 
+        -- Sync Blizzard BankPanel.bankType so the original GetActiveBankType()
+        -- returns the correct enum for UseContainerItem deposits
+        if _G.BankFrame and _G.BankFrame.BankPanel then
+            _G.BankFrame.BankPanel.bankType = bankType == "warband" and Enum.BankType.Account or Enum.BankType.Character
+        end
+
         -- Update RetailBankScanner's current bank type so BAG_UPDATE events are processed correctly
         if RetailBankScanner then
             local bankTypeEnum = bankType == "warband" and Enum.BankType.Account or Enum.BankType.Character
@@ -2812,12 +2843,31 @@ ns.OnBankTypeChanged = function(bankType)
 end
 
 -- Disable the default Blizzard bank frame completely
+-- On Retail, BankFrame is reparented to an off-screen SHOWN parent so that
+-- GetActiveBankType() works natively (no method override = no tainting).
+-- On Classic, BankFrame is reparented to a hidden parent.
 local function HideDefaultBankFrame()
     if _G.BankFrame then
-        _G.BankFrame:SetParent(hiddenParent)
+        if ns.IsRetail then
+            -- Use the off-screen visible parent so IsShown() works
+            _G.BankFrame:SetParent(offscreenParent)
+        else
+            _G.BankFrame:SetParent(hiddenParent)
+        end
         _G.BankFrame:SetScript("OnShow", nil)
         _G.BankFrame:SetScript("OnHide", nil)
         _G.BankFrame:SetScript("OnEvent", nil)
+
+        -- On Retail, also neutralise BankPanel scripts to prevent side effects
+        -- when we Show() it for GetActiveBankType() to work
+        if ns.IsRetail and _G.BankFrame.BankPanel then
+            _G.BankFrame.BankPanel:SetScript("OnShow", nil)
+            _G.BankFrame.BankPanel:SetScript("OnHide", nil)
+            _G.BankFrame.BankPanel:SetScript("OnEvent", nil)
+        end
+
+        -- Keep BankFrame hidden initially (shown when bank opens)
+        _G.BankFrame:Hide()
     end
 end
 

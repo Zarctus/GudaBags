@@ -52,6 +52,16 @@ local SPECIAL_CHIPS = {
     {key = "new", localeKey = "CHIP_SPECIAL_NEW"},
 }
 
+-- classID mapping for type chips (locale-independent)
+local TYPE_CHIP_CLASSID = {
+    ["Weapon"] = 2,
+    ["Armor"] = 4,
+    ["Consumable"] = 0,
+    ["Trade Goods"] = 7,
+    ["Quest"] = 12,
+    -- "Junk" is handled separately via quality
+}
+
 -------------------------------------------------
 -- Search Overlay (shared across instances)
 -------------------------------------------------
@@ -751,19 +761,19 @@ function SearchBar:ItemMatchesFilters(parent, itemData)
         end
     end
 
-    -- 2) Type chips: OR within group
+    -- 2) Type chips: OR within group (use classID for locale-independence)
     if next(state.types) then
-        local itemType = itemData.itemType
+        local classID = itemData.classID
         local matched = false
-        if itemType then
-            if state.types[itemType] then
+        for chipKey in pairs(state.types) do
+            local targetClassID = TYPE_CHIP_CLASSID[chipKey]
+            if targetClassID and classID == targetClassID then
                 matched = true
+                break
             end
-            -- "Junk" chip matches quality 0 items
-            if not matched and state.types["Junk"] and (itemData.quality or -1) == 0 then
-                matched = true
-            end
-        elseif state.types["Junk"] and (itemData.quality or -1) == 0 then
+        end
+        -- "Junk" chip matches quality 0 items
+        if not matched and state.types["Junk"] and (itemData.quality or -1) == 0 then
             matched = true
         end
         if not matched then return false end

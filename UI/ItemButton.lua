@@ -122,6 +122,7 @@ local function ResetButton(pool, button)
     if button.pinIconShadow then button.pinIconShadow:Hide() end
     if button.favoriteStar then button.favoriteStar:Hide() end
     if button.searchGlow then button.searchGlow:Hide() end
+    if button.searchDimOverlay then button.searchDimOverlay:Hide() end
     if button.newItemGlow then button.newItemGlow:Hide(); if button.newItemGlow.animGroup then button.newItemGlow.animGroup:Stop() end end
     if button.cooldown then CooldownFrame_Set(button.cooldown, 0, 0, false) end
 end
@@ -305,13 +306,23 @@ local function CreateButton(parent)
 
     -- Batch disable all template overlays from a pre-defined list
     local TEMPLATE_OVERLAYS = {
-        "ItemContextOverlay", "SearchOverlay", "ExtendedSlot",
+        "ItemContextOverlay", "SearchOverlay", "searchOverlay", "ExtendedSlot",
         "UpgradeIcon", "ItemSlotBackground", "JunkIcon", "flash",
         "NewItem", "Cooldown", "WidgetContainer",
         "LevelLinkLockIcon", "BagIndicator", "StackSplitFrame",
     }
     for _, name in ipairs(TEMPLATE_OVERLAYS) do
         DisableOverlay(button[name])
+    end
+
+    -- Prevent Blizzard template's search/context handlers from desaturating items
+    -- The template mixin registers for INVENTORY_SEARCH_UPDATE and can grey out items
+    button:UnregisterEvent("INVENTORY_SEARCH_UPDATE")
+    if button.SetMatchesSearch then
+        button.SetMatchesSearch = function() end
+    end
+    if button.UpdateItemContextMatching then
+        button.UpdateItemContextMatching = function() end
     end
 
     -- Disable any mouse blocking on the icon texture layer
@@ -1724,6 +1735,7 @@ function ItemButton:HighlightBagSlots(bagID, owner)
             button:SetAlpha(1.0)
             if button.searchGlow then button.searchGlow:Hide() end
             SetItemButtonDesaturated(button, button.itemData.locked or false)
+            if button.searchDimOverlay then button.searchDimOverlay:Hide() end
             if button.slotBackground then
                 button.slotBackground:SetVertexColor(0.5, 0.5, 0.5, bgAlpha)
             end
@@ -1750,7 +1762,7 @@ function ItemButton:ClearHighlightedSlots(parentFrame)
             local isMatch = button.itemData and SearchBar:ItemMatchesFilters(parentFrame, button.itemData)
             ItemButton:SetSearchState(button, isMatch)
             if button.slotBackground then
-                button.slotBackground:SetVertexColor(0.5, 0.5, 0.5, isMatch and bgAlpha or bgAlpha * 0.4)
+                button.slotBackground:SetVertexColor(0.5, 0.5, 0.5, isMatch and bgAlpha or bgAlpha * 0.1)
             end
         else
             ItemButton:ClearSearchState(button)
@@ -1813,33 +1825,51 @@ local function EnsureSearchGlow(button)
     return glow
 end
 
+-- Create or return the search dim overlay covering button + border area
+local function EnsureSearchDimOverlay(button)
+    if button.searchDimOverlay then return button.searchDimOverlay end
+
+    local BORDER_THICKNESS = Constants.ICON.BORDER_THICKNESS
+
+    -- Frame that covers the button + border area
+    local overlay = CreateFrame("Frame", nil, button)
+    overlay:SetPoint("TOPLEFT", button, "TOPLEFT", -BORDER_THICKNESS, BORDER_THICKNESS)
+    overlay:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", BORDER_THICKNESS, -BORDER_THICKNESS)
+    overlay:SetFrameLevel(button:GetFrameLevel() + Constants.FRAME_LEVELS.QUEST_ICON + 1)
+
+    -- Dark background covering the icon
+    local bg = overlay:CreateTexture(nil, "BACKGROUND")
+    bg:SetAllPoints()
+    bg:SetTexture("Interface\\Buttons\\WHITE8x8")
+    bg:SetVertexColor(0, 0, 0, 0.85)
+    overlay.bg = bg
+
+    overlay:Hide()
+    button.searchDimOverlay = overlay
+    return overlay
+end
+
 -- Apply spotlight search visual state to a single button
 function ItemButton:SetSearchState(button, isMatch)
     if isMatch then
-        -- Matching item: full visibility + blinking cyan border
-        button:SetAlpha(1)
+        -- Matching item: full visibility
         SetItemButtonDesaturated(button, button.itemData and button.itemData.locked or false)
-        local glow = EnsureSearchGlow(button)
-        glow:Show()
-        glow.animGroup:Play()
-    else
-        -- Non-matching item: desaturated + dimmed
-        button:SetAlpha(0.4)
-        SetItemButtonDesaturated(button, true)
-        if button.searchGlow then
-            button.searchGlow.animGroup:Stop()
-            button.searchGlow:Hide()
+        if button.searchDimOverlay then
+            button.searchDimOverlay:Hide()
         end
+    else
+        -- Non-matching item: dark overlay + desaturated
+        SetItemButtonDesaturated(button, true)
+        local overlay = EnsureSearchDimOverlay(button)
+        overlay:Show()
     end
 end
 
 -- Clear spotlight search visual state from a single button
 function ItemButton:ClearSearchState(button)
-    button:SetAlpha(1)
     SetItemButtonDesaturated(button, button.itemData and button.itemData.locked or false)
-    if button.searchGlow then
-        button.searchGlow.animGroup:Stop()
-        button.searchGlow:Hide()
+    if button.searchDimOverlay then
+        button.searchDimOverlay:Hide()
     end
 end
 
@@ -1849,12 +1879,29 @@ function ItemButton:ResetAllAlpha(owner)
     if not buttonPool then return end
     local bgAlpha = Database:GetSetting("bgAlpha") / 100
 
+    -- Determine the parent frame for search state restoration
+    local SearchBar = ns:GetModule("SearchBar")
+    local parentFrame = owner and owner:GetParent()
+    local hasSearch = (SearchBar and parentFrame) and SearchBar:HasActiveFilters(parentFrame) or false
+
     for button in buttonPool:EnumerateActive() do
         -- Only affect buttons belonging to the specified owner (if provided)
         if not owner or button.owner == owner then
-            ItemButton:ClearSearchState(button)
-            if button.slotBackground then
-                button.slotBackground:SetVertexColor(0.5, 0.5, 0.5, bgAlpha)
+            -- Restore alpha (HighlightBagSlots sets it to 0.25)
+            button:SetAlpha(1.0)
+
+            if hasSearch then
+                -- Restore search highlight state
+                local isMatch = button.itemData and button.itemData.itemID and SearchBar:ItemMatchesFilters(parentFrame, button.itemData)
+                ItemButton:SetSearchState(button, isMatch)
+                if button.slotBackground then
+                    button.slotBackground:SetVertexColor(0.5, 0.5, 0.5, isMatch and bgAlpha or bgAlpha * 0.1)
+                end
+            else
+                ItemButton:ClearSearchState(button)
+                if button.slotBackground then
+                    button.slotBackground:SetVertexColor(0.5, 0.5, 0.5, bgAlpha)
+                end
             end
         end
     end

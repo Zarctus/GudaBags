@@ -65,6 +65,25 @@ local TYPE_ALIASES = {
 }
 
 -------------------------------------------------
+-- classID mapping for type operators (locale-independent)
+-- Enum.ItemClass values: 0=Consumable, 2=Weapon, 4=Armor, etc.
+-------------------------------------------------
+local TYPE_TO_CLASSID = {
+    ["consumable"] = 0,
+    ["container"] = 1,
+    ["weapon"] = 2,
+    ["gem"] = 3,
+    ["armor"] = 4,
+    ["reagent"] = 5,
+    ["projectile"] = 6,
+    ["trade goods"] = 7,
+    ["recipe"] = 9,
+    ["quest"] = 12,
+    ["miscellaneous"] = 15,
+    ["glyph"] = 16,
+}
+
+-------------------------------------------------
 -- Operator pattern: key<op>value
 -- Supports: q:epic, q>=3, q>2, q<=4, q<5, q=3
 -- Also: ilvl>200, lvl>60, t:weapon, st:leather, s:head, n:name
@@ -89,9 +108,9 @@ local function ParseComparison(rest)
     -- rest is everything after the operator key, e.g. ":epic", ">=3", ">200"
     local op, val
 
-    if strsub(rest, 1, 2) == ">=" then
+    if strsub(rest, 1, 2) == ">=" or strsub(rest, 1, 2) == "=>" then
         op, val = ">=", strsub(rest, 3)
-    elseif strsub(rest, 1, 2) == "<=" then
+    elseif strsub(rest, 1, 2) == "<=" or strsub(rest, 1, 2) == "=<" then
         op, val = "<=", strsub(rest, 3)
     elseif strsub(rest, 1, 1) == ">" then
         op, val = ">", strsub(rest, 2)
@@ -163,6 +182,19 @@ function SearchParser:ParseSearchInput(text)
             or tokenLower == "new" or tokenLower == "usable" or tokenLower == "junk" then
             table.insert(result.keywords, tokenLower)
             handled = true
+        end
+
+        -- Bare comparison: <230, >230, >=230, <=230, =230, =<230, =>230
+        -- Defaults to itemLevel filtering (equipment only)
+        if not handled then
+            local op, val = ParseComparison(tokenLower)
+            if op and val and val ~= "" then
+                local num = tonumber(val)
+                if num then
+                    table.insert(result.operators, {type = "itemLevelEquip", op = op, value = num})
+                    handled = true
+                end
+            end
         end
 
         if not handled then
@@ -266,8 +298,13 @@ function SearchParser:MatchOperator(operator, itemData)
         return CompareNum(itemData.quality or 0, operator.op, operator.value)
 
     elseif t == "itemType" then
+        -- Use classID for locale-independent matching
+        local targetClassID = TYPE_TO_CLASSID[operator.value]
+        if targetClassID then
+            return (itemData.classID or -1) == targetClassID
+        end
+        -- Fallback to string comparison for unknown types
         if not itemData.itemType then return false end
-        -- operator.value is already lowercased during parsing
         return strlower(itemData.itemType) == operator.value
 
     elseif t == "itemSubType" then
@@ -275,6 +312,15 @@ function SearchParser:MatchOperator(operator, itemData)
         return strfind(strlower(itemData.itemSubType), operator.value, 1, true) ~= nil
 
     elseif t == "itemLevel" then
+        return CompareNum(itemData.itemLevel or 0, operator.op, operator.value)
+
+    elseif t == "itemLevelEquip" then
+        -- Bare comparison (e.g. <230): only applies to equippable items (Armor, Weapon)
+        -- Non-equipment items pass through (return true = not filtered out)
+        -- Use classID (locale-independent) instead of itemType string:
+        --   classID 2 = Weapon, classID 4 = Armor
+        local cid = itemData.classID
+        if not cid or (cid ~= 2 and cid ~= 4) then return true end
         return CompareNum(itemData.itemLevel or 0, operator.op, operator.value)
 
     elseif t == "itemMinLevel" then
@@ -319,7 +365,7 @@ function SearchParser:MatchKeyword(keyword, itemData, context)
 
     elseif keyword == "quest" then
         return itemData.isQuestItem == true
-            or (itemData.itemType and strlower(itemData.itemType) == "quest")
+            or (itemData.classID and itemData.classID == 12)
 
     elseif keyword == "new" then
         if context and context.recentItems and itemData.itemID then

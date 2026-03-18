@@ -1393,10 +1393,15 @@ local includePositions = false
 local function RefreshProfilesList()
     if not profilesScrollChild then return end
 
-    -- Clear old children
+    -- Clear old children (frames)
     for _, child in ipairs({profilesScrollChild:GetChildren()}) do
         child:Hide()
         child:SetParent(nil)
+    end
+    -- Clear old regions (FontStrings, Textures) that GetChildren() does not return
+    for _, region in ipairs({profilesScrollChild:GetRegions()}) do
+        region:Hide()
+        region:SetParent(nil)
     end
 
     local Database = ns:GetModule("Database")
@@ -1552,15 +1557,46 @@ local function RefreshProfilesList()
             row:SetBackdropColor(0.12, 0.12, 0.12, 0.6)
             row:SetBackdropBorderColor(0.3, 0.3, 0.3, 0.5)
 
-            -- Profile name
+            -- Profile name (top-left, limited width to avoid overlapping buttons)
             local nameText = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
             nameText:SetPoint("TOPLEFT", row, "TOPLEFT", 8, -6)
             nameText:SetText(profileName)
             nameText:SetTextColor(1, 1, 1)
+            nameText:SetWordWrap(false)
+            nameText:SetMaxLines(1)
 
-            -- Info line
+            -- Buttons row (anchored to left-right on the bottom half of the row)
+            -- Delete button (rightmost)
+            local deleteBtn = CreateFrame("Button", nil, row, "UIPanelButtonTemplate")
+            deleteBtn:SetText(L["PROFILE_DELETE"])
+            deleteBtn:SetSize(deleteBtn:GetFontString():GetStringWidth() + 20, 20)
+            deleteBtn:SetPoint("BOTTOMRIGHT", row, "BOTTOMRIGHT", -6, 6)
+
+            -- Load button
+            local loadBtn = CreateFrame("Button", nil, row, "UIPanelButtonTemplate")
+            loadBtn:SetText(L["PROFILE_LOAD"])
+            loadBtn:SetSize(loadBtn:GetFontString():GetStringWidth() + 20, 20)
+            loadBtn:SetPoint("RIGHT", deleteBtn, "LEFT", -4, 0)
+
+            -- Overwrite button
+            local overwriteBtn = CreateFrame("Button", nil, row, "UIPanelButtonTemplate")
+            overwriteBtn:SetText(L["PROFILE_SAVE"])
+            overwriteBtn:SetSize(overwriteBtn:GetFontString():GetStringWidth() + 20, 20)
+            overwriteBtn:SetPoint("RIGHT", loadBtn, "LEFT", -4, 0)
+
+            -- Export button (leftmost)
+            local exportBtn = CreateFrame("Button", nil, row, "UIPanelButtonTemplate")
+            exportBtn:SetText(L["PROFILE_EXPORT"])
+            exportBtn:SetSize(exportBtn:GetFontString():GetStringWidth() + 20, 20)
+            exportBtn:SetPoint("RIGHT", overwriteBtn, "LEFT", -4, 0)
+
+            -- Info line (below name, limited to avoid going under buttons)
             local infoText = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
             infoText:SetPoint("TOPLEFT", nameText, "BOTTOMLEFT", 0, -2)
+            infoText:SetPoint("RIGHT", exportBtn, "LEFT", -4, 0)
+            infoText:SetWordWrap(false)
+            infoText:SetMaxLines(1)
+            infoText:SetJustifyH("LEFT")
             local infoStr = ""
             if profile.savedBy then
                 infoStr = string.format(L["PROFILE_SAVED_BY"], profile.savedBy)
@@ -1572,11 +1608,7 @@ local function RefreshProfilesList()
             infoText:SetText(infoStr)
             infoText:SetTextColor(0.6, 0.6, 0.6)
 
-            -- Delete button
-            local deleteBtn = CreateFrame("Button", nil, row, "UIPanelButtonTemplate")
-            deleteBtn:SetText(L["PROFILE_DELETE"])
-            deleteBtn:SetSize(deleteBtn:GetFontString():GetStringWidth() + 20, 20)
-            deleteBtn:SetPoint("RIGHT", row, "RIGHT", -6, 0)
+            -- Button click/tooltip handlers
             deleteBtn:SetScript("OnClick", function()
                 StaticPopupDialogs["GUDABAGS_DELETE_PROFILE"] = {
                     text = string.format(L["PROFILE_CONFIRM_DELETE"], profileName),
@@ -1601,11 +1633,6 @@ local function RefreshProfilesList()
             end)
             deleteBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
 
-            -- Load button
-            local loadBtn = CreateFrame("Button", nil, row, "UIPanelButtonTemplate")
-            loadBtn:SetText(L["PROFILE_LOAD"])
-            loadBtn:SetSize(loadBtn:GetFontString():GetStringWidth() + 20, 20)
-            loadBtn:SetPoint("RIGHT", deleteBtn, "LEFT", -4, 0)
             loadBtn:SetScript("OnClick", function()
                 StaticPopupDialogs["GUDABAGS_LOAD_PROFILE"] = {
                     text = string.format(L["PROFILE_CONFIRM_LOAD"], profileName),
@@ -1634,11 +1661,6 @@ local function RefreshProfilesList()
             end)
             loadBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
 
-            -- Overwrite button (save current to this profile)
-            local overwriteBtn = CreateFrame("Button", nil, row, "UIPanelButtonTemplate")
-            overwriteBtn:SetText(L["PROFILE_SAVE"])
-            overwriteBtn:SetSize(overwriteBtn:GetFontString():GetStringWidth() + 20, 20)
-            overwriteBtn:SetPoint("RIGHT", loadBtn, "LEFT", -4, 0)
             overwriteBtn:SetScript("OnClick", function()
                 Database:SaveProfile(profileName, includeCategories)
                 ns:Print(string.format(L["PROFILE_SAVED"], profileName))
@@ -1651,11 +1673,6 @@ local function RefreshProfilesList()
             end)
             overwriteBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
 
-            -- Export button
-            local exportBtn = CreateFrame("Button", nil, row, "UIPanelButtonTemplate")
-            exportBtn:SetText(L["PROFILE_EXPORT"])
-            exportBtn:SetSize(exportBtn:GetFontString():GetStringWidth() + 20, 20)
-            exportBtn:SetPoint("RIGHT", overwriteBtn, "LEFT", -4, 0)
             exportBtn:SetScript("OnClick", function()
                 local encoded = Database:ExportProfile(profileName)
                 if encoded then

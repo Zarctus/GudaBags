@@ -143,10 +143,15 @@ local function ScanTooltipForItem(bagID, slot, itemType, itemID, itemLink, itemQ
                 local r, g, b = leftText:GetTextColor()
 
                 if text then
-                    -- Check for red text (unusable) - skip durability lines
+                    -- Check for red text (unusable) - skip durability and stat comparison lines
                     if IsRedColor(r, g, b) then
                         if not durabilityPattern or not strfind(text, durabilityPattern) then
-                            isUsable = false
+                            -- Skip stat comparison lines (e.g. "+35 Leech", "-5 Haste")
+                            -- WoW embeds equipment comparison in the tooltip and shows
+                            -- lost stats in red, which is NOT an unusability indicator
+                            if not strfind(text, "^[%+%-]%d") then
+                                isUsable = false
+                            end
                         end
                     end
 
@@ -197,7 +202,9 @@ local function ScanTooltipForItem(bagID, slot, itemType, itemID, itemLink, itemQ
                 local r, g, b = rightText:GetTextColor()
                 if text and IsRedColor(r, g, b) then
                     if not durabilityPattern or not strfind(text, durabilityPattern) then
-                        isUsable = false
+                        if not strfind(text, "^[%+%-]%d") then
+                            isUsable = false
+                        end
                     end
                 end
             end

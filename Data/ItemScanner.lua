@@ -129,32 +129,17 @@ local function ScanTooltipForItem(bagID, slot, itemType, itemID, itemLink, itemQ
         isQuestItem = true
     end
 
-    -- Single tooltip scan for all checks
-    scanningTooltip:SetOwner(WorldFrame, "ANCHOR_NONE")
-    scanningTooltip:ClearLines()
-    scanningTooltip:SetBagItem(bagID, slot)
-
-    local numLines = scanningTooltip:NumLines()
-    if numLines and numLines > 0 then
-        for i = 1, numLines do
-            local leftText = _G["GudaBagsScanningTooltipTextLeft" .. i]
-            if leftText and leftText:IsShown() then
-                local text = leftText:GetText()
-                local r, g, b = leftText:GetTextColor()
+    -- On Retail, use C_TooltipInfo API to get clean tooltip data.
+    -- Do NOT scan for red text to detect usability — tooltip red text is unreliable
+    -- (equipment comparison, addon-injected text from TSM etc. cause false positives).
+    -- Usability is handled separately below via PlayerCanUseItem/IsEquippableItem.
+    if C_TooltipInfo and C_TooltipInfo.GetBagItem then
+        local data = C_TooltipInfo.GetBagItem(bagID, slot)
+        if data and data.lines then
+            for i, line in ipairs(data.lines) do
+                local text = line.leftText
 
                 if text then
-                    -- Check for red text (unusable) - skip durability and stat comparison lines
-                    if IsRedColor(r, g, b) then
-                        if not durabilityPattern or not strfind(text, durabilityPattern) then
-                            -- Skip stat comparison lines (e.g. "+35 Leech", "-5 Haste")
-                            -- WoW embeds equipment comparison in the tooltip and shows
-                            -- lost stats in red, which is NOT an unusability indicator
-                            if not strfind(text, "^[%+%-]%d") then
-                                isUsable = false
-                            end
-                        end
-                    end
-
                     -- Check for quest item indicators (respect ignore list)
                     if not isQuestIgnored then
                         if text == ITEM_BIND_QUEST or strfind(text, "Quest Item", 1, true) then
@@ -174,35 +159,88 @@ local function ScanTooltipForItem(bagID, slot, itemType, itemID, itemLink, itemQ
                     -- Check for special properties only for gray/white items (junk detection)
                     if needSpecialPropertiesCheck and not hasSpecialProperties then
                         local textLower = strlower(text)
-                        -- Use: or Equip: effects
                         if strfind(textLower, "use:", 1, true) or strfind(textLower, "equip:", 1, true) then
                             hasSpecialProperties = true
-                        -- Unique items
                         elseif strfind(textLower, "^unique") or strfind(textLower, "unique%-equipped") then
                             hasSpecialProperties = true
-                        -- Green text (special effects)
-                        elseif IsGreenColor(r, g, b) then
-                            hasSpecialProperties = true
-                        -- Yellow/gold text (flavor text) - skip first line (item name)
-                        -- Also skip common non-special yellow text like "Crafting Reagent"
-                        elseif i > 1 and IsYellowColor(r, g, b) then
-                            -- Exclude common crafting/trade labels that aren't special
-                            if not strfind(textLower, "crafting reagent", 1, true) and not strfind(textLower, "sell price", 1, true) then
-                                hasSpecialProperties = true
-                            end
                         end
                     end
                 end
             end
+        end
 
-            -- Also check right text for red color (unusable stats)
-            local rightText = _G["GudaBagsScanningTooltipTextRight" .. i]
-            if rightText and rightText:IsShown() then
-                local text = rightText:GetText()
-                local r, g, b = rightText:GetTextColor()
-                if text and IsRedColor(r, g, b) then
-                    if not durabilityPattern or not strfind(text, durabilityPattern) then
-                        if not strfind(text, "^[%+%-]%d") then
+        -- Reliable usability check via Blizzard API (no tooltip involved)
+        if itemID then
+            if C_PlayerInfo and C_PlayerInfo.CanUseItem then
+                isUsable = C_PlayerInfo.CanUseItem(itemID)
+                if isUsable == nil then isUsable = true end
+            elseif PlayerCanUseItem and itemLink then
+                isUsable = PlayerCanUseItem(itemLink) ~= false
+            end
+        end
+    else
+        -- Classic: use traditional tooltip frame scanning (no C_TooltipInfo available)
+        scanningTooltip:SetOwner(WorldFrame, "ANCHOR_NONE")
+        scanningTooltip:ClearLines()
+        scanningTooltip:SetBagItem(bagID, slot)
+
+        local numLines = scanningTooltip:NumLines()
+        if numLines and numLines > 0 then
+            for i = 1, numLines do
+                local leftText = _G["GudaBagsScanningTooltipTextLeft" .. i]
+                if leftText and leftText:IsShown() then
+                    local text = leftText:GetText()
+                    local r, g, b = leftText:GetTextColor()
+
+                    if text then
+                        -- Check for red text (unusable) - skip durability lines
+                        if IsRedColor(r, g, b) then
+                            if not durabilityPattern or not strfind(text, durabilityPattern) then
+                                isUsable = false
+                            end
+                        end
+
+                        -- Check for quest item indicators (respect ignore list)
+                        if not isQuestIgnored then
+                            if text == ITEM_BIND_QUEST or strfind(text, "Quest Item", 1, true) then
+                                isQuestItem = true
+                            end
+                            if text == ITEM_STARTS_QUEST or strfind(text, "This Item Begins a Quest", 1, true) then
+                                isQuestStarter = true
+                                isQuestItem = true
+                            end
+                        end
+
+                        -- Check for item duration (e.g. "Duration: 1 hour")
+                        if not hasDuration and strfind(text, "^Duration:") then
+                            hasDuration = true
+                        end
+
+                        -- Check for special properties only for gray/white items (junk detection)
+                        if needSpecialPropertiesCheck and not hasSpecialProperties then
+                            local textLower = strlower(text)
+                            if strfind(textLower, "use:", 1, true) or strfind(textLower, "equip:", 1, true) then
+                                hasSpecialProperties = true
+                            elseif strfind(textLower, "^unique") or strfind(textLower, "unique%-equipped") then
+                                hasSpecialProperties = true
+                            elseif IsGreenColor(r, g, b) then
+                                hasSpecialProperties = true
+                            elseif i > 1 and IsYellowColor(r, g, b) then
+                                if not strfind(textLower, "crafting reagent", 1, true) and not strfind(textLower, "sell price", 1, true) then
+                                    hasSpecialProperties = true
+                                end
+                            end
+                        end
+                    end
+                end
+
+                -- Also check right text for red color (unusable stats)
+                local rightText = _G["GudaBagsScanningTooltipTextRight" .. i]
+                if rightText and rightText:IsShown() then
+                    local text = rightText:GetText()
+                    local r, g, b = rightText:GetTextColor()
+                    if text and IsRedColor(r, g, b) then
+                        if not durabilityPattern or not strfind(text, durabilityPattern) then
                             isUsable = false
                         end
                     end

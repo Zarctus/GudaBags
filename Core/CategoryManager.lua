@@ -162,7 +162,7 @@ function CategoryManager:MigrateCategories(categories)
 
     -- Add Main group to built-in categories (nil = never had a group, "" = intentionally ungrouped)
     local mainGroupCategories = {
-        "BoE", "Weapon", "Armor",
+        "Warbound", "BoE", "Weapon", "Armor",
         "Trade Goods", "Reagent", "Recipe", "Quiver", "Container",
         "Soul Bag", "Miscellaneous", "Quest", "Junk"
     }

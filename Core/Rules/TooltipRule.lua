@@ -25,6 +25,28 @@ RuleEngine:RegisterEvaluator("isBoE", function(ruleValue, itemData, context)
 end)
 
 -------------------------------------------------
+-- Warbound Rule (Retail only)
+-- Requires tooltip scan (not available for other characters)
+-------------------------------------------------
+
+if ns.IsRetail then
+    RuleEngine:RegisterEvaluator("isWarbound", function(ruleValue, itemData, context)
+        -- Can't scan tooltips for other characters
+        if context.isOtherChar then
+            return false
+        end
+
+        local TooltipScanner = ns:GetModule("TooltipScanner")
+        if not TooltipScanner then
+            return false
+        end
+
+        local isWarbound = TooltipScanner:IsWarbound(context.bagID, context.slotID)
+        return isWarbound == ruleValue
+    end)
+end
+
+-------------------------------------------------
 -- Restore Tag Rule (Food/Drink/Restore)
 -- Requires tooltip scan
 -------------------------------------------------

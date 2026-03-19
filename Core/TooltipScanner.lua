@@ -146,6 +146,34 @@ function TooltipScanner:IsBindOnEquip(bagID, slotID, itemData)
     return isBoE
 end
 
+-- Check if item is Warbound (account-bound in TWW)
+function TooltipScanner:IsWarbound(bagID, slotID)
+    if not bagID or not slotID then return false end
+
+    if not self:SetBagItem(bagID, slotID) then
+        return false
+    end
+
+    local isWarbound = false
+    self:ScanLines(function(lineNum, text)
+        -- Soulbound items are not warbound
+        if text == ITEM_SOULBOUND or text:find("Soulbound") then
+            isWarbound = false
+            return true
+        end
+        -- Check warbound/account-bound globals (auto-localized by game client)
+        if (ITEM_BNET_ACCOUNTBOUND_UNTIL_EQUIP and text == ITEM_BNET_ACCOUNTBOUND_UNTIL_EQUIP)
+            or (ITEM_ACCOUNTBOUND and text == ITEM_ACCOUNTBOUND)
+            or (ITEM_BNET_ACCOUNTBOUND and text == ITEM_BNET_ACCOUNTBOUND)
+            or (ITEM_BIND_TO_BNETACCOUNT and text == ITEM_BIND_TO_BNETACCOUNT) then
+            isWarbound = true
+            return true
+        end
+    end, 6)
+
+    return isWarbound
+end
+
 -- Get consumable restore type (eat/drink/restore)
 function TooltipScanner:GetRestoreTag(bagID, slotID, itemData)
     if not bagID or not slotID then return nil end

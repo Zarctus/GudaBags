@@ -64,6 +64,10 @@ function BagScanner:ScanDirtyBags(bagIDs)
     -- Cache module reference once for the entire scan batch
     local RecentItems = ns:GetModule("RecentItems")
 
+    -- Don't mark items as Recent while sorting/restacking (items just move slots)
+    local SortEngine = ns:GetModule("SortEngine")
+    local isSorting = SortEngine and (SortEngine:IsSorting() or SortEngine:IsRestacking())
+
     for bagID in pairs(bagIDs) do
         local numSlots = C_Container.GetContainerNumSlots(bagID)
         if not numSlots or numSlots == 0 then
@@ -96,8 +100,8 @@ function BagScanner:ScanDirtyBags(bagIDs)
                             if itemData and itemData.itemID then
                                 local wasNew = not knownItemIDs[itemData.itemID]
                                 knownItemIDs[itemData.itemID] = (knownItemIDs[itemData.itemID] or 0) + 1
-                                -- Mark truly new items as Recent
-                                if wasNew and RecentItems then
+                                -- Mark truly new items as Recent (skip during sorting)
+                                if wasNew and not isSorting and RecentItems then
                                     RecentItems:MarkRecent(itemData.itemID)
                                 end
                             end
@@ -122,7 +126,7 @@ function BagScanner:ScanDirtyBags(bagIDs)
                             if knownItemIDs[cachedItemID] <= 0 then
                                 knownItemIDs[cachedItemID] = nil
                                 -- Item completely removed from inventory - remove from Recent
-                                if RecentItems then
+                                if not isSorting and RecentItems then
                                     RecentItems:RemoveRecent(cachedItemID)
                                 end
                             end
@@ -133,15 +137,8 @@ function BagScanner:ScanDirtyBags(bagIDs)
                             if currentItemID then
                                 local wasNew = not knownItemIDs[currentItemID]
                                 knownItemIDs[currentItemID] = (knownItemIDs[currentItemID] or 0) + 1
-                                -- Mark truly new items as Recent (backup for loot detection)
-                                if wasNew and RecentItems then
-                                    RecentItems:MarkRecent(currentItemID)
-                                end
-                            end
-
-                            -- Try fast path first (uses cached tooltip data)
-                            -- This avoids tooltip scan when item just moved slots
-                            local itemData = ItemScanner:ScanSlotFast(bagID, slot)
+                                -- Mark truly new items as Recent (skip during sorting)
+                                if wasNew and not isSorting and RecentItems then
                             if not itemData then
                                 -- No cached data, need full scan (new item)
                                 itemData = ItemScanner:ScanSlot(bagID, slot)

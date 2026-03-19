@@ -1416,9 +1416,11 @@ function SortEngine:SortBags()
 
     -- Use native Blizzard sort API on retail (unless GudaBags sort is enabled)
     if Expansion.IsRetail and not Database:GetSetting("gudaSort") and C_Container and C_Container.SortBags then
+        sortInProgress = true
         C_Container.SortBags()
         -- Fire event after a short delay to let the sort complete
         C_Timer.After(0.5, function()
+            sortInProgress = false
             Events:Fire("BAGS_UPDATED")
         end)
         return true
@@ -1482,9 +1484,11 @@ function SortEngine:SortBank()
 
     -- Use native Blizzard sort API on retail (unless GudaBags sort is enabled)
     if Expansion.IsRetail and not Database:GetSetting("gudaSort") and C_Container and C_Container.SortBankBags then
+        sortInProgress = true
         C_Container.SortBankBags()
         -- Fire event after a short delay to let the sort complete
         C_Timer.After(0.5, function()
+            sortInProgress = false
             if ns.OnBankUpdated then
                 ns.OnBankUpdated()
             else
@@ -1536,9 +1540,11 @@ function SortEngine:SortWarbandBank()
 
     -- Use native Blizzard sort API for Warband/Account bank
     if C_Container and C_Container.SortAccountBankBags then
+        sortInProgress = true
         C_Container.SortAccountBankBags()
         -- Fire event after a short delay to let the sort complete
         C_Timer.After(0.5, function()
+            sortInProgress = false
             if ns.OnBankUpdated then
                 ns.OnBankUpdated()
             else

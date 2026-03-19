@@ -2500,10 +2500,13 @@ ns.OnBankOpened = function()
     -- Show Blizzard's BankFrame off-screen so GetActiveBankType() returns
     -- the correct bank type for ContainerFrameItemButton_OnClick deposits
     if ns.IsRetail and _G.BankFrame then
+        -- Set bankType BEFORE Show() to prevent FetchBankLockedReason(nil) error
+        if _G.BankFrame.BankPanel then
+            _G.BankFrame.BankPanel.bankType = Enum.BankType.Character
+        end
         _G.BankFrame:Show()
         if _G.BankFrame.BankPanel then
             _G.BankFrame.BankPanel:Show()
-            _G.BankFrame.BankPanel.bankType = Enum.BankType.Character
         end
     end
 

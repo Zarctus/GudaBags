@@ -92,6 +92,16 @@ StaticPopupDialogs["GUDABAGS_PROFILE_RESET_DEFAULTS"] = {
 
         ProfileManager:ClearActiveProfile()
 
+        -- Close bag/bank frames so they fully rebuild on next open
+        local BagFrame = ns:GetModule("BagFrame")
+        if BagFrame and BagFrame.Hide then
+            BagFrame:Hide()
+        end
+        local BankFrame = ns:GetModule("BankFrame")
+        if BankFrame and BankFrame.Hide then
+            BankFrame:Hide()
+        end
+
         local Events = ns:GetModule("Events")
         Events:Fire("PROFILE_LOADED")
         Events:Fire("CATEGORIES_UPDATED")
@@ -182,6 +192,23 @@ end
 -------------------------------------------------
 -- Profile Row
 -------------------------------------------------
+
+local function CreateSeparator(parent, label)
+    local frame = CreateFrame("Frame", nil, parent)
+    frame:SetHeight(20)
+    local text = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    text:SetPoint("LEFT", frame, "LEFT", 0, 0)
+    text:SetJustifyH("LEFT")
+    text:SetTextColor(0.9, 0.75, 0.3)
+    text:SetText(label)
+    local line = frame:CreateTexture(nil, "ARTWORK")
+    line:SetHeight(1)
+    line:SetPoint("LEFT", text, "RIGHT", 6, 0)
+    line:SetPoint("RIGHT", frame, "RIGHT", 0, 0)
+    line:SetColorTexture(0.5, 0.5, 0.5, 0.5)
+    frame.line = line
+    return frame
+end
 
 local function ReleaseFrame(f)
     if not f then return end
@@ -346,10 +373,9 @@ function ProfilesTab:CreateContent(parent)
     local content = CreateFrame("Frame", nil, parent)
 
     -- Save section
-    local saveLabel = content:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    local saveLabel = CreateSeparator(content, L["PROFILE_SAVE_SECTION"])
     saveLabel:SetPoint("TOPLEFT", content, "TOPLEFT", 0, 0)
-    saveLabel:SetText(L["PROFILE_SAVE_SECTION"])
-    saveLabel:SetTextColor(0.9, 0.75, 0.3)
+    saveLabel:SetPoint("RIGHT", content, "RIGHT", 0, 0)
 
     local nameBox = CreateFrame("EditBox", nil, content, "InputBoxTemplate")
     nameBox:SetSize(180, 20)
@@ -420,16 +446,14 @@ function ProfilesTab:CreateContent(parent)
     nameBox:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
 
     -- Profile list section
-    local listLabel = content:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    local listLabel = CreateSeparator(content, L["PROFILE_LIST_SECTION"])
     listLabel:SetPoint("TOPLEFT", saveLabel, "BOTTOMLEFT", 0, -34)
-    listLabel:SetText(L["PROFILE_LIST_SECTION"])
-    listLabel:SetTextColor(0.9, 0.75, 0.3)
+    listLabel:SetPoint("RIGHT", content, "RIGHT", 0, 0)
 
     -- Import/Export section (footer, anchored to bottom)
-    local ieLabel = content:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    local ieLabel = CreateSeparator(content, L["PROFILE_IMPORT_EXPORT"])
     ieLabel:SetPoint("BOTTOMLEFT", content, "BOTTOMLEFT", 0, 118)
-    ieLabel:SetText(L["PROFILE_IMPORT_EXPORT"])
-    ieLabel:SetTextColor(0.9, 0.75, 0.3)
+    ieLabel:SetPoint("RIGHT", content, "RIGHT", 0, 0)
 
     local ieScroll = CreateFrame("ScrollFrame", nil, content, "UIPanelScrollFrameTemplate")
     ieScroll:SetPoint("TOPLEFT", ieLabel, "BOTTOMLEFT", 0, -4)
@@ -482,8 +506,12 @@ function ProfilesTab:CreateContent(parent)
     local importBtn = CreateFrame("Button", nil, content, "UIPanelButtonTemplate")
     importBtn:SetSize(60, 22)
     importBtn:SetPoint("RIGHT", content, "RIGHT", 0, 0)
-    importBtn:SetPoint("TOP", ieLabel, "TOP", 0, 8)
+    importBtn:SetPoint("TOP", ieLabel, "TOP", 0, 6)
     importBtn:SetText(L["PROFILE_IMPORT"])
+
+    -- Clip separator line to end before import button
+    ieLabel.line:SetPoint("RIGHT", importBtn, "LEFT", -6, 0)
+
     importBtn:SetScript("OnClick", function()
         local text = ieBox:GetText()
         if not text or text == "" then return end

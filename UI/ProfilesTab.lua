@@ -171,16 +171,21 @@ local function SetupScrollbarAutoHide(scrollFrame)
     local scrollBar = scrollFrame.ScrollBar or _G[scrollFrame:GetName() and (scrollFrame:GetName() .. "ScrollBar")]
     if not scrollBar then return end
 
+    local scrollBarWidth = (scrollBar:GetWidth() or 14) + 4
+
     local function UpdateScrollbarVisibility()
         local child = scrollFrame:GetScrollChild()
         if not child then return end
         local childHeight = child:GetHeight()
         local frameHeight = scrollFrame:GetHeight()
+        local frameWidth = scrollFrame:GetWidth()
         if childHeight > frameHeight + 1 then
             scrollBar:Show()
+            child:SetWidth(frameWidth - scrollBarWidth)
         else
             scrollBar:Hide()
             scrollFrame:SetVerticalScroll(0)
+            child:SetWidth(frameWidth)
         end
     end
 
@@ -463,7 +468,7 @@ function ProfilesTab:CreateContent(parent)
     -- Profile list section (fills space between save and import/export)
     local scrollFrame = CreateFrame("ScrollFrame", nil, content, "UIPanelScrollFrameTemplate")
     scrollFrame:SetPoint("TOPLEFT", listLabel, "BOTTOMLEFT", 0, -3)
-    scrollFrame:SetPoint("RIGHT", content, "RIGHT", 0, 0)
+    scrollFrame:SetPoint("RIGHT", content, "RIGHT", -18, 0)
     scrollFrame:SetPoint("BOTTOM", ieLabel, "TOP", 0, 10)
 
     local scrollChild = CreateFrame("Frame", nil, scrollFrame)

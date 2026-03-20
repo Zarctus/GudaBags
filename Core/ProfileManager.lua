@@ -373,7 +373,10 @@ function ProfileManager:GetProfileList()
         })
     end
 
+    local active = self:GetActiveProfile()
     table.sort(list, function(a, b)
+        if a.name == active then return true end
+        if b.name == active then return false end
         return (a.updatedAt or 0) > (b.updatedAt or 0)
     end)
 

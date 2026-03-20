@@ -285,3 +285,10 @@ Events:Register("SETTING_CHANGED", function(event, key, value)
         Events:Fire("CATEGORIES_UPDATED")
     end
 end, EquipmentSets)
+
+Events:Register("PROFILE_LOADED", function()
+    local CategoryManager = ns:GetModule("CategoryManager")
+    if CategoryManager then
+        CategoryManager:SyncEquipmentSetCategories()
+    end
+end, EquipmentSets)

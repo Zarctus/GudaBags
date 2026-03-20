@@ -1,0 +1,512 @@
+local addonName, ns = ...
+
+local ProfilesTab = {}
+ns:RegisterModule("ProfilesTab", ProfilesTab)
+
+local Events = ns:GetModule("Events")
+local Constants = ns.Constants
+local L = ns.L
+
+local profileListScrollChild
+local profileRows = {}
+local importExportBox
+
+-------------------------------------------------
+-- Static Popup Dialogs
+-------------------------------------------------
+
+StaticPopupDialogs["GUDABAGS_PROFILE_OVERWRITE"] = {
+    text = "Overwrite profile '%s'?",
+    button1 = OKAY,
+    button2 = CANCEL,
+    OnAccept = function(self)
+        local ProfileManager = ns:GetModule("ProfileManager")
+        if self.data then
+            ProfileManager:SaveProfile(self.data)
+            ProfilesTab:RefreshList()
+            ns:Print(string.format(L["PROFILE_SAVED"], self.data))
+        end
+    end,
+    timeout = 0,
+    whileDead = true,
+    hideOnEscape = true,
+    preferredIndex = 3,
+}
+
+StaticPopupDialogs["GUDABAGS_PROFILE_LOAD"] = {
+    text = "Load profile '%s'? This will replace your current settings.",
+    button1 = OKAY,
+    button2 = CANCEL,
+    OnAccept = function(self)
+        local ProfileManager = ns:GetModule("ProfileManager")
+        if self.data then
+            ProfileManager:LoadProfile(self.data)
+            ProfilesTab:RefreshList()
+            ns:Print(string.format(L["PROFILE_LOADED_MSG"], self.data))
+        end
+    end,
+    timeout = 0,
+    whileDead = true,
+    hideOnEscape = true,
+    preferredIndex = 3,
+}
+
+StaticPopupDialogs["GUDABAGS_PROFILE_DELETE"] = {
+    text = "Delete profile '%s'?",
+    button1 = OKAY,
+    button2 = CANCEL,
+    OnAccept = function(self)
+        local ProfileManager = ns:GetModule("ProfileManager")
+        if self.data then
+            ProfileManager:DeleteProfile(self.data)
+            ProfilesTab:RefreshList()
+        end
+    end,
+    timeout = 0,
+    whileDead = true,
+    hideOnEscape = true,
+    preferredIndex = 3,
+}
+
+StaticPopupDialogs["GUDABAGS_PROFILE_RESET_DEFAULTS"] = {
+    text = "Reset all settings to defaults? This cannot be undone.",
+    button1 = OKAY,
+    button2 = CANCEL,
+    OnAccept = function()
+        local Database = ns:GetModule("Database")
+        local Constants = ns.Constants
+        local ProfileManager = ns:GetModule("ProfileManager")
+
+        -- Reset settings to defaults (preserve frame positions)
+        if Constants.DEFAULTS then
+            for key, default in pairs(Constants.DEFAULTS) do
+                GudaBags_CharDB.settings[key] = default
+            end
+        end
+
+        -- Reset categories
+        local CategoryManager = ns:GetModule("CategoryManager")
+        if CategoryManager then
+            CategoryManager:ResetToDefaults()
+        end
+
+        ProfileManager:ClearActiveProfile()
+
+        local Events = ns:GetModule("Events")
+        Events:Fire("PROFILE_LOADED")
+        Events:Fire("CATEGORIES_UPDATED")
+        Events:Fire("BAGS_UPDATED")
+
+        ProfilesTab:RefreshList()
+        ns:Print(L["PROFILE_RESET_MSG"])
+    end,
+    timeout = 0,
+    whileDead = true,
+    hideOnEscape = true,
+    preferredIndex = 3,
+}
+
+StaticPopupDialogs["GUDABAGS_PROFILE_IMPORT_NAME"] = {
+    text = L["PROFILE_IMPORT_NAME_PROMPT"],
+    button1 = OKAY,
+    button2 = CANCEL,
+    hasEditBox = true,
+    OnShow = function(self)
+        self.EditBox:SetText(L["PROFILE_IMPORTED_DEFAULT"])
+        self.EditBox:HighlightText()
+    end,
+    OnAccept = function(self)
+        local name = self.EditBox:GetText()
+        if name and name ~= "" and self.data then
+            local ProfileManager = ns:GetModule("ProfileManager")
+            if ProfileManager:ProfileExists(name) then
+                -- Overwrite with imported data
+                local dialog = StaticPopup_Show("GUDABAGS_PROFILE_OVERWRITE", name)
+                if dialog then
+                    dialog.data = name
+                    -- Override OnAccept to save imported data instead
+                    local importData = self.data
+                    StaticPopupDialogs["GUDABAGS_PROFILE_OVERWRITE"].OnAccept = function(self2)
+                        ProfileManager:SaveImportedProfile(self2.data, importData)
+                        ProfilesTab:RefreshList()
+                        ns:Print(string.format(L["PROFILE_SAVED"], self2.data))
+                    end
+                end
+            else
+                ProfileManager:SaveImportedProfile(name, self.data)
+                ProfilesTab:RefreshList()
+                ns:Print(string.format(L["PROFILE_IMPORTED"], name))
+            end
+        end
+    end,
+    EditBoxOnEnterPressed = function(self)
+        local parent = self:GetParent()
+        StaticPopupDialogs["GUDABAGS_PROFILE_IMPORT_NAME"].OnAccept(parent)
+        parent:Hide()
+    end,
+    EditBoxOnEscapePressed = function(self)
+        self:GetParent():Hide()
+    end,
+    timeout = 0,
+    whileDead = true,
+    hideOnEscape = true,
+    preferredIndex = 3,
+}
+
+-------------------------------------------------
+-- Auto-hide scrollbar when content fits
+-------------------------------------------------
+
+local function SetupScrollbarAutoHide(scrollFrame)
+    local scrollBar = scrollFrame.ScrollBar or _G[scrollFrame:GetName() and (scrollFrame:GetName() .. "ScrollBar")]
+    if not scrollBar then return end
+
+    local function UpdateScrollbarVisibility()
+        local child = scrollFrame:GetScrollChild()
+        if not child then return end
+        local childHeight = child:GetHeight()
+        local frameHeight = scrollFrame:GetHeight()
+        if childHeight > frameHeight + 1 then
+            scrollBar:Show()
+        else
+            scrollBar:Hide()
+            scrollFrame:SetVerticalScroll(0)
+        end
+    end
+
+    scrollFrame:HookScript("OnScrollRangeChanged", UpdateScrollbarVisibility)
+    scrollFrame:HookScript("OnShow", UpdateScrollbarVisibility)
+    C_Timer.After(0, UpdateScrollbarVisibility)
+end
+
+-------------------------------------------------
+-- Profile Row
+-------------------------------------------------
+
+local function ReleaseFrame(f)
+    if not f then return end
+    f:Hide()
+    f:ClearAllPoints()
+end
+
+local function CreateProfileRow(parent, profileInfo, yOffset)
+    local ROW_HEIGHT = 28
+
+    local row = CreateFrame("Frame", nil, parent, "BackdropTemplate")
+    row:SetHeight(ROW_HEIGHT)
+    row:SetPoint("TOPLEFT", parent, "TOPLEFT", 0, yOffset)
+    row:SetPoint("RIGHT", parent, "RIGHT", 0, 0)
+    row:SetBackdrop({
+        bgFile = Constants.TEXTURES and Constants.TEXTURES.WHITE_8x8 or "Interface\\Buttons\\WHITE8x8",
+    })
+    row:SetBackdropColor(0.1, 0.1, 0.1, 0.4)
+
+    -- Profile name
+    local nameText = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    nameText:SetPoint("LEFT", row, "LEFT", 6, 0)
+    nameText:SetWidth(100)
+    nameText:SetJustifyH("LEFT")
+    nameText:SetText(profileInfo.name)
+    nameText:SetTextColor(1, 1, 1)
+
+    -- Current profile indicator + expansion badge
+    local ProfileManager = ns:GetModule("ProfileManager")
+    local isActive = ProfileManager:GetActiveProfile() == profileInfo.name
+
+    if isActive then
+        nameText:SetTextColor(0.3, 1, 0.3)
+        row:SetBackdropColor(0.1, 0.2, 0.1, 0.5)
+    end
+
+    local badgeAnchor = nameText
+    if isActive then
+        local activeText = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        activeText:SetPoint("LEFT", nameText, "RIGHT", 4, 0)
+        activeText:SetText("|cff00cc00" .. L["PROFILE_ACTIVE"] .. "|r")
+        badgeAnchor = activeText
+    end
+
+    local expName = ProfileManager:GetExpansionName(profileInfo.expansionId)
+    local badgeText = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    badgeText:SetPoint("LEFT", badgeAnchor, "RIGHT", 4, 0)
+    badgeText:SetText("|cff888888[" .. expName .. "]|r")
+
+    -- Delete button
+    local deleteBtn = CreateFrame("Button", nil, row, "UIPanelButtonTemplate")
+    deleteBtn:SetSize(50, 20)
+    deleteBtn:SetPoint("RIGHT", row, "RIGHT", -4, 0)
+    deleteBtn:SetText(L["PROFILE_DELETE"])
+    deleteBtn:GetFontString():SetFont(GameFontNormalSmall:GetFont())
+    deleteBtn:SetScript("OnClick", function()
+        local dialog = StaticPopup_Show("GUDABAGS_PROFILE_DELETE", profileInfo.name)
+        if dialog then
+            dialog.data = profileInfo.name
+        end
+    end)
+
+    -- Load button
+    local loadBtn = CreateFrame("Button", nil, row, "UIPanelButtonTemplate")
+    loadBtn:SetSize(50, 20)
+    loadBtn:SetPoint("RIGHT", deleteBtn, "LEFT", -4, 0)
+    loadBtn:SetText(L["PROFILE_LOAD"])
+    loadBtn:GetFontString():SetFont(GameFontNormalSmall:GetFont())
+    loadBtn:SetScript("OnClick", function()
+        local dialog = StaticPopup_Show("GUDABAGS_PROFILE_LOAD", profileInfo.name)
+        if dialog then
+            dialog.data = profileInfo.name
+        end
+    end)
+
+    -- Export button
+    local exportBtn = CreateFrame("Button", nil, row, "UIPanelButtonTemplate")
+    exportBtn:SetSize(50, 20)
+    exportBtn:SetPoint("RIGHT", loadBtn, "LEFT", -4, 0)
+    exportBtn:SetText(L["PROFILE_EXPORT"])
+    exportBtn:GetFontString():SetFont(GameFontNormalSmall:GetFont())
+    exportBtn:SetScript("OnClick", function()
+        local encoded = ProfileManager:ExportProfile(profileInfo.name)
+        if encoded and importExportBox then
+            importExportBox:SetText(encoded)
+            importExportBox:HighlightText()
+            importExportBox:SetFocus()
+        end
+    end)
+
+    row:SetScript("OnEnter", function(self)
+        self:SetBackdropColor(0.15, 0.15, 0.2, 0.6)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:SetText(profileInfo.name)
+        if profileInfo.updatedAt then
+            GameTooltip:AddLine(L["PROFILE_UPDATED"] .. ": " .. date("%Y-%m-%d %H:%M", profileInfo.updatedAt), 0.7, 0.7, 0.7)
+        end
+        if profileInfo.addonVersion then
+            GameTooltip:AddLine("v" .. profileInfo.addonVersion, 0.5, 0.5, 0.5)
+        end
+        GameTooltip:Show()
+    end)
+    row:SetScript("OnLeave", function(self)
+        self:SetBackdropColor(0.1, 0.1, 0.1, 0.4)
+        GameTooltip:Hide()
+    end)
+
+    return row
+end
+
+-------------------------------------------------
+-- Refresh Profile List
+-------------------------------------------------
+
+function ProfilesTab:RefreshList()
+    if not profileListScrollChild then return end
+
+    for _, row in ipairs(profileRows) do
+        ReleaseFrame(row)
+    end
+    profileRows = {}
+
+    local ProfileManager = ns:GetModule("ProfileManager")
+    local profiles = ProfileManager:GetProfileList()
+
+    local yOffset = 0
+    local ROW_HEIGHT = 28
+    local SPACING = 2
+
+    if #profiles == 0 then
+        local emptyText = profileListScrollChild:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        emptyText:SetPoint("TOP", profileListScrollChild, "TOP", 0, -20)
+        emptyText:SetText(L["PROFILE_NONE"])
+        emptyText:SetTextColor(0.5, 0.5, 0.5)
+        -- Store as a "row" so it gets cleaned up
+        local emptyFrame = CreateFrame("Frame", nil, profileListScrollChild)
+        emptyFrame:SetHeight(40)
+        emptyFrame:SetPoint("TOPLEFT", profileListScrollChild, "TOPLEFT", 0, 0)
+        emptyFrame:SetPoint("RIGHT", profileListScrollChild, "RIGHT", 0, 0)
+        emptyText:SetParent(emptyFrame)
+        emptyText:SetPoint("CENTER", emptyFrame, "CENTER")
+        table.insert(profileRows, emptyFrame)
+        profileListScrollChild:SetHeight(40)
+        return
+    end
+
+    for _, profileInfo in ipairs(profiles) do
+        local row = CreateProfileRow(profileListScrollChild, profileInfo, yOffset)
+        row:Show()
+        table.insert(profileRows, row)
+        yOffset = yOffset - ROW_HEIGHT - SPACING
+    end
+
+    profileListScrollChild:SetHeight(math.abs(yOffset) + 10)
+end
+
+-------------------------------------------------
+-- Create Profiles Tab Content
+-------------------------------------------------
+
+function ProfilesTab:CreateContent(parent)
+    local content = CreateFrame("Frame", nil, parent)
+
+    -- Save section
+    local saveLabel = content:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    saveLabel:SetPoint("TOPLEFT", content, "TOPLEFT", 0, 0)
+    saveLabel:SetText(L["PROFILE_SAVE_SECTION"])
+    saveLabel:SetTextColor(0.9, 0.75, 0.3)
+
+    local nameBox = CreateFrame("EditBox", nil, content, "InputBoxTemplate")
+    nameBox:SetSize(180, 20)
+    nameBox:SetPoint("TOPLEFT", saveLabel, "BOTTOMLEFT", 4, -4)
+    nameBox:SetAutoFocus(false)
+    nameBox:SetMaxLetters(50)
+
+    -- Placeholder text
+    local placeholder = nameBox:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
+    placeholder:SetPoint("LEFT", nameBox, "LEFT", 2, 0)
+    placeholder:SetText(L["PROFILE_NAME_PLACEHOLDER"])
+    placeholder:SetTextColor(0.5, 0.5, 0.5)
+    nameBox:SetScript("OnTextChanged", function(self)
+        placeholder:SetShown(self:GetText() == "")
+    end)
+    nameBox:HookScript("OnEditFocusGained", function()
+        placeholder:Hide()
+    end)
+    nameBox:HookScript("OnEditFocusLost", function(self)
+        placeholder:SetShown(self:GetText() == "")
+    end)
+
+    local saveBtn = CreateFrame("Button", nil, content, "UIPanelButtonTemplate")
+    saveBtn:SetSize(60, 22)
+    saveBtn:SetPoint("LEFT", nameBox, "RIGHT", 8, 0)
+    saveBtn:SetText(L["PROFILE_SAVE"])
+
+    local function DoSave()
+        local name = nameBox:GetText()
+        if not name or name == "" then return end
+
+        local ProfileManager = ns:GetModule("ProfileManager")
+        if ProfileManager:ProfileExists(name) then
+            local dialog = StaticPopup_Show("GUDABAGS_PROFILE_OVERWRITE", name)
+            if dialog then
+                dialog.data = name
+                -- Reset OnAccept to default save behavior
+                StaticPopupDialogs["GUDABAGS_PROFILE_OVERWRITE"].OnAccept = function(self)
+                    ProfileManager:SaveProfile(self.data)
+                    ProfilesTab:RefreshList()
+                    ns:Print(string.format(L["PROFILE_SAVED"], self.data))
+                end
+            end
+        else
+            ProfileManager:SaveProfile(name)
+            self:RefreshList()
+            nameBox:SetText("")
+            ns:Print(string.format(L["PROFILE_SAVED"], name))
+        end
+    end
+
+    saveBtn:SetScript("OnClick", DoSave)
+    nameBox:SetScript("OnEnterPressed", function(self)
+        DoSave()
+        self:ClearFocus()
+    end)
+    nameBox:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
+
+    -- Profile list section
+    local listLabel = content:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    listLabel:SetPoint("TOPLEFT", saveLabel, "BOTTOMLEFT", 0, -34)
+    listLabel:SetText(L["PROFILE_LIST_SECTION"])
+    listLabel:SetTextColor(0.9, 0.75, 0.3)
+
+    -- Reset to Defaults button (right-aligned on same line)
+    local resetBtn = CreateFrame("Button", nil, content, "UIPanelButtonTemplate")
+    resetBtn:SetSize(100, 20)
+    resetBtn:SetPoint("RIGHT", content, "RIGHT", 0, 0)
+    resetBtn:SetPoint("TOP", listLabel, "TOP", 0, 2)
+    resetBtn:SetText(L["PROFILE_RESET_DEFAULTS"])
+    resetBtn:GetFontString():SetFont(GameFontNormalSmall:GetFont())
+    resetBtn:SetScript("OnClick", function()
+        StaticPopup_Show("GUDABAGS_PROFILE_RESET_DEFAULTS")
+    end)
+
+    -- Import/Export section (footer, anchored to bottom)
+    local ieLabel = content:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    ieLabel:SetPoint("BOTTOMLEFT", content, "BOTTOMLEFT", 0, 118)
+    ieLabel:SetText(L["PROFILE_IMPORT_EXPORT"])
+    ieLabel:SetTextColor(0.9, 0.75, 0.3)
+
+    local ieScroll = CreateFrame("ScrollFrame", nil, content, "UIPanelScrollFrameTemplate")
+    ieScroll:SetPoint("TOPLEFT", ieLabel, "BOTTOMLEFT", 0, -4)
+    ieScroll:SetPoint("RIGHT", content, "RIGHT", -14, 0)
+    ieScroll:SetPoint("BOTTOM", content, "BOTTOM", 0, 0)
+
+    -- Profile list section (fills space between save and import/export)
+    local scrollFrame = CreateFrame("ScrollFrame", nil, content, "UIPanelScrollFrameTemplate")
+    scrollFrame:SetPoint("TOPLEFT", listLabel, "BOTTOMLEFT", 0, -4)
+    scrollFrame:SetPoint("RIGHT", content, "RIGHT", -14, 0)
+    scrollFrame:SetPoint("BOTTOM", ieLabel, "TOP", 0, 10)
+
+    local scrollChild = CreateFrame("Frame", nil, scrollFrame)
+    scrollChild:SetWidth(300)
+    scrollChild:SetHeight(1)
+    scrollFrame:SetScrollChild(scrollChild)
+    profileListScrollChild = scrollChild
+    SetupScrollbarAutoHide(scrollFrame)
+
+    local ieBg = CreateFrame("Frame", nil, ieScroll, "BackdropTemplate")
+    ieBg:SetPoint("TOPLEFT", ieScroll, "TOPLEFT", -4, 4)
+    ieBg:SetPoint("BOTTOMRIGHT", ieScroll, "BOTTOMRIGHT", 18, -4)
+    ieBg:SetBackdrop({
+        bgFile = "Interface\\Buttons\\WHITE8x8",
+        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+        edgeSize = 12,
+        insets = { left = 3, right = 3, top = 3, bottom = 3 },
+    })
+    ieBg:SetBackdropColor(0, 0, 0, 0.5)
+    ieBg:SetBackdropBorderColor(0.4, 0.4, 0.4, 0.8)
+    ieBg:SetFrameLevel(ieScroll:GetFrameLevel() - 1)
+
+    local ieBox = CreateFrame("EditBox", nil, ieScroll)
+    ieBox:SetMultiLine(true)
+    ieBox:SetAutoFocus(false)
+    ieBox:SetMaxLetters(0)
+    ieBox:SetFontObject(ChatFontNormal)
+    ieBox:SetWidth(280)
+    ieBox:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
+    ieScroll:SetScrollChild(ieBox)
+    importExportBox = ieBox
+    SetupScrollbarAutoHide(ieScroll)
+
+    local importBtn = CreateFrame("Button", nil, content, "UIPanelButtonTemplate")
+    importBtn:SetSize(60, 22)
+    importBtn:SetPoint("RIGHT", content, "RIGHT", 0, 0)
+    importBtn:SetPoint("TOP", ieLabel, "TOP", 0, 8)
+    importBtn:SetText(L["PROFILE_IMPORT"])
+    importBtn:SetScript("OnClick", function()
+        local text = ieBox:GetText()
+        if not text or text == "" then return end
+
+        local ProfileManager = ns:GetModule("ProfileManager")
+        local success, result = ProfileManager:ImportProfile(text)
+        if success then
+            local dialog = StaticPopup_Show("GUDABAGS_PROFILE_IMPORT_NAME")
+            if dialog then
+                dialog.data = result
+            end
+        else
+            ns:Print("|cffff4444" .. result .. "|r")
+        end
+    end)
+
+    -- Ensure proper width for scroll child
+    content:SetScript("OnShow", function(self)
+        local width = self:GetWidth()
+        if width and width > 0 then
+            scrollChild:SetWidth(width - 20)
+        end
+        ProfilesTab:RefreshList()
+    end)
+
+    -- Initial refresh
+    C_Timer.After(0.1, function()
+        self:RefreshList()
+    end)
+
+    return content
+end

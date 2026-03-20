@@ -936,3 +936,12 @@ function CategoryManager:CategorizeItems(items, isOtherChar)
 
     return categorized
 end
+
+do
+    local Events = ns:GetModule("Events")
+    if Events then
+        Events:Register("PROFILE_LOADED", function()
+            CategoryManager:InvalidatePriorityCache()
+        end, CategoryManager)
+    end
+end

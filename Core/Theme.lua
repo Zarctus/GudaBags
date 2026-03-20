@@ -694,3 +694,7 @@ Events:Register("SETTING_CHANGED", function(event, key)
         cachedTheme = nil
     end
 end, Theme)
+
+Events:Register("PROFILE_LOADED", function()
+    cachedTheme = nil
+end, Theme)

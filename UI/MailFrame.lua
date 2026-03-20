@@ -596,3 +596,10 @@ Events:Register("SETTING_CHANGED", function(event, key, value)
         MailFrame:Refresh()
     end
 end, MailFrame)
+
+Events:Register("PROFILE_LOADED", function()
+    if frame and frame:IsShown() then
+        UpdateFrameAppearance()
+        MailFrame:Refresh()
+    end
+end, MailFrame)

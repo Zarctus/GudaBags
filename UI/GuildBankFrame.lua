@@ -1423,3 +1423,10 @@ local function OnSettingChanged(event, key, value)
 end
 
 Events:Register("SETTING_CHANGED", OnSettingChanged, GuildBankFrame)
+
+Events:Register("PROFILE_LOADED", function()
+    if frame and frame:IsShown() then
+        UpdateFrameAppearance()
+        GuildBankFrame:Refresh()
+    end
+end, GuildBankFrame)

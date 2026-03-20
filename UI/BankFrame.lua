@@ -2729,6 +2729,12 @@ end
 
 Events:Register("SETTING_CHANGED", OnSettingChanged, BankFrame)
 
+Events:Register("PROFILE_LOADED", function()
+    if frame and frame:IsShown() then
+        BankFrame:Refresh()
+    end
+end, BankFrame)
+
 -- Refresh when categories are updated (reordered, grouped, etc.)
 -- Force full refresh by releasing all buttons since category assignments changed
 Events:Register("CATEGORIES_UPDATED", function()

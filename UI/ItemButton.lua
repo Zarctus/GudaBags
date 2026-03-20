@@ -2110,6 +2110,10 @@ if Events then
             ItemButton:InvalidateSettingsCache()
         end
     end, ItemButton)
+
+    Events:Register("PROFILE_LOADED", function()
+        cachedSettings = nil
+    end, ItemButton)
 end
 
 -- Debug: Get pool statistics

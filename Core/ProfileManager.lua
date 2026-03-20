@@ -239,6 +239,17 @@ local function SnapshotCategories()
 end
 
 -------------------------------------------------
+-- Expansion Name Table
+-------------------------------------------------
+
+local EXPANSION_NAMES = {
+    [1] = "Retail",
+    [2] = "Classic",
+    [5] = "TBC",
+    [19] = "MoP",
+}
+
+-------------------------------------------------
 -- Public API
 -------------------------------------------------
 
@@ -323,20 +334,11 @@ function ProfileManager:LoadProfile(name)
     end
 
     -- 5. Close bag/bank frames so they fully rebuild on next open
-    local BagFrame = ns:GetModule("BagFrame")
-    if BagFrame and BagFrame.Hide then
-        BagFrame:Hide()
-    end
-    local BankFrame = ns:GetModule("BankFrame")
-    if BankFrame and BankFrame.Hide then
-        BankFrame:Hide()
-    end
+    self:CloseFrames()
 
     -- 6. Mark active profile and fire events for UI refresh
     GudaBags_CharDB.activeProfile = name
-    Events:Fire("PROFILE_LOADED")
-    Events:Fire("CATEGORIES_UPDATED")
-    Events:Fire("BAGS_UPDATED")
+    self:FireProfileEvents()
 
     return true
 end
@@ -386,6 +388,46 @@ end
 function ProfileManager:ProfileExists(name)
     if not name or not GudaBags_DB or not GudaBags_DB.profiles then return false end
     return GudaBags_DB.profiles[name] ~= nil
+end
+
+-------------------------------------------------
+-- Shared Helpers
+-------------------------------------------------
+
+function ProfileManager:CloseFrames()
+    local BagFrame = ns:GetModule("BagFrame")
+    if BagFrame and BagFrame.Hide then
+        BagFrame:Hide()
+    end
+    local BankFrame = ns:GetModule("BankFrame")
+    if BankFrame and BankFrame.Hide then
+        BankFrame:Hide()
+    end
+end
+
+function ProfileManager:FireProfileEvents()
+    Events:Fire("PROFILE_LOADED")
+    Events:Fire("CATEGORIES_UPDATED")
+    Events:Fire("BAGS_UPDATED")
+end
+
+function ProfileManager:ResetToDefaults()
+    -- Reset settings to defaults (preserve frame positions)
+    if Constants.DEFAULTS then
+        for key, default in pairs(Constants.DEFAULTS) do
+            GudaBags_CharDB.settings[key] = default
+        end
+    end
+
+    -- Reset categories
+    local CategoryManager = ns:GetModule("CategoryManager")
+    if CategoryManager then
+        CategoryManager:ResetToDefaults()
+    end
+
+    self:ClearActiveProfile()
+    self:CloseFrames()
+    self:FireProfileEvents()
 end
 
 -------------------------------------------------
@@ -472,11 +514,5 @@ end
 -------------------------------------------------
 
 function ProfileManager:GetExpansionName(expansionId)
-    local names = {
-        [1] = "Retail",
-        [2] = "Classic",
-        [5] = "TBC",
-        [19] = "MoP",
-    }
-    return names[expansionId] or ("ID:" .. tostring(expansionId or "?"))
+    return EXPANSION_NAMES[expansionId] or ("ID:" .. tostring(expansionId or "?"))
 end

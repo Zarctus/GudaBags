@@ -485,6 +485,7 @@ L["PROFILE_UPDATED"] = "Updated"
 L["PROFILE_ACTIVE"] = "(active)"
 L["PROFILE_NAME_PLACEHOLDER"] = "Profile name..."
 L["PROFILE_RESET_DEFAULTS"] = "Reset Defaults"
+L["PROFILE_RESET_CONFIRM"] = "Reset all settings to defaults? This cannot be undone."
 L["PROFILE_RESET_MSG"] = "Settings reset to defaults"
 
 -------------------------------------------------

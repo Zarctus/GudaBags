@@ -1834,15 +1834,6 @@ end
 
 Events:Register("SETTING_CHANGED", OnSettingChanged, BagFrame)
 
-Events:Register("PROFILE_LOADED", function()
-    if frame and frame:IsShown() then
-        local ItemButton = ns:GetModule("ItemButton")
-        ItemButton:ReleaseAll(frame.container)
-        buttonsByItemKey = {}
-        BagFrame:Refresh()
-    end
-end, BagFrame)
-
 -- Refresh when categories are updated (reordered, grouped, etc.)
 -- Force full refresh by releasing all buttons since category assignments changed
 Events:Register("CATEGORIES_UPDATED", function()

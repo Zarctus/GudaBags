@@ -10,22 +10,31 @@ local L = ns.L
 local profileListScrollChild
 local profileRows = {}
 local importExportBox
+local pendingImportData = nil
 
 -------------------------------------------------
 -- Static Popup Dialogs
 -------------------------------------------------
 
 StaticPopupDialogs["GUDABAGS_PROFILE_OVERWRITE"] = {
-    text = "Overwrite profile '%s'?",
+    text = L["PROFILE_OVERWRITE_CONFIRM"],
     button1 = OKAY,
     button2 = CANCEL,
     OnAccept = function(self)
         local ProfileManager = ns:GetModule("ProfileManager")
         if self.data then
-            ProfileManager:SaveProfile(self.data)
+            if pendingImportData then
+                ProfileManager:SaveImportedProfile(self.data, pendingImportData)
+                pendingImportData = nil
+            else
+                ProfileManager:SaveProfile(self.data)
+            end
             ProfilesTab:RefreshList()
             ns:Print(string.format(L["PROFILE_SAVED"], self.data))
         end
+    end,
+    OnCancel = function()
+        pendingImportData = nil
     end,
     timeout = 0,
     whileDead = true,
@@ -34,7 +43,7 @@ StaticPopupDialogs["GUDABAGS_PROFILE_OVERWRITE"] = {
 }
 
 StaticPopupDialogs["GUDABAGS_PROFILE_LOAD"] = {
-    text = "Load profile '%s'? This will replace your current settings.",
+    text = L["PROFILE_LOAD_CONFIRM"],
     button1 = OKAY,
     button2 = CANCEL,
     OnAccept = function(self)
@@ -52,7 +61,7 @@ StaticPopupDialogs["GUDABAGS_PROFILE_LOAD"] = {
 }
 
 StaticPopupDialogs["GUDABAGS_PROFILE_DELETE"] = {
-    text = "Delete profile '%s'?",
+    text = L["PROFILE_DELETE_CONFIRM"],
     button1 = OKAY,
     button2 = CANCEL,
     OnAccept = function(self)
@@ -69,44 +78,12 @@ StaticPopupDialogs["GUDABAGS_PROFILE_DELETE"] = {
 }
 
 StaticPopupDialogs["GUDABAGS_PROFILE_RESET_DEFAULTS"] = {
-    text = "Reset all settings to defaults? This cannot be undone.",
+    text = L["PROFILE_RESET_CONFIRM"],
     button1 = OKAY,
     button2 = CANCEL,
     OnAccept = function()
-        local Database = ns:GetModule("Database")
-        local Constants = ns.Constants
         local ProfileManager = ns:GetModule("ProfileManager")
-
-        -- Reset settings to defaults (preserve frame positions)
-        if Constants.DEFAULTS then
-            for key, default in pairs(Constants.DEFAULTS) do
-                GudaBags_CharDB.settings[key] = default
-            end
-        end
-
-        -- Reset categories
-        local CategoryManager = ns:GetModule("CategoryManager")
-        if CategoryManager then
-            CategoryManager:ResetToDefaults()
-        end
-
-        ProfileManager:ClearActiveProfile()
-
-        -- Close bag/bank frames so they fully rebuild on next open
-        local BagFrame = ns:GetModule("BagFrame")
-        if BagFrame and BagFrame.Hide then
-            BagFrame:Hide()
-        end
-        local BankFrame = ns:GetModule("BankFrame")
-        if BankFrame and BankFrame.Hide then
-            BankFrame:Hide()
-        end
-
-        local Events = ns:GetModule("Events")
-        Events:Fire("PROFILE_LOADED")
-        Events:Fire("CATEGORIES_UPDATED")
-        Events:Fire("BAGS_UPDATED")
-
+        ProfileManager:ResetToDefaults()
         ProfilesTab:RefreshList()
         ns:Print(L["PROFILE_RESET_MSG"])
     end,
@@ -130,17 +107,10 @@ StaticPopupDialogs["GUDABAGS_PROFILE_IMPORT_NAME"] = {
         if name and name ~= "" and self.data then
             local ProfileManager = ns:GetModule("ProfileManager")
             if ProfileManager:ProfileExists(name) then
-                -- Overwrite with imported data
+                pendingImportData = self.data
                 local dialog = StaticPopup_Show("GUDABAGS_PROFILE_OVERWRITE", name)
                 if dialog then
                     dialog.data = name
-                    -- Override OnAccept to save imported data instead
-                    local importData = self.data
-                    StaticPopupDialogs["GUDABAGS_PROFILE_OVERWRITE"].OnAccept = function(self2)
-                        ProfileManager:SaveImportedProfile(self2.data, importData)
-                        ProfilesTab:RefreshList()
-                        ns:Print(string.format(L["PROFILE_SAVED"], self2.data))
-                    end
                 end
             else
                 ProfileManager:SaveImportedProfile(name, self.data)
@@ -425,15 +395,10 @@ function ProfilesTab:CreateContent(parent)
 
         local ProfileManager = ns:GetModule("ProfileManager")
         if ProfileManager:ProfileExists(name) then
+            pendingImportData = nil
             local dialog = StaticPopup_Show("GUDABAGS_PROFILE_OVERWRITE", name)
             if dialog then
                 dialog.data = name
-                -- Reset OnAccept to default save behavior
-                StaticPopupDialogs["GUDABAGS_PROFILE_OVERWRITE"].OnAccept = function(self)
-                    ProfileManager:SaveProfile(self.data)
-                    ProfilesTab:RefreshList()
-                    ns:Print(string.format(L["PROFILE_SAVED"], self.data))
-                end
             end
         else
             ProfileManager:SaveProfile(name)

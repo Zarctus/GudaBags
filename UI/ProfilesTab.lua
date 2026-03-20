@@ -377,6 +377,17 @@ function ProfilesTab:CreateContent(parent)
     saveBtn:SetPoint("LEFT", nameBox, "RIGHT", 8, 0)
     saveBtn:SetText(L["PROFILE_SAVE"])
 
+    -- Reset to Defaults button (right-aligned, same line as input)
+    local resetBtn = CreateFrame("Button", nil, content, "UIPanelButtonTemplate")
+    resetBtn:SetSize(100, 22)
+    resetBtn:SetPoint("RIGHT", content, "RIGHT", 0, 0)
+    resetBtn:SetPoint("TOP", nameBox, "TOP", 0, 0)
+    resetBtn:SetText(L["PROFILE_RESET_DEFAULTS"])
+    resetBtn:GetFontString():SetFont(GameFontNormalSmall:GetFont())
+    resetBtn:SetScript("OnClick", function()
+        StaticPopup_Show("GUDABAGS_PROFILE_RESET_DEFAULTS")
+    end)
+
     local function DoSave()
         local name = nameBox:GetText()
         if not name or name == "" then return end
@@ -414,17 +425,6 @@ function ProfilesTab:CreateContent(parent)
     listLabel:SetText(L["PROFILE_LIST_SECTION"])
     listLabel:SetTextColor(0.9, 0.75, 0.3)
 
-    -- Reset to Defaults button (right-aligned on same line)
-    local resetBtn = CreateFrame("Button", nil, content, "UIPanelButtonTemplate")
-    resetBtn:SetSize(100, 20)
-    resetBtn:SetPoint("RIGHT", content, "RIGHT", 0, 0)
-    resetBtn:SetPoint("TOP", listLabel, "TOP", 0, 2)
-    resetBtn:SetText(L["PROFILE_RESET_DEFAULTS"])
-    resetBtn:GetFontString():SetFont(GameFontNormalSmall:GetFont())
-    resetBtn:SetScript("OnClick", function()
-        StaticPopup_Show("GUDABAGS_PROFILE_RESET_DEFAULTS")
-    end)
-
     -- Import/Export section (footer, anchored to bottom)
     local ieLabel = content:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     ieLabel:SetPoint("BOTTOMLEFT", content, "BOTTOMLEFT", 0, 118)
@@ -438,12 +438,12 @@ function ProfilesTab:CreateContent(parent)
 
     -- Profile list section (fills space between save and import/export)
     local scrollFrame = CreateFrame("ScrollFrame", nil, content, "UIPanelScrollFrameTemplate")
-    scrollFrame:SetPoint("TOPLEFT", listLabel, "BOTTOMLEFT", 0, -4)
-    scrollFrame:SetPoint("RIGHT", content, "RIGHT", -14, 0)
+    scrollFrame:SetPoint("TOPLEFT", listLabel, "BOTTOMLEFT", 0, -3)
+    scrollFrame:SetPoint("RIGHT", content, "RIGHT", 0, 0)
     scrollFrame:SetPoint("BOTTOM", ieLabel, "TOP", 0, 10)
 
     local scrollChild = CreateFrame("Frame", nil, scrollFrame)
-    scrollChild:SetWidth(300)
+    scrollChild:SetWidth(1)
     scrollChild:SetHeight(1)
     scrollFrame:SetScrollChild(scrollChild)
     profileListScrollChild = scrollChild
@@ -460,14 +460,20 @@ function ProfilesTab:CreateContent(parent)
     })
     ieBg:SetBackdropColor(0, 0, 0, 0.5)
     ieBg:SetBackdropBorderColor(0.4, 0.4, 0.4, 0.8)
-    ieBg:SetFrameLevel(ieScroll:GetFrameLevel() - 1)
+    ieBg:SetFrameLevel(ieScroll:GetFrameLevel() + 10)
+    ieBg:EnableMouse(true)
+    ieBg:SetScript("OnMouseDown", function()
+        if importExportBox then
+            importExportBox:SetFocus()
+        end
+    end)
 
     local ieBox = CreateFrame("EditBox", nil, ieScroll)
     ieBox:SetMultiLine(true)
     ieBox:SetAutoFocus(false)
     ieBox:SetMaxLetters(0)
     ieBox:SetFontObject(ChatFontNormal)
-    ieBox:SetWidth(280)
+    ieBox:SetWidth(1)
     ieBox:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
     ieScroll:SetScrollChild(ieBox)
     importExportBox = ieBox
@@ -494,11 +500,12 @@ function ProfilesTab:CreateContent(parent)
         end
     end)
 
-    -- Ensure proper width for scroll child
+    -- Sync widths on show so profile list rows match textarea width
     content:SetScript("OnShow", function(self)
         local width = self:GetWidth()
         if width and width > 0 then
-            scrollChild:SetWidth(width - 20)
+            scrollChild:SetWidth(width)
+            ieBox:SetWidth(width - 14)  -- account for scrollbar space on textarea
         end
         ProfilesTab:RefreshList()
     end)

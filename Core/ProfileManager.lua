@@ -238,19 +238,19 @@ local function SnapshotCategories()
     return snapshot
 end
 
--- Track which profile is currently active (per session, not persisted)
-local activeProfileName = nil
-
 -------------------------------------------------
 -- Public API
 -------------------------------------------------
 
 function ProfileManager:GetActiveProfile()
-    return activeProfileName
+    if not GudaBags_CharDB then return nil end
+    return GudaBags_CharDB.activeProfile
 end
 
 function ProfileManager:ClearActiveProfile()
-    activeProfileName = nil
+    if GudaBags_CharDB then
+        GudaBags_CharDB.activeProfile = nil
+    end
 end
 
 function ProfileManager:SaveProfile(name)
@@ -289,6 +289,16 @@ function ProfileManager:LoadProfile(name)
         end
     end
 
+    -- Remap theme for cross-expansion compatibility
+    local theme = GudaBags_CharDB.settings.theme
+    if ns.IsRetail and theme == "retail" then
+        -- "Retail" theme is a Classic-only cosmetic; on actual Retail, "blizzard" is equivalent
+        GudaBags_CharDB.settings.theme = "blizzard"
+    elseif not ns.IsRetail and profile.expansionId == (WOW_PROJECT_MAINLINE or 1) and theme == "blizzard" then
+        -- Importing from Retail where "blizzard" uses native metal frames; on Classic, "retail" is the equivalent look
+        GudaBags_CharDB.settings.theme = "retail"
+    end
+
     -- 2. Set settingsVersion and run migrations
     if profile.settingsVersion then
         GudaBags_CharDB.settingsVersion = profile.settingsVersion
@@ -312,8 +322,18 @@ function ProfileManager:LoadProfile(name)
         CategoryManager:InvalidatePriorityCache()
     end
 
-    -- 5. Mark active profile and fire events for UI refresh
-    activeProfileName = name
+    -- 5. Close bag/bank frames so they fully rebuild on next open
+    local BagFrame = ns:GetModule("BagFrame")
+    if BagFrame and BagFrame.Hide then
+        BagFrame:Hide()
+    end
+    local BankFrame = ns:GetModule("BankFrame")
+    if BankFrame and BankFrame.Hide then
+        BankFrame:Hide()
+    end
+
+    -- 6. Mark active profile and fire events for UI refresh
+    GudaBags_CharDB.activeProfile = name
     Events:Fire("PROFILE_LOADED")
     Events:Fire("CATEGORIES_UPDATED")
     Events:Fire("BAGS_UPDATED")

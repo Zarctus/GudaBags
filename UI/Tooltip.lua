@@ -83,7 +83,7 @@ local function AddInventorySection(tooltip, itemID, skipReadyCheck)
 
     -- Show warband bank as a separate line (account-wide, not per-character)
     if warbandCount > 0 then
-        tooltip:AddDoubleLine(L["TOOLTIP_WARBAND_BANK"] or "Warband Bank", warbandCount, 0.0, 0.8, 0.6, 1, 0.82, 0)
+        tooltip:AddDoubleLine(L["TOOLTIP_WARBAND_BANK"], warbandCount, 0.0, 0.8, 0.6, 1, 0.82, 0)
     end
 
     if #characterCounts > 1 or warbandCount > 0 then

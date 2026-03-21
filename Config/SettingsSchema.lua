@@ -60,6 +60,7 @@ function SettingsSchema.GetGeneral()
         }},
         { type = "row", children = {
             { type = "checkbox", key = "autoVendorJunk", label = L["SETTINGS_AUTO_VENDOR_JUNK"], tooltip = L["SETTINGS_AUTO_VENDOR_JUNK_TIP"] },
+            { type = "checkbox", key = "autoRepair", label = L["SETTINGS_AUTO_REPAIR"], tooltip = L["SETTINGS_AUTO_REPAIR_TIP"] },
         }},
     }
 end

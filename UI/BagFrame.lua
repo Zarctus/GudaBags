@@ -1933,6 +1933,23 @@ local function AutoVendorJunk()
 end
 Events:Register("MERCHANT_SHOW", AutoVendorJunk, "AutoVendor")
 
+-- Auto-repair at repair-capable merchants
+local function AutoRepair()
+    if not Database:GetSetting("autoRepair") then return end
+    if not CanMerchantRepair() then return end
+
+    local repairCost, canRepair = GetRepairAllCost()
+    if canRepair and repairCost > 0 then
+        if GetMoney() >= repairCost then
+            RepairAllItems()
+            ns:Print(string.format(L["AUTO_REPAIR_COST"], GetCoinTextureString(repairCost)))
+        else
+            ns:Print(string.format(L["AUTO_REPAIR_NO_MONEY"], GetCoinTextureString(repairCost)))
+        end
+    end
+end
+Events:Register("MERCHANT_SHOW", AutoRepair, "AutoRepair")
+
 -- Auction house
 Events:Register("AUCTION_HOUSE_SHOW", RefreshForInteractionWindow, BagFrame)
 Events:Register("AUCTION_HOUSE_CLOSED", RefreshForInteractionWindow, BagFrame)

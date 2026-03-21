@@ -611,10 +611,10 @@ local function CountItemsInContainers(containers, itemID)
     return count
 end
 
--- Count items by itemID across all characters (bags + bank)
--- Returns: totalCount, characterCounts (table of {name, class, count, bagCount, bankCount})
+-- Count items by itemID across all characters (bags + bank + warband bank)
+-- Returns: totalCount, characterCounts (table of {name, class, count, bagCount, bankCount, ...}), warbandCount
 function Database:CountItemAcrossCharacters(itemID)
-    if not itemID then return 0, {} end
+    if not itemID then return 0, {}, 0 end
 
     local currentFullName = GetPlayerFullName()
     local characterCounts = {}
@@ -622,7 +622,13 @@ function Database:CountItemAcrossCharacters(itemID)
 
     for fullName, charData in pairs(GudaBags_DB.characters) do
         local bagCount = CountItemsInContainers(charData.bags, itemID)
-        local bankCount = CountItemsInContainers(charData.bank, itemID)
+
+        -- On Retail, bank data is wrapped: {containers = {...}, tabs = {...}, isRetail = true}
+        local bankContainers = charData.bank
+        if bankContainers and bankContainers.isRetail then
+            bankContainers = bankContainers.containers
+        end
+        local bankCount = CountItemsInContainers(bankContainers, itemID)
 
         local mailCount = 0
         if charData.mailbox then
@@ -669,6 +675,15 @@ function Database:CountItemAcrossCharacters(itemID)
         end
     end
 
+    -- Count warband bank (account-wide, not per-character)
+    local warbandCount = 0
+    local warbandBank = GudaBags_DB.warbandBank
+    if warbandBank then
+        local warbandContainers = warbandBank.containers or warbandBank
+        warbandCount = CountItemsInContainers(warbandContainers, itemID)
+        totalCount = totalCount + warbandCount
+    end
+
     table.sort(characterCounts, function(a, b)
         if a.isCurrent ~= b.isCurrent then
             return a.isCurrent
@@ -676,7 +691,7 @@ function Database:CountItemAcrossCharacters(itemID)
         return a.name < b.name
     end)
 
-    return totalCount, characterCounts
+    return totalCount, characterCounts, warbandCount
 end
 
 -------------------------------------------------

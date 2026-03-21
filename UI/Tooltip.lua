@@ -36,10 +36,10 @@ local function AddInventorySection(tooltip, itemID, skipReadyCheck)
 
     if Database:GetSetting("showTooltipCounts") == false then return end
 
-    local totalCount, characterCounts = Database:CountItemAcrossCharacters(itemID)
+    local totalCount, characterCounts, warbandCount = Database:CountItemAcrossCharacters(itemID)
 
     -- Don't show if only 1 item in current character's bags (no useful cross-location info)
-    if #characterCounts == 1 and characterCounts[1].isCurrent and characterCounts[1].count == 1
+    if warbandCount == 0 and #characterCounts == 1 and characterCounts[1].isCurrent and characterCounts[1].count == 1
         and (characterCounts[1].equippedCount or 0) == 0 then
         return
     end
@@ -81,7 +81,12 @@ local function AddInventorySection(tooltip, itemID, skipReadyCheck)
         tooltip:AddDoubleLine(displayName, countStr, r, g, b, 1, 1, 1)
     end
 
-    if #characterCounts > 1 then
+    -- Show warband bank as a separate line (account-wide, not per-character)
+    if warbandCount > 0 then
+        tooltip:AddDoubleLine(L["TOOLTIP_WARBAND_BANK"], warbandCount, 0.0, 0.8, 0.6, 1, 0.82, 0)
+    end
+
+    if #characterCounts > 1 or warbandCount > 0 then
         tooltip:AddDoubleLine(L["TOOLTIP_TOTAL"], totalCount, 0.8, 0.8, 0.8, 1, 0.82, 0)
     end
 

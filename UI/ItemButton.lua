@@ -942,6 +942,18 @@ local function CreateButton(parent)
     -- Ctrl+Alt+Click to track/untrack items
     -- Also handle guild bank item clicks and read-only item linking
     button:HookScript("OnClick", function(self, mouseButton)
+        -- Complete warband bank deposit (PreClick blocked the template)
+        if self._warbandIntercept then
+            local data = self._warbandIntercept
+            self._warbandIntercept = nil
+            -- Restore IDs for future clicks
+            self.wrapper:SetID(data.bagID)
+            self:SetID(data.slot)
+            -- Deposit to warband bank
+            C_Container.UseContainerItem(data.bagID, data.slot, nil, Enum.BankType.Account)
+            return
+        end
+
         -- Wrap in pcall to prevent errors from breaking item interaction
         local success, err = pcall(function()
             -- Handle shift-click to link items in chat for read-only items (cached/view mode)
@@ -1172,6 +1184,31 @@ local function CreateButton(parent)
     button:HookScript("PreClick", function(self, mouseButton)
         -- Suppress spurious "Item isn't ready yet" errors on retail
         SuppressItemErrors()
+
+        -- Intercept right-click to deposit into warband bank instead of character bank
+        -- The secure template calls UseContainerItem without bankType, defaulting to character bank
+        if ns.IsRetail and mouseButton == "RightButton" and not IsModifiedClick() then
+            local RetailBankScanner = ns:GetModule("RetailBankScanner")
+            local BankFooter = ns:GetModule("BankFrame.BankFooter")
+            if RetailBankScanner and RetailBankScanner:IsBankOpen()
+               and BankFooter and BankFooter:GetCurrentBankType() == "warband"
+               and self.itemData and self.itemData.itemID
+               and not self.itemData.isGuildBank and not self.isReadOnly then
+                -- Only intercept bag items (not bank items being withdrawn)
+                local isBagItem = false
+                for _, id in ipairs(Constants.BAG_IDS) do
+                    if self.itemData.bagID == id then
+                        isBagItem = true
+                        break
+                    end
+                end
+                if isBagItem then
+                    self._warbandIntercept = { bagID = self.itemData.bagID, slot = self.itemData.slot }
+                    self.wrapper:SetID(0)
+                    self:SetID(0)
+                end
+            end
+        end
 
         -- On Retail, don't do anything that could taint the secure click path
         -- Protection is handled via spell guard (OnUpdate) and merchant overlays

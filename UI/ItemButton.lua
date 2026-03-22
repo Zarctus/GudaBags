@@ -8,33 +8,9 @@ local Database = ns:GetModule("Database")
 local Tooltip = ns:GetModule("Tooltip")
 local Utils = ns:GetModule("Utils")
 
--- Suppress spurious "Item isn't ready yet" errors on retail
--- ContainerFrameItemButtonTemplate shows this error incorrectly when clicking usable items
-local suppressItemErrors = false
-local suppressUntil = 0
-
--- Hook UIErrorsFrame to filter out incorrect item errors
-if UIErrorsFrame and ns.IsRetail then
-    local originalAddMessage = UIErrorsFrame.AddMessage
-    UIErrorsFrame.AddMessage = function(self, msg, ...)
-        -- Suppress item-not-ready errors briefly after our button clicks
-        if suppressItemErrors and GetTime() < suppressUntil then
-            -- Check if this is one of the spurious error messages
-            local errItemNotReady = ERR_ITEM_NOT_READY or "Item is not ready yet"
-            if msg and (msg:find(errItemNotReady) or msg == errItemNotReady) then
-                return  -- Suppress this error
-            end
-        end
-        return originalAddMessage(self, msg, ...)
-    end
-end
-
--- Call this before clicking to suppress errors for a brief moment
+-- No-op: UIErrorsFrame hooking was removed to prevent taint propagation
+-- that would break Blizzard's secure unit frame code (maxHealth comparisons, etc.)
 local function SuppressItemErrors()
-    if ns.IsRetail then
-        suppressItemErrors = true
-        suppressUntil = GetTime() + 0.1  -- Suppress for 100ms
-    end
 end
 
 -- Check if an item is protected from selling/deleting (user-locked or in equipment set)

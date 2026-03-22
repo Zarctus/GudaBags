@@ -2020,6 +2020,10 @@ function BankFrame:IsShown()
     return frame and frame:IsShown()
 end
 
+function BankFrame:InvalidateLayout()
+    layoutCached = false
+end
+
 function BankFrame:GetFrame()
     return frame
 end
@@ -2111,12 +2115,11 @@ function BankFrame:IncrementalUpdate(dirtyBags)
     -- If no dirty bags specified, check all (fallback behavior)
     local checkAllBags = not dirtyBags or not next(dirtyBags)
 
-    -- For category view: check if item's CATEGORY changed (not just itemID)
-    -- If item moves within same category, do incremental update
-    -- If item moves between categories or slot becomes empty/filled, do full refresh
+    -- Category view stability: never trigger full refresh during item moves.
+    -- Layout rebuilds only happen on open/close, sort, or restack.
+    -- Ghost slots absorb departures; new items appear on next refresh.
     if isCategoryView then
         local CategoryManager = ns:GetModule("CategoryManager")
-        local needsFullRefresh = false
         local itemUpdates = {}
         local countUpdates = {}
         local ghostSlots = {}
@@ -2125,66 +2128,30 @@ function BankFrame:IncrementalUpdate(dirtyBags)
             local slotButtons = buttonsByBag[bagID] or {}
             local bagData = bank[bagID]
 
-            -- Count cached buttons for this bag
+            -- If no buttons cached for this bag, skip - new items will appear on next refresh
             local cachedButtonCount = 0
             for _ in pairs(slotButtons) do
                 cachedButtonCount = cachedButtonCount + 1
             end
-
-            local currentItemCount = 0
-            if bagData and bagData.slots then
-                for _, itemData in pairs(bagData.slots) do
-                    if itemData then
-                        currentItemCount = currentItemCount + 1
-                    end
-                end
-            end
-
-            -- If no buttons cached for this bag but items exist now, new item appeared - need refresh
-            if cachedButtonCount == 0 then
-                if currentItemCount > 0 then
-                    ns:Debug("Bank CategoryView REFRESH: bag", bagID, "was empty, now has", currentItemCount, "items")
-                    needsFullRefresh = true
-                end
-                return
-            end
-
-            -- If MORE items than buttons, new item appeared - need refresh
-            if currentItemCount > cachedButtonCount then
-                ns:Debug("Bank CategoryView REFRESH: bag", bagID, "has MORE items", currentItemCount, ">", cachedButtonCount)
-                needsFullRefresh = true
-                return
-            end
-            -- If fewer items, some were removed - keep ghost slots (lazy approach)
-            if currentItemCount < cachedButtonCount then
-                ns:Debug("Bank CategoryView LAZY: bag", bagID, "has FEWER items", currentItemCount, "<", cachedButtonCount, "- keeping ghosts")
-            end
+            if cachedButtonCount == 0 then return end
 
             for slot, button in pairs(slotButtons) do
                 local slotKey = bagID .. ":" .. slot
                 local newItemData = bagData and bagData.slots and bagData.slots[slot]
                 local oldItemID = cachedItemData[slotKey]
                 local newItemID = newItemData and newItemData.itemID or nil
-                local oldCategory = cachedItemCategory[slotKey]
 
                 if oldItemID ~= newItemID then
                     if not newItemData then
-                        -- Slot became empty - show empty texture but keep position (no layout refresh)
+                        -- Slot became empty - show ghost slot, keep position
                         ns:Debug("Bank CategoryView GHOST: empty slot at", slotKey, "oldID=", oldItemID)
                         ItemButton:SetEmpty(button, bagID, slot, iconSize, isReadOnly)
                         cachedItemData[slotKey] = nil
                         cachedItemCount[slotKey] = nil
-                        -- Keep cachedItemCategory so we know this slot existed
                         table.insert(ghostSlots, slotKey)
                     else
+                        -- Different item in same slot - update in place
                         local newCategory = CategoryManager and CategoryManager:CategorizeItem(newItemData, bagID, slot, isReadOnly) or "Miscellaneous"
-
-                        if oldCategory ~= newCategory then
-                            ns:Debug("Bank CategoryView REFRESH: category changed at", slotKey, "from", oldCategory, "to", newCategory)
-                            needsFullRefresh = true
-                            return
-                        end
-
                         itemUpdates[slotKey] = {button = button, itemData = newItemData, category = newCategory}
                     end
                 elseif newItemData then
@@ -2194,39 +2161,20 @@ function BankFrame:IncrementalUpdate(dirtyBags)
                     end
                 end
             end
-
-            -- Check for items in slots we don't have buttons for (new slots)
-            if bagData and bagData.slots then
-                for slot, itemData in pairs(bagData.slots) do
-                    if itemData and not slotButtons[slot] then
-                        ns:Debug("Bank CategoryView REFRESH: new item at untracked slot", bagID .. ":" .. slot)
-                        needsFullRefresh = true
-                        return
-                    end
-                end
-            end
         end
 
         if checkAllBags then
             for bagID in pairs(buttonsByBag) do
                 checkBag(bagID)
-                if needsFullRefresh then break end
             end
         else
             for bagID in pairs(dirtyBags) do
                 checkBag(bagID)
-                if needsFullRefresh then break end
             end
         end
 
-        if needsFullRefresh then
-            ns:Debug("Bank CategoryView: FULL REFRESH triggered")
-            self:Refresh()
-            return
-        end
-
         if #ghostSlots > 0 then
-            ns:Debug("Bank CategoryView LAZY: kept", #ghostSlots, "ghost slots, no refresh")
+            ns:Debug("Bank CategoryView: kept", #ghostSlots, "ghost slots, no refresh")
         end
 
         for slotKey, update in pairs(itemUpdates) do
@@ -2276,23 +2224,6 @@ function BankFrame:IncrementalUpdate(dirtyBags)
                     end
                 end
             end
-        end
-
-        -- Check if Empty/Soul categories need to appear or disappear
-        local emptyButtonExists = FindPseudoItemButton("Empty") ~= nil
-        local soulButtonExists = FindPseudoItemButton("Soul") ~= nil
-        local emptyNeedsButton = emptyCount > 0
-        local soulNeedsButton = soulEmptyCount > 0
-
-        if (emptyNeedsButton and not emptyButtonExists) or (not emptyNeedsButton and emptyButtonExists) then
-            ns:Debug("Bank CategoryView REFRESH: Empty category visibility changed")
-            self:Refresh()
-            return
-        end
-        if (soulNeedsButton and not soulButtonExists) or (not soulNeedsButton and soulButtonExists) then
-            ns:Debug("Bank CategoryView REFRESH: Soul category visibility changed")
-            self:Refresh()
-            return
         end
 
         -- Update pseudo-item counters and slot references directly

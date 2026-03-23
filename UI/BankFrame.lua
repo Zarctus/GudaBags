@@ -2088,6 +2088,15 @@ function BankFrame:IncrementalUpdate(dirtyBags)
         local countUpdates = {}
         local ghostSlots = {}
 
+        -- Detect soul bags for category override (must match BuildCategorySections logic)
+        -- Bank always shows soul items (forceSoulVisible)
+        local soulCategoryEnabled = false
+        if CategoryManager then
+            local cats = CategoryManager:GetCategories()
+            local soulDef = cats and cats.definitions and cats.definitions["Soul"]
+            soulCategoryEnabled = soulDef and soulDef.enabled
+        end
+
         local function checkBag(bagID)
             local slotButtons = buttonsByBag[bagID] or {}
             local bagData = bank[bagID]
@@ -2127,6 +2136,10 @@ function BankFrame:IncrementalUpdate(dirtyBags)
                 ns:Debug("Bank CategoryView LAZY: bag", bagID, "has FEWER items", currentItemCount, "<", cachedButtonCount, "- keeping ghosts")
             end
 
+            -- Detect soul bag for category override
+            local bagType = BagClassifier and BagClassifier:GetBagType(bagID) or "regular"
+            local isSoulBag = (bagType == "soul")
+
             for slot, button in pairs(slotButtons) do
                 local slotKey = bagID .. ":" .. slot
                 local newItemData = bagData and bagData.slots and bagData.slots[slot]
@@ -2144,7 +2157,13 @@ function BankFrame:IncrementalUpdate(dirtyBags)
                         -- Keep cachedItemCategory so we know this slot existed
                         table.insert(ghostSlots, slotKey)
                     else
-                        local newCategory = CategoryManager and CategoryManager:CategorizeItem(newItemData, bagID, slot, isReadOnly) or "Miscellaneous"
+                        -- Soul bag items use "Soul" category override (same as BuildCategorySections)
+                        local newCategory
+                        if soulCategoryEnabled and isSoulBag then
+                            newCategory = "Soul"
+                        else
+                            newCategory = CategoryManager and CategoryManager:CategorizeItem(newItemData, bagID, slot, isReadOnly) or "Miscellaneous"
+                        end
 
                         if oldCategory ~= newCategory then
                             ns:Debug("Bank CategoryView REFRESH: category changed at", slotKey, "from", oldCategory, "to", newCategory)

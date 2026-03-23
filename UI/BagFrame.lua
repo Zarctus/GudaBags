@@ -1086,15 +1086,36 @@ function BagFrame:IncrementalUpdate(dirtyBags)
         local currentItemsBySlot = {}  -- slotKey -> {itemData, itemKey, category}
         local totalCurrentItems = 0
 
+        -- Check soul bag status for category override (must match BuildCategorySections logic)
+        local BagClassifier = ns:GetModule("BagFrame.BagClassifier")
+        local Database = ns:GetModule("Database")
+        local hideSoulItems = Database and Database:GetSetting("hideSoulItems")
+        local soulCategoryEnabled = false
+        if CategoryManager then
+            local cats = CategoryManager:GetCategories()
+            local soulDef = cats and cats.definitions and cats.definitions["Soul"]
+            soulCategoryEnabled = soulDef and soulDef.enabled
+        end
+
         local bagsToShow = Constants.BAG_IDS  -- Player bags
         for _, bagID in ipairs(bagsToShow) do
             local bagData = bags[bagID]
             if bagData and bagData.slots then
+                -- Detect soul bags for category override
+                local bagType = BagClassifier and BagClassifier:GetBagType(bagID) or "regular"
+                local isSoulBag = (bagType == "soul")
+
                 for slot, itemData in pairs(bagData.slots) do
                     if itemData then
                         local itemKey = GetItemKey(itemData)
                         local slotKey = GetSlotKey(bagID, slot)
-                        local category = CategoryManager and CategoryManager:CategorizeItem(itemData, bagID, slot, false) or "Miscellaneous"
+                        -- Soul bag items use "Soul" category override (same as BuildCategorySections)
+                        local category
+                        if soulCategoryEnabled and isSoulBag and not hideSoulItems then
+                            category = "Soul"
+                        else
+                            category = CategoryManager and CategoryManager:CategorizeItem(itemData, bagID, slot, false) or "Miscellaneous"
+                        end
 
                         if not currentItemsByKey[itemKey] then
                             currentItemsByKey[itemKey] = {}

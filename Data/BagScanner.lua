@@ -139,6 +139,13 @@ function BagScanner:ScanDirtyBags(bagIDs)
                                 knownItemIDs[currentItemID] = (knownItemIDs[currentItemID] or 0) + 1
                                 -- Mark truly new items as Recent (skip during sorting)
                                 if wasNew and not isSorting and RecentItems then
+                                    RecentItems:MarkRecent(currentItemID)
+                                end
+                            end
+
+                            -- Try fast path first (uses cached tooltip data)
+                            -- This avoids tooltip scan when item just moved slots
+                            local itemData = ItemScanner:ScanSlotFast(bagID, slot)
                             if not itemData then
                                 -- No cached data, need full scan (new item)
                                 itemData = ItemScanner:ScanSlot(bagID, slot)

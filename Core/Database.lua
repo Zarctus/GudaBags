@@ -37,6 +37,8 @@ local function InitializeGlobalDB()
     if not GudaBags_DB.characters then
         GudaBags_DB.characters = {}
     end
+
+    GudaBags_DB.profiles = GudaBags_DB.profiles or {}
 end
 
 local function InitializeCharDB()

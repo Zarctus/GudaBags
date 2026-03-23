@@ -1312,6 +1312,11 @@ local function FinishSort(message)
     if message then
         ns:Print(message)
     end
+    -- Invalidate layout caches so the update triggers a full refresh
+    local BagFrameModule = ns:GetModule("BagFrame")
+    if BagFrameModule then BagFrameModule:InvalidateLayout() end
+    local BankFrameModule = ns:GetModule("BankFrame")
+    if BankFrameModule then BankFrameModule:InvalidateLayout() end
     local refreshStart = debugprofilestop()
     if isBankSort and ns.OnBankUpdated then
         ns.OnBankUpdated()
@@ -1419,6 +1424,10 @@ function SortEngine:SortBags()
         C_Container.SortBags()
         -- Fire event after a short delay to let the sort complete
         C_Timer.After(0.5, function()
+            local BagFrameModule = ns:GetModule("BagFrame")
+            if BagFrameModule then BagFrameModule:InvalidateLayout() end
+            local BankFrameModule = ns:GetModule("BankFrame")
+            if BankFrameModule then BankFrameModule:InvalidateLayout() end
             Events:Fire("BAGS_UPDATED")
         end)
         return true
@@ -1485,6 +1494,10 @@ function SortEngine:SortBank()
         C_Container.SortBankBags()
         -- Fire event after a short delay to let the sort complete
         C_Timer.After(0.5, function()
+            local BagFrameModule = ns:GetModule("BagFrame")
+            if BagFrameModule then BagFrameModule:InvalidateLayout() end
+            local BankFrameModule = ns:GetModule("BankFrame")
+            if BankFrameModule then BankFrameModule:InvalidateLayout() end
             if ns.OnBankUpdated then
                 ns.OnBankUpdated()
             else
@@ -1539,6 +1552,10 @@ function SortEngine:SortWarbandBank()
         C_Container.SortAccountBankBags()
         -- Fire event after a short delay to let the sort complete
         C_Timer.After(0.5, function()
+            local BagFrameModule = ns:GetModule("BagFrame")
+            if BagFrameModule then BagFrameModule:InvalidateLayout() end
+            local BankFrameModule = ns:GetModule("BankFrame")
+            if BankFrameModule then BankFrameModule:InvalidateLayout() end
             if ns.OnBankUpdated then
                 ns.OnBankUpdated()
             else
@@ -1600,10 +1617,14 @@ restackFrame:SetScript("OnUpdate", function(self, elapsed)
     local moves = ConsolidateStacks(restackBagIDs, bagFamilies)
 
     if moves == 0 or restackPassCount >= restackMaxPasses then
-        -- Done restacking
+        -- Done restacking - invalidate layouts so next update triggers full refresh
         restackInProgress = false
         ClearPendingLocks()
         UnmutePickupSounds()
+        local BagFrameModule = ns:GetModule("BagFrame")
+        if BagFrameModule then BagFrameModule:InvalidateLayout() end
+        local BankFrameModule = ns:GetModule("BankFrame")
+        if BankFrameModule then BankFrameModule:InvalidateLayout() end
         if restackCallback then
             restackCallback()
         end

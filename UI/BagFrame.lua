@@ -1019,6 +1019,10 @@ function BagFrame:IsShown()
     return frame and frame:IsShown()
 end
 
+function BagFrame:InvalidateLayout()
+    layoutCached = false
+end
+
 function BagFrame:GetFrame()
     return frame
 end
@@ -1062,35 +1066,6 @@ function BagFrame:IncrementalUpdate(dirtyBags)
     end
 
     local bags = BagScanner:GetCachedBags()
-
-    -- Detect bag configuration changes (bag swapped, slots added/removed)
-    -- Check live API directly to avoid stale scanner cache on bag removal
-    do
-        local configChanged = false
-        for _, bagID in ipairs(Constants.BAG_IDS) do
-            local slotButtons = buttonsByBag[bagID]
-            local renderedCount = 0
-            if slotButtons then
-                for _ in pairs(slotButtons) do
-                    renderedCount = renderedCount + 1
-                end
-            end
-            local actualCount = C_Container.GetContainerNumSlots(bagID) or 0
-            if renderedCount ~= actualCount then
-                ns:Debug("Bag config changed: bag", bagID, "rendered=", renderedCount, "actual=", actualCount)
-                configChanged = true
-                break
-            end
-        end
-        if configChanged then
-            -- Re-scan so Refresh() sees up-to-date slot counts
-            BagScanner:ScanAllBags()
-            layoutCached = false
-            self:Refresh()
-            return
-        end
-    end
-
     -- Cache settings once at start (avoid repeated GetSetting calls)
     local iconSize = Database:GetSetting("iconSize")
     local hasSearch = SearchBar:HasActiveFilters(frame)
@@ -1111,15 +1086,36 @@ function BagFrame:IncrementalUpdate(dirtyBags)
         local currentItemsBySlot = {}  -- slotKey -> {itemData, itemKey, category}
         local totalCurrentItems = 0
 
+        -- Check soul bag status for category override (must match BuildCategorySections logic)
+        local BagClassifier = ns:GetModule("BagFrame.BagClassifier")
+        local Database = ns:GetModule("Database")
+        local hideSoulItems = Database and Database:GetSetting("hideSoulItems")
+        local soulCategoryEnabled = false
+        if CategoryManager then
+            local cats = CategoryManager:GetCategories()
+            local soulDef = cats and cats.definitions and cats.definitions["Soul"]
+            soulCategoryEnabled = soulDef and soulDef.enabled
+        end
+
         local bagsToShow = Constants.BAG_IDS  -- Player bags
         for _, bagID in ipairs(bagsToShow) do
             local bagData = bags[bagID]
             if bagData and bagData.slots then
+                -- Detect soul bags for category override
+                local bagType = BagClassifier and BagClassifier:GetBagType(bagID) or "regular"
+                local isSoulBag = (bagType == "soul")
+
                 for slot, itemData in pairs(bagData.slots) do
                     if itemData then
                         local itemKey = GetItemKey(itemData)
                         local slotKey = GetSlotKey(bagID, slot)
-                        local category = CategoryManager and CategoryManager:CategorizeItem(itemData, bagID, slot, false) or "Miscellaneous"
+                        -- Soul bag items use "Soul" category override (same as BuildCategorySections)
+                        local category
+                        if soulCategoryEnabled and isSoulBag and not hideSoulItems then
+                            category = "Soul"
+                        else
+                            category = CategoryManager and CategoryManager:CategorizeItem(itemData, bagID, slot, false) or "Miscellaneous"
+                        end
 
                         if not currentItemsByKey[itemKey] then
                             currentItemsByKey[itemKey] = {}
@@ -1175,7 +1171,6 @@ function BagFrame:IncrementalUpdate(dirtyBags)
 
         -- With item grouping, compare unique item types (keys) vs buttons, not slots vs buttons
         -- Multiple slots with same item share one button
-        -- Always use unique item count for category view comparison (grouping is inherent to category view)
         local uniqueItemCount = TableCount(currentItemsByKey)
 
         -- If more unique items than buttons + ghosts, need full refresh
@@ -1199,7 +1194,6 @@ function BagFrame:IncrementalUpdate(dirtyBags)
                 local bagType = BagClassifier and BagClassifier:GetBagType(bagID) or "regular"
                 local isSoulBag = (bagType == "soul")
                 for slot = 1, numSlots do
-                    -- Use live container data, not cached
                     local itemInfo = C_Container.GetContainerItemInfo(bagID, slot)
                     if not itemInfo then
                         if isSoulBag then
@@ -1226,8 +1220,6 @@ function BagFrame:IncrementalUpdate(dirtyBags)
             ns:Debug("CategoryView REFRESH: Empty category visibility changed")
             needsFullRefresh = true
         end
-        -- Note: Soul visibility check removed - it was causing false positives
-        -- Soul button updates are handled below if the button exists
 
         -- Update pseudo-item counters and slot references directly (if no full refresh needed)
         if not needsFullRefresh then
@@ -1264,17 +1256,11 @@ function BagFrame:IncrementalUpdate(dirtyBags)
         -- Update lastTotalItemCount for tracking
         lastTotalItemCount = totalCurrentItems
 
-        -- NOTE: We intentionally don't check for untracked slots here.
-        -- In Category View with item grouping, multiple slots share buttons,
-        -- so buttonsBySlot doesn't track every individual slot.
-        -- The itemKey-based check below properly handles new items.
-
         -- Check for category changes in existing items
         if not needsFullRefresh and lastCategoryLayout then
             for _, prevItem in ipairs(lastCategoryLayout) do
                 local currentSlot = currentItemsBySlot[prevItem.slotKey]
                 if currentSlot then
-                    -- Item still in this slot - check if category changed
                     if prevItem.categoryId ~= currentSlot.category then
                         ns:Debug("CategoryView REFRESH: category changed at", prevItem.slotKey)
                         needsFullRefresh = true
@@ -1284,14 +1270,12 @@ function BagFrame:IncrementalUpdate(dirtyBags)
             end
         end
 
-        -- Skip remaining checks if already need refresh
+        -- Check for new item types that need buttons
         if not needsFullRefresh then
             for itemKey, items in pairs(currentItemsByKey) do
                 local existingButtons = buttonsByItemKey[itemKey]
                 local hasButton = existingButtons and #existingButtons > 0
-                -- In category view with grouping, we need exactly 1 button per unique itemKey
                 if not hasButton then
-                    -- This is a new item type that needs a button
                     local itemName = items[1] and items[1].itemData and items[1].itemData.name or "unknown"
                     ns:Debug("CategoryView: new itemKey needs button:", itemName)
                     table.insert(newItemsNeedingButtons, items[1])

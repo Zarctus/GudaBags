@@ -464,6 +464,35 @@ The pin stays on the slot, not the item.
 A pin icon appears on the bottom-left corner.
 |cffff8800Retail:|r Requires |cff00ccccGudaBags Sort|r enabled in Settings.]]
 
+-- Profiles
+L["TAB_PROFILES"] = "Profiles"
+L["TAB_PROFILES_TIP"] = "Save, load, export and import settings profiles"
+L["PROFILE_SAVE_SECTION"] = "Save Current Settings"
+L["PROFILE_LIST_SECTION"] = "Saved Profiles"
+L["PROFILE_IMPORT_EXPORT"] = "Import / Export"
+L["PROFILE_SAVE"] = "Save"
+L["PROFILE_LOAD"] = "Load"
+L["PROFILE_DELETE"] = "Delete"
+L["PROFILE_EXPORT"] = "Export"
+L["PROFILE_IMPORT"] = "Import"
+L["PROFILE_NONE"] = "No saved profiles"
+L["PROFILE_SAVED"] = "Profile saved: %s"
+L["PROFILE_LOADED_MSG"] = "Profile loaded: %s"
+L["PROFILE_IMPORTED"] = "Profile imported: %s"
+L["PROFILE_IMPORTED_DEFAULT"] = "Imported Profile"
+L["PROFILE_OVERWRITE_CONFIRM"] = "Overwrite profile '%s'?"
+L["PROFILE_LOAD_CONFIRM"] = "Load profile '%s'? This will replace your current settings."
+L["PROFILE_DELETE_CONFIRM"] = "Delete profile '%s'?"
+L["PROFILE_IMPORT_NAME_PROMPT"] = "Enter a name for the imported profile:"
+L["PROFILE_IMPORT_INVALID"] = "Invalid profile string"
+L["PROFILE_IMPORT_DECODE_ERROR"] = "Failed to decode profile data"
+L["PROFILE_UPDATED"] = "Updated"
+L["PROFILE_ACTIVE"] = "(active)"
+L["PROFILE_NAME_PLACEHOLDER"] = "Profile name..."
+L["PROFILE_RESET_DEFAULTS"] = "Reset Defaults"
+L["PROFILE_RESET_CONFIRM"] = "Reset all settings to defaults? This cannot be undone."
+L["PROFILE_RESET_MSG"] = "Settings reset to defaults"
+
 -------------------------------------------------
 -- Other Languages (placeholders for translators)
 -------------------------------------------------

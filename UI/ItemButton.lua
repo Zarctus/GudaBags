@@ -8,33 +8,9 @@ local Database = ns:GetModule("Database")
 local Tooltip = ns:GetModule("Tooltip")
 local Utils = ns:GetModule("Utils")
 
--- Suppress spurious "Item isn't ready yet" errors on retail
--- ContainerFrameItemButtonTemplate shows this error incorrectly when clicking usable items
-local suppressItemErrors = false
-local suppressUntil = 0
-
--- Hook UIErrorsFrame to filter out incorrect item errors
-if UIErrorsFrame and ns.IsRetail then
-    local originalAddMessage = UIErrorsFrame.AddMessage
-    UIErrorsFrame.AddMessage = function(self, msg, ...)
-        -- Suppress item-not-ready errors briefly after our button clicks
-        if suppressItemErrors and GetTime() < suppressUntil then
-            -- Check if this is one of the spurious error messages
-            local errItemNotReady = ERR_ITEM_NOT_READY or "Item is not ready yet"
-            if msg and (msg:find(errItemNotReady) or msg == errItemNotReady) then
-                return  -- Suppress this error
-            end
-        end
-        return originalAddMessage(self, msg, ...)
-    end
-end
-
--- Call this before clicking to suppress errors for a brief moment
+-- No-op: UIErrorsFrame hooking was removed to prevent taint propagation
+-- that would break Blizzard's secure unit frame code (maxHealth comparisons, etc.)
 local function SuppressItemErrors()
-    if ns.IsRetail then
-        suppressItemErrors = true
-        suppressUntil = GetTime() + 0.1  -- Suppress for 100ms
-    end
 end
 
 -- Check if an item is protected from selling/deleting (user-locked or in equipment set)
@@ -884,11 +860,26 @@ local function CreateButton(parent)
         -- Check if this is a Soul category pseudo-item
         local isSoulCategory = btn.categoryId == "Soul" or (btn.itemData and btn.itemData.isSoulSlots)
 
+        -- Determine if this button belongs to the bank or player bags
+        -- by checking the current bagID on the button
+        local currentBagID = btn.itemData and btn.itemData.bagID or btn:GetParent():GetID()
+        local Constants = ns.Constants
+        local isBankSlot = currentBagID == Constants.BANK_MAIN_BAG
+            or (currentBagID >= Constants.BANK_BAG_MIN and currentBagID <= Constants.BANK_BAG_MAX)
+
         -- Use BagClassifier for accurate bag type detection
         local BagClassifier = ns:GetModule("BagFrame.BagClassifier")
 
-        -- Scan bags to find first empty slot
-        for bagID = 0, NUM_BAG_SLOTS do
+        -- Build list of bag IDs to search
+        local bagIDsToSearch
+        if isBankSlot then
+            bagIDsToSearch = Constants.BANK_BAG_IDS
+        else
+            bagIDsToSearch = Constants.BAG_IDS
+        end
+
+        -- Scan appropriate bags to find first empty slot
+        for _, bagID in ipairs(bagIDsToSearch) do
             local numSlots = C_Container.GetContainerNumSlots(bagID)
             if numSlots and numSlots > 0 then
                 -- Check bag type using BagClassifier
@@ -900,8 +891,8 @@ local function CreateButton(parent)
                 if isSoulCategory then
                     shouldSearchThisBag = isSoulBag
                 else
-                    -- Empty category: regular bags only (backpack or regular bag type)
-                    shouldSearchThisBag = (bagID == 0) or (bagType == "regular")
+                    -- Empty category: regular bags only (backpack/main bank or regular bag type)
+                    shouldSearchThisBag = (bagID == 0) or (bagID == Constants.BANK_MAIN_BAG) or (bagType == "regular")
                 end
 
                 if shouldSearchThisBag then
@@ -2146,6 +2137,10 @@ if Events then
             or key == "showItemLevel" then
             ItemButton:InvalidateSettingsCache()
         end
+    end, ItemButton)
+
+    Events:Register("PROFILE_LOADED", function()
+        cachedSettings = nil
     end, ItemButton)
 end
 

@@ -49,6 +49,7 @@ local function GetTabList()
         { id = "layout", label = ns.L["TAB_LAYOUT"], tooltip = ns.L["TAB_LAYOUT_TIP"] },
         { id = "icons", label = ns.L["TAB_ICONS"], tooltip = ns.L["TAB_ICONS_TIP"] },
         { id = "bar", label = ns.L["TAB_BAR"], tooltip = ns.L["TAB_BAR_TIP"] },
+        { id = "profiles", label = ns.L["TAB_PROFILES"], tooltip = ns.L["TAB_PROFILES_TIP"] },
         { id = "categories", label = ns.L["TAB_CATEGORIES"], tooltip = ns.L["TAB_CATEGORIES_TIP"] },
         { id = "guide", label = ns.L["TAB_GUIDE"], tooltip = ns.L["TAB_GUIDE_TIP"] },
     }
@@ -1471,10 +1472,20 @@ local function CreateSettingsFrame()
     tabPanel:SetContent("layout", CreateTabFromSchema(f, function() return SettingsSchema.GetLayout() end))
     tabPanel:SetContent("icons", CreateTabFromSchema(f, SettingsSchema.GetIcons()))
     tabPanel:SetContent("bar", CreateTabFromSchema(f, SettingsSchema.GetBar()))
+    local ProfilesTabModule = ns:GetModule("ProfilesTab")
+    tabPanel:SetContent("profiles", ProfilesTabModule:CreateContent(f))
     tabPanel:SetContent("categories", CreateCategoriesTab(f))
     tabPanel:SetContent("guide", CreateGuideTab(f))
 
     tabPanel.SelectTab("general")
+
+    -- Full refresh when a profile is loaded
+    Events:Register("PROFILE_LOADED", function()
+        if not frame or not frame:IsShown() then return end
+        ApplySettingsTheme()
+        tabPanel:RefreshAll()
+        RefreshCategoriesList()
+    end, f)
 
     -- Rebuild layout tab when view type changes (to show/hide split column sliders)
     -- Also re-apply theme when theme setting changes

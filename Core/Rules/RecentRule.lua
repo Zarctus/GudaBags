@@ -271,6 +271,8 @@ end
 -- Handle loot event - mark looted items as recent
 local function OnLootReceived(event, msg, ...)
     if not msg then return end
+    -- Detaint: CHAT_MSG_LOOT msg can be a tainted secret string
+    msg = tostring(msg)
 
     -- Only process actual loot messages, not created/conjured items
     -- Valid loot patterns:

@@ -206,7 +206,7 @@ local function CreateProfileRow(parent, profileInfo, yOffset)
     -- Profile name
     local nameText = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     nameText:SetPoint("LEFT", row, "LEFT", 6, 0)
-    nameText:SetWidth(100)
+    nameText:SetWidth(150)
     nameText:SetJustifyH("LEFT")
     nameText:SetText(profileInfo.name)
     nameText:SetTextColor(1, 1, 1)

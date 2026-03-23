@@ -2797,12 +2797,17 @@ ns.OnBankTypeChanged = function(bankType)
 end
 
 -- Disable the default Blizzard bank frame completely
+-- Use a secure handler snippet to hide the frame without addon code tainting secure state
 local function HideDefaultBankFrame()
     if _G.BankFrame then
-        _G.BankFrame:SetParent(hiddenParent)
-        _G.BankFrame:SetScript("OnShow", nil)
-        _G.BankFrame:SetScript("OnHide", nil)
-        _G.BankFrame:SetScript("OnEvent", nil)
+        -- SecureHandlerSetFrameRef + SecureHandlerWrapScript lets us hide the frame
+        -- entirely within secure execution context, avoiding taint propagation
+        local hider = CreateFrame("Frame", nil, nil, "SecureHandlerBaseTemplate")
+        hider:SetFrameRef("bankframe", _G.BankFrame)
+        _G.BankFrame:UnregisterAllEvents()
+        hider:WrapScript(_G.BankFrame, "OnShow", [[
+            self:Hide()
+        ]])
     end
 end
 

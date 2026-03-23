@@ -107,6 +107,7 @@ end
 
 -- Handle drops on empty space in the bag container
 function BagFrame:HandleContainerDrop()
+    if InCombatLockdown() then return end
     local infoType, itemID = GetCursorInfo()
     if infoType ~= "item" or not itemID then return end
 
@@ -770,6 +771,7 @@ function BagFrame:RefreshCategoryView(bags, bagsToShow, settings, hasSearch, isV
 
         -- Handle click for Empty category: place item in first empty slot
         header:SetScript("OnMouseDown", function(self, button)
+            if InCombatLockdown() then return end
             if button == "LeftButton" and self.categoryId == "Empty" then
                 local cursorType = GetCursorInfo()
                 if cursorType == "item" then

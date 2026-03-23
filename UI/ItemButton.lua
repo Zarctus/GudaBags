@@ -1195,8 +1195,12 @@ local function CreateButton(parent)
                 end
                 if isBagItem then
                     self._warbandIntercept = { bagID = self.itemData.bagID, slot = self.itemData.slot }
-                    self.wrapper:SetID(0)
-                    self:SetID(0)
+                    -- SetID(0) blocks the secure template's default UseContainerItem
+                    -- Wrapped in pcall to contain any taint propagation
+                    pcall(function()
+                        self.wrapper:SetID(0)
+                        self:SetID(0)
+                    end)
                 end
             end
         end

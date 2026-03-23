@@ -50,6 +50,7 @@ function DefaultCategories:GetRuleTypes()
             {value = 5, label = L["QUALITY_LEGENDARY_ONLY"]},
         }},
         { id = "isBoE", label = L["RULE_BOE"], valueType = "boolean" },
+        { id = "isWarbound", label = L["RULE_WARBOUND"], valueType = "boolean" },
         { id = "isQuestItem", label = L["RULE_QUEST_ITEM"], valueType = "boolean" },
         { id = "isJunk", label = L["RULE_JUNK_ITEM"], valueType = "boolean" },
         { id = "isProfessionTool", label = L["RULE_PROFESSION_TOOL"], valueType = "boolean" },
@@ -87,6 +88,7 @@ local CATEGORY_LOCALE_KEYS = {
     ["Home"] = "CAT_HOME",
     ["Recent"] = "CAT_RECENT",
     ["BoE"] = "CAT_BOE",
+    ["Warbound"] = "CAT_WARBOUND",
     ["Weapon"] = "CAT_WEAPON",
     ["Armor"] = "CAT_ARMOR",
     ["Consumable"] = "CAT_CONSUMABLE",
@@ -236,6 +238,19 @@ DefaultCategories.DEFINITIONS = {
         },
         matchMode = "all",
         priority = 70,
+        enabled = true,
+        isBuiltIn = true,
+        group = "Main",
+    },
+
+    ["Warbound"] = {
+        name = "Warbound",
+        icon = "Interface\\Icons\\INV_Misc_Book_16",
+        rules = {
+            { type = "isWarbound", value = true },
+        },
+        matchMode = "all",
+        priority = 76,
         enabled = true,
         isBuiltIn = true,
         group = "Main",
@@ -498,6 +513,9 @@ end
 if not Expansion.Features.HasQuiverBags then
     DefaultCategories.DEFINITIONS["Quiver"] = nil
 end
+if not Expansion.IsRetail then
+    DefaultCategories.DEFINITIONS["Warbound"] = nil
+end
 
 -- Class Items category only enabled by default for Hunters and Warlocks
 local _, playerClass = UnitClass("player")
@@ -515,6 +533,7 @@ DefaultCategories.ORDER = {
     "BoE",
     "Weapon",
     "Armor",
+    "Warbound",
     "Trade Goods",
     "Reagent",
     "Recipe",

@@ -256,6 +256,7 @@ Constants.DEFAULTS = {
     autoOpenBags = true,  -- Auto open bags when interacting with mail, trade, AH, bank, guild bank
     autoCloseBags = true,  -- Auto close bags when ending those interactions
     autoVendorJunk = true,  -- Auto sell gray items at merchants
+    autoRepair = false,  -- Auto repair all items at repair-capable merchants
     retailEmptySlots = false,  -- Use retail-style empty slot textures (Classic only)
     gudaSort = false,  -- Use GudaBags custom sort engine instead of Blizzard's (Retail only)
     categorySortOrder = "quality",  -- Sort order within categories: quality, name, itemLevel, type

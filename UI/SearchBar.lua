@@ -108,6 +108,7 @@ local function CreateFilterState()
         types = {},       -- {["Weapon"]=true}
         specials = {},    -- {["boe"]=true}
         parsed = nil,     -- result of SearchParser:ParseSearchInput()
+        equipSet = nil,   -- string: active equipment set name filter
     }
 end
 
@@ -116,6 +117,7 @@ local function HasAnyFilter(state)
     if next(state.types) then return true end
     if next(state.specials) then return true end
     if state.parsed then return true end
+    if state.equipSet then return true end
     return false
 end
 
@@ -163,6 +165,23 @@ end
 local function NotifyFilterChanged(searchBar)
     UpdateChipStripVisibility(searchBar)
     UpdateTransferButton(searchBar)
+    -- Show/hide clear button based on any active filter
+    if searchBar.clearButton then
+        local hasText = searchBar.searchText and searchBar.searchText ~= ""
+        if hasText or HasAnyFilter(searchBar.filterState) then
+            searchBar.clearButton:Show()
+        elseif not hasText then
+            searchBar.clearButton:Hide()
+        end
+    end
+    -- Update equip set button color when active
+    if searchBar.equipSetButton then
+        if searchBar.filterState.equipSet then
+            searchBar.equipSetButton.icon:SetVertexColor(1, 0.82, 0)
+        else
+            searchBar.equipSetButton.icon:SetVertexColor(0.6, 0.6, 0.6)
+        end
+    end
     if searchBar.onSearchChanged then
         searchBar.onSearchChanged(searchBar.searchText or "")
     end
@@ -353,6 +372,24 @@ local function ResetChipVisuals(searchBar)
     end
 end
 
+local function ClearEquipSetFilter(searchBar)
+    if searchBar.equipSetButton then
+        searchBar.equipSetButton.activeText:SetText("")
+        searchBar.equipSetButton.activeText:Hide()
+        searchBar.equipSetButton.icon:SetVertexColor(0.6, 0.6, 0.6)
+        if searchBar.searchIcon then
+            searchBar.searchIcon:ClearAllPoints()
+            searchBar.searchIcon:SetPoint("LEFT", searchBar.equipSetButton, "RIGHT", 4, 0)
+        end
+    end
+    -- Restore placeholder if no text
+    if searchBar.searchBox and searchBar.searchBox:GetText() == "" then
+        if searchBar.searchBox.placeholder then
+            searchBar.searchBox.placeholder:Show()
+        end
+    end
+end
+
 local function CreateChipStrip(searchBar, parent)
     local chipStrip = CreateFrame("Frame", nil, parent)
     chipStrip:SetHeight(Constants.FRAME.CHIP_STRIP_HEIGHT)
@@ -446,6 +483,189 @@ local function CreateChipStrip(searchBar, parent)
 end
 
 -------------------------------------------------
+-- Equipment Set Dropdown
+-------------------------------------------------
+local equipSetDropdown = nil
+
+local function CreateEquipSetDropdown()
+    if equipSetDropdown then return equipSetDropdown end
+
+    local DROPDOWN_WIDTH = 150
+    local ROW_HEIGHT = 20
+    local PADDING = 6
+    local MAX_VISIBLE_ROWS = 8
+
+    local f = CreateFrame("Frame", "GudaBagsEquipSetDropdown", UIParent, "BackdropTemplate")
+    f:SetFrameStrata("DIALOG")
+    f:SetFrameLevel(200)
+    f:SetSize(DROPDOWN_WIDTH, 100)
+    f:SetBackdrop({
+        bgFile = "Interface\\Buttons\\WHITE8x8",
+        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+        edgeSize = 14,
+        insets = {left = 3, right = 3, top = 3, bottom = 3},
+    })
+    f:SetBackdropColor(0.1, 0.1, 0.1, 0.95)
+    f:SetBackdropBorderColor(0.4, 0.4, 0.4, 1)
+    f:EnableMouse(true)
+    f:SetClampedToScreen(true)
+    f:Hide()
+
+    f:SetScript("OnShow", function()
+        f:RegisterEvent("GLOBAL_MOUSE_DOWN")
+    end)
+    f:SetScript("OnHide", function()
+        f:UnregisterEvent("GLOBAL_MOUSE_DOWN")
+    end)
+    f:SetScript("OnEvent", function(self, event)
+        if event == "GLOBAL_MOUSE_DOWN" then
+            if not self:IsMouseOver() then
+                self:Hide()
+            end
+        end
+    end)
+
+    local scrollFrame = CreateFrame("ScrollFrame", nil, f, "UIPanelScrollFrameTemplate")
+    scrollFrame:SetPoint("TOPLEFT", f, "TOPLEFT", PADDING, -PADDING)
+    scrollFrame:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -PADDING - 20, PADDING)
+    f.scrollFrame = scrollFrame
+
+    local scrollBar = scrollFrame.ScrollBar or _G[scrollFrame:GetName() .. "ScrollBar"]
+    if scrollBar then
+        scrollBar:SetAlpha(0.7)
+    end
+
+    local content = CreateFrame("Frame", nil, scrollFrame)
+    content:SetSize(DROPDOWN_WIDTH - PADDING * 2 - 20, 100)
+    scrollFrame:SetScrollChild(content)
+    f.content = content
+    f.rows = {}
+    f.searchBar = nil  -- set when showing
+
+    local function CreateRow(parent, index)
+        local row = CreateFrame("Button", nil, parent)
+        row:SetHeight(ROW_HEIGHT)
+        row:SetPoint("TOPLEFT", parent, "TOPLEFT", 0, -((index - 1) * ROW_HEIGHT))
+        row:SetPoint("RIGHT", parent, "RIGHT", 0, 0)
+
+        local highlight = row:CreateTexture(nil, "HIGHLIGHT")
+        highlight:SetAllPoints()
+        highlight:SetTexture("Interface\\Buttons\\WHITE8x8")
+        highlight:SetVertexColor(1, 1, 1, 0.1)
+
+        local icon = row:CreateTexture(nil, "ARTWORK")
+        icon:SetSize(14, 14)
+        icon:SetPoint("LEFT", row, "LEFT", 2, 0)
+        icon:SetTexture("Interface\\AddOns\\GudaBags\\Assets\\equipment.png")
+        icon:SetVertexColor(1, 0.82, 0)
+        row.icon = icon
+
+        local nameText = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        nameText:SetPoint("LEFT", icon, "RIGHT", 4, 0)
+        nameText:SetPoint("RIGHT", row, "RIGHT", -2, 0)
+        nameText:SetJustifyH("LEFT")
+        row.nameText = nameText
+
+        return row
+    end
+
+    function f:Populate(searchBar)
+        f.searchBar = searchBar
+        local EquipmentSets = ns:GetModule("EquipmentSets")
+        if not EquipmentSets then return end
+
+        local setNames = EquipmentSets:GetAllSetNames()
+        if not setNames or #setNames == 0 then return end
+
+        -- Build mark lookup from category definitions
+        local CategoryManager = ns:GetModule("CategoryManager")
+        local catDefs = CategoryManager and CategoryManager:GetCategories()
+        local markBySet = {}
+        if catDefs and catDefs.definitions then
+            for _, setName in ipairs(setNames) do
+                local def = catDefs.definitions["EquipSet:" .. setName]
+                if def and def.categoryMark then
+                    markBySet[setName] = def.categoryMark
+                end
+            end
+        end
+
+        local activeSet = searchBar.filterState.equipSet
+        local rowCount = #setNames
+        local contentHeight = rowCount * ROW_HEIGHT
+        local visibleHeight = math.min(rowCount, MAX_VISIBLE_ROWS) * ROW_HEIGHT
+
+        local needsScrollBar = rowCount > MAX_VISIBLE_ROWS
+        local scrollBar = f.scrollFrame.ScrollBar or _G[f.scrollFrame:GetName() .. "ScrollBar"]
+        local scrollBarWidth = needsScrollBar and 20 or 0
+
+        if scrollBar then
+            if needsScrollBar then scrollBar:Show() else scrollBar:Hide() end
+        end
+
+        f.scrollFrame:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -PADDING - scrollBarWidth, PADDING)
+        local rowWidth = DROPDOWN_WIDTH - PADDING * 2 - scrollBarWidth
+
+        f.content:SetHeight(contentHeight)
+        f.content:SetWidth(rowWidth)
+        f:SetHeight(visibleHeight + PADDING * 2)
+
+        -- Create rows if needed
+        while #f.rows < rowCount do
+            local row = CreateRow(f.content, #f.rows + 1)
+            table.insert(f.rows, row)
+        end
+
+        for i, row in ipairs(f.rows) do
+            if i <= rowCount then
+                row:SetPoint("TOPLEFT", f.content, "TOPLEFT", 0, -((i - 1) * ROW_HEIGHT))
+                local setName = setNames[i]
+                row.nameText:SetText(setName)
+
+                -- Use category mark if available, otherwise default equipment icon
+                local mark = markBySet[setName] or "Interface\\AddOns\\GudaBags\\Assets\\equipment.png"
+                row.icon:SetTexture(mark)
+
+                if activeSet == setName then
+                    row.nameText:SetTextColor(0, 1, 0)
+                    row.icon:SetVertexColor(0, 1, 0)
+                else
+                    row.nameText:SetTextColor(0.9, 0.9, 0.9)
+                    row.icon:SetVertexColor(1, 0.82, 0)
+                end
+
+                row:SetScript("OnClick", function()
+                    f:Hide()
+                    if activeSet == setName then
+                        -- Deselect
+                        searchBar.filterState.equipSet = nil
+                        ClearEquipSetFilter(searchBar)
+                    else
+                        -- Select set
+                        searchBar.filterState.equipSet = setName
+                        searchBar.equipSetButton.activeText:SetText(setName)
+                        searchBar.equipSetButton.activeText:Show()
+                        searchBar.searchIcon:ClearAllPoints()
+                        searchBar.searchIcon:SetPoint("LEFT", searchBar.equipSetButton.activeText, "RIGHT", 4, 0)
+                        -- Hide placeholder since set name is shown
+                        if searchBar.searchBox and searchBar.searchBox.placeholder then
+                            searchBar.searchBox.placeholder:Hide()
+                        end
+                    end
+                    NotifyFilterChanged(searchBar)
+                end)
+                row:Show()
+            else
+                row:Hide()
+            end
+        end
+    end
+
+    equipSetDropdown = f
+    return f
+end
+
+-------------------------------------------------
 -- CreateSearchBar (main factory)
 -------------------------------------------------
 local function CreateSearchBar(parent)
@@ -464,9 +684,59 @@ local function CreateSearchBar(parent)
     searchBar:SetBackdropColor(0.1, 0.1, 0.1, 0.8)
     searchBar:SetBackdropBorderColor(0.3, 0.3, 0.3, 0.8)
 
+    -- Equipment set dropdown button (left side of search bar)
+    local equipSetButton = CreateFrame("Button", nil, searchBar)
+    equipSetButton:SetSize(12, 12)
+    equipSetButton:SetPoint("LEFT", searchBar, "LEFT", 8, 0)
+
+    local equipSetIcon = equipSetButton:CreateTexture(nil, "ARTWORK")
+    equipSetIcon:SetAllPoints()
+    equipSetIcon:SetTexture("Interface\\AddOns\\GudaBags\\Assets\\equipment.png")
+    equipSetIcon:SetVertexColor(0.6, 0.6, 0.6)
+    equipSetButton.icon = equipSetIcon
+
+    -- Active set name label (shown after equip button when a set is selected)
+    local activeSetText = equipSetButton:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    activeSetText:SetPoint("LEFT", equipSetButton, "RIGHT", 3, 0)
+    activeSetText:SetTextColor(1, 0.82, 0)
+    activeSetText:SetText("")
+    activeSetText:Hide()
+    equipSetButton.activeText = activeSetText
+
+    equipSetButton:SetScript("OnEnter", function(self)
+        self.icon:SetVertexColor(1, 0.82, 0)
+        GameTooltip:SetOwner(self, "ANCHOR_TOP")
+        GameTooltip:SetText(L["EQUIP_SET_DROPDOWN_TIP"] or "Equipment Sets")
+        GameTooltip:Show()
+    end)
+    equipSetButton:SetScript("OnLeave", function(self)
+        if not searchBar.filterState.equipSet then
+            self.icon:SetVertexColor(0.6, 0.6, 0.6)
+        end
+        GameTooltip:Hide()
+    end)
+    equipSetButton:SetScript("OnClick", function(self)
+        local EquipmentSets = ns:GetModule("EquipmentSets")
+        if not EquipmentSets then return end
+        local setNames = EquipmentSets:GetAllSetNames()
+        if not setNames or #setNames == 0 then return end
+
+        local dropdown = CreateEquipSetDropdown()
+        if dropdown:IsShown() then
+            dropdown:Hide()
+            return
+        end
+        dropdown:Populate(searchBar)
+        dropdown:ClearAllPoints()
+        dropdown:SetPoint("TOPLEFT", searchBar, "BOTTOMLEFT", 0, -2)
+        dropdown:Show()
+    end)
+
+    searchBar.equipSetButton = equipSetButton
+
     local searchIcon = searchBar:CreateTexture(nil, "OVERLAY")
     searchIcon:SetSize(12, 12)
-    searchIcon:SetPoint("LEFT", searchBar, "LEFT", 8, 0)
+    searchIcon:SetPoint("LEFT", equipSetButton, "RIGHT", 4, 0)
     searchIcon:SetTexture("Interface\\AddOns\\GudaBags\\Assets\\search.png")
     searchIcon:SetVertexColor(0.6, 0.6, 0.6)
     searchBar.searchIcon = searchIcon
@@ -551,6 +821,12 @@ local function CreateSearchBar(parent)
     clearButton:SetScript("OnClick", function()
         searchBox:SetText("")
         searchBox:ClearFocus()
+        -- Also clear equipment set filter
+        if searchBar.filterState.equipSet then
+            searchBar.filterState.equipSet = nil
+            ClearEquipSetFilter(searchBar)
+            NotifyFilterChanged(searchBar)
+        end
     end)
 
     -- Debounce timer for search callbacks (avoid re-filtering on every keystroke)
@@ -559,12 +835,13 @@ local function CreateSearchBar(parent)
 
     searchBox:SetScript("OnTextChanged", function(self)
         local text = self:GetText()
-        if text == "" then
+        local hasEquipSet = searchBar.filterState.equipSet ~= nil
+        if text == "" and not hasEquipSet then
             placeholder:Show()
             searchIcon:SetVertexColor(0.6, 0.6, 0.6)
             clearButton:Hide()
         else
-            placeholder:Hide()
+            if text ~= "" then placeholder:Hide() end
             searchIcon:SetVertexColor(1, 0.82, 0)
             clearButton:Show()
         end
@@ -602,6 +879,11 @@ local function CreateSearchBar(parent)
     searchBox:SetScript("OnEscapePressed", function(self)
         self:SetText("")
         self:ClearFocus()
+        if searchBar.filterState.equipSet then
+            searchBar.filterState.equipSet = nil
+            ClearEquipSetFilter(searchBar)
+            NotifyFilterChanged(searchBar)
+        end
     end)
 
     searchBox:SetScript("OnEnterPressed", function(self)
@@ -686,9 +968,12 @@ function SearchBar:Hide(parent)
             instance.filterState.types = {}
             instance.filterState.specials = {}
             instance.filterState.parsed = nil
+            instance.filterState.equipSet = nil
             ResetChipVisuals(instance)
             UpdateChipStripVisibility(instance)
         end
+        ClearEquipSetFilter(instance)
+        if equipSetDropdown then equipSetDropdown:Hide() end
         instance:Hide()
         if instance.chipStrip then
             instance.chipStrip:Hide()
@@ -707,9 +992,11 @@ function SearchBar:Clear(parent)
             instance.filterState.types = {}
             instance.filterState.specials = {}
             instance.filterState.parsed = nil
+            instance.filterState.equipSet = nil
             ResetChipVisuals(instance)
             UpdateChipStripVisibility(instance)
         end
+        ClearEquipSetFilter(instance)
     end
 end
 
@@ -753,6 +1040,25 @@ function SearchBar:ItemMatchesFilters(parent, itemData)
     local state = instance.filterState
     if not HasAnyFilter(state) then return true end
     if not itemData then return false end
+
+    -- 0) Equipment set filter: only items in the selected set
+    if state.equipSet then
+        local EquipmentSets = ns:GetModule("EquipmentSets")
+        if EquipmentSets and itemData.itemID then
+            local setNames = EquipmentSets:GetSetNames(itemData.itemID)
+            if not setNames then return false end
+            local found = false
+            for _, name in ipairs(setNames) do
+                if name == state.equipSet then
+                    found = true
+                    break
+                end
+            end
+            if not found then return false end
+        else
+            return false
+        end
+    end
 
     -- 1) Quality chips: OR within group
     if next(state.qualities) then

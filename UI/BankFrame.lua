@@ -2129,6 +2129,44 @@ function BankFrame:IncrementalUpdate(dirtyBags)
     end
 
     local bank = BankScanner:GetCachedBank()
+
+    -- Detect bank bag configuration changes (bag swapped, new bank bag purchased)
+    -- Check live API directly to avoid stale scanner cache on bag removal
+    do
+        local configChanged = false
+        -- Check rendered bags for slot count changes
+        for bagID, slotButtons in pairs(buttonsByBag) do
+            local renderedCount = 0
+            for _ in pairs(slotButtons) do
+                renderedCount = renderedCount + 1
+            end
+            local actualCount = C_Container.GetContainerNumSlots(bagID) or 0
+            if renderedCount ~= actualCount then
+                ns:Debug("Bank config changed: bag", bagID, "rendered=", renderedCount, "actual=", actualCount)
+                configChanged = true
+                break
+            end
+        end
+        -- Check if dirty bags have data but no rendered buttons (new bag added)
+        if not configChanged and dirtyBags then
+            for bagID in pairs(dirtyBags) do
+                local numSlots = C_Container.GetContainerNumSlots(bagID) or 0
+                if numSlots > 0 and not buttonsByBag[bagID] then
+                    ns:Debug("Bank config changed: new bag", bagID, "with", numSlots, "slots")
+                    configChanged = true
+                    break
+                end
+            end
+        end
+        if configChanged then
+            -- Re-scan so Refresh() sees up-to-date slot counts
+            BankScanner:ScanAllBank()
+            layoutCached = false
+            self:Refresh()
+            return
+        end
+    end
+
     -- Cache settings once at start (avoid repeated GetSetting calls)
     local iconSize = Database:GetSetting("iconSize")
     local hasSearch = SearchBar:HasActiveFilters(frame)
@@ -2788,6 +2826,19 @@ Events:Register("PLAYER_MONEY", function()
         BankFooter:UpdateMoney()
     end
 end, BankFrame)
+
+-- Bank bag slot configuration changed (bag added/removed from bank bag slot)
+-- Force re-scan + full refresh since the batched scanner may not have processed yet
+if not ns.IsRetail then
+    Events:Register("PLAYERBANKBAGSLOTS_CHANGED", function()
+        if frame and frame:IsShown() and not viewingCharacter then
+            ns:Debug("PLAYERBANKBAGSLOTS_CHANGED - forcing rescan + full refresh")
+            BankScanner:ScanAllBank()
+            layoutCached = false
+            BankFrame:Refresh()
+        end
+    end, BankFrame)
+end
 
 -- Update item lock state (when picking up/putting down items)
 Events:Register("ITEM_LOCK_CHANGED", function(event, bagID, slotID)

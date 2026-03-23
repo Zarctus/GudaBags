@@ -16,12 +16,14 @@ local BagSlots = nil
 local Keyring = nil
 local SoulBag = nil
 local Money = nil
+local Currency = nil
 
 local function LoadComponents()
     BagSlots = ns:GetModule("Footer.BagSlots")
     Keyring = ns:GetModule("Footer.Keyring")
     SoulBag = ns:GetModule("Footer.SoulBag")
     Money = ns:GetModule("Footer.Money")
+    Currency = ns:GetModule("Footer.Currency")
 end
 
 function Footer:Init(parent)
@@ -124,6 +126,11 @@ function Footer:Init(parent)
 
     frame.moneyFrame = Money:Init(frame)
 
+    frame.currencyFrame = Currency:Init(frame)
+    if frame.currencyFrame then
+        frame.currencyFrame:SetPoint("RIGHT", frame.moneyFrame, "LEFT", -8, 0)
+    end
+
     -- Create back button (hidden by default, shown when viewing cached)
     backButton = CreateFrame("Button", "GudaBagsBackButton", frame)
     backButton:SetSize(60, 18)
@@ -195,8 +202,9 @@ function Footer:Show()
         frame.slotInfoFrame:SetPoint("LEFT", lastAnchor, "RIGHT", 0, 0)
     end
 
-    -- Show money
+    -- Show money and currency
     Money:Show()
+    Currency:Show()
 
     self:Update()
 end
@@ -213,6 +221,7 @@ function Footer:Hide()
         SoulBag:Hide()
     end
     Money:Hide()
+    Currency:Hide()
     if backButton then
         backButton:Hide()
     end
@@ -223,6 +232,7 @@ function Footer:Update()
 
     BagSlots:Update()
     Money:Update()
+    Currency:Update()
     if Keyring:GetButton() then
         Keyring:UpdateState()
     end
@@ -234,7 +244,7 @@ function Footer:Update()
         local bagAnchor = BagSlots:GetAnchor()
         local keyringButton = Keyring:GetButton()
 
-        if viewType == "single" then
+        if viewType == "single" or viewType == "category" then
             -- Show soul bag and reposition chain
             SoulBag:SetAnchor(bagAnchor)
             SoulBag:Show()
@@ -350,6 +360,7 @@ end
 function Footer:UpdateTheme()
     if BagSlots then BagSlots:UpdateTheme() end
     if Keyring then Keyring:UpdateTheme() end
+    if Currency then Currency:UpdateTheme() end
 end
 
 -- Show footer in cached mode (bag slots for highlighting, keyring toggle, cached money)
@@ -389,6 +400,9 @@ function Footer:ShowCached(characterFullName)
         Keyring:SetAnchor(lastAnchor)
         Keyring:Show()
     end
+
+    -- Hide currency (no data for cached characters)
+    Currency:Hide()
 
     -- Show and update money for the cached character
     Money:Show()

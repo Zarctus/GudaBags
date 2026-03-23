@@ -37,6 +37,185 @@ local function SuppressItemErrors()
     end
 end
 
+-- Check if an item is protected from selling/deleting (user-locked or in equipment set)
+local function IsItemProtected(itemID)
+    if not itemID then return false end
+    if Database:IsItemLocked(itemID) then return true end
+    if Database:GetSetting("autoLockSetItems") then
+        local EquipSets = ns:GetModule("EquipmentSets")
+        if EquipSets and EquipSets:IsInSet(itemID)
+           and not Database:IsSetProtectionException(itemID) then
+            return true
+        end
+    end
+    return false
+end
+
+-- Protect locked items from disenchant/milling/prospecting without tainting secure click chain
+-- Uses overlay frames on protected buttons that eat clicks while spell targeting is active
+local spellTargetingActive = false
+local spellOverlayButtons = {}
+
+local function CreateSpellOverlay(button)
+    if button.spellOverlay then return button.spellOverlay end
+    local overlay = CreateFrame("Button", nil, button)
+    overlay:SetAllPoints()
+    overlay:SetFrameLevel(button:GetFrameLevel() + 21)
+    overlay:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+    overlay:SetScript("OnClick", function(self)
+        local parent = self:GetParent()
+        if parent.itemData and parent.itemData.itemID then
+            local L = ns.L
+            ns:Print(string.format(L["ITEM_LOCKED_CANNOT_DISENCHANT"], parent.itemData.link or parent.itemData.name or ""))
+        end
+    end)
+    overlay:SetScript("OnEnter", function(self)
+        local parent = self:GetParent()
+        if parent:GetScript("OnEnter") then parent:GetScript("OnEnter")(parent) end
+    end)
+    overlay:SetScript("OnLeave", function(self)
+        local parent = self:GetParent()
+        if parent:GetScript("OnLeave") then parent:GetScript("OnLeave")(parent) end
+    end)
+    overlay:Hide()
+    button.spellOverlay = overlay
+    return overlay
+end
+
+local function UpdateSpellOverlay(button)
+    if spellTargetingActive and button.itemData and button.itemData.itemID and IsItemProtected(button.itemData.itemID) then
+        local overlay = CreateSpellOverlay(button)
+        overlay:SetFrameLevel(button:GetFrameLevel() + 21)
+        overlay:Show()
+        spellOverlayButtons[button] = true
+    else
+        if button.spellOverlay then
+            button.spellOverlay:Hide()
+        end
+        spellOverlayButtons[button] = nil
+    end
+end
+
+do
+    local spellGuardFrame = CreateFrame("Frame")
+    spellGuardFrame:Hide()
+    spellGuardFrame:SetScript("OnUpdate", function(self)
+        if not SpellIsTargeting() then
+            -- Spell targeting ended, hide all overlays
+            spellTargetingActive = false
+            for button in pairs(spellOverlayButtons) do
+                if button.spellOverlay then button.spellOverlay:Hide() end
+            end
+            wipe(spellOverlayButtons)
+            self:Hide()
+            return
+        end
+    end)
+
+    local spellEventFrame = CreateFrame("Frame")
+    spellEventFrame:RegisterEvent("CURRENT_SPELL_CAST_CHANGED")
+    spellEventFrame:SetScript("OnEvent", function()
+        if SpellIsTargeting() then
+            spellTargetingActive = true
+            -- Show overlays on all protected buttons
+            local BagFrame = ns:GetModule("BagFrame")
+            if BagFrame and BagFrame.RefreshLockIcons then BagFrame:RefreshLockIcons() end
+            local BankFrame = ns:GetModule("BankFrame")
+            if BankFrame and BankFrame.RefreshLockIcons then BankFrame:RefreshLockIcons() end
+            spellGuardFrame:Show()
+        end
+    end)
+end
+
+-- Protect locked items from being sold at merchant
+-- Uses overlay frames on protected buttons that intercept right-clicks while merchant is open
+local merchantProtectionActive = false
+local merchantOverlayButtons = {}
+
+local function CreateMerchantOverlay(button)
+    if button.merchantOverlay then return button.merchantOverlay end
+    local overlay = CreateFrame("Button", nil, button)
+    overlay:SetAllPoints()
+    overlay:SetFrameLevel(button:GetFrameLevel() + 20)
+    overlay:RegisterForClicks("RightButtonUp")
+    overlay:SetScript("OnClick", function(self)
+        local parent = self:GetParent()
+        if parent.itemData and parent.itemData.itemID then
+            local L = ns.L
+            ns:Print(string.format(L["ITEM_LOCKED_CANNOT_SELL"], parent.itemData.link or parent.itemData.name or ""))
+        end
+    end)
+    -- Forward non-right-click mouse events (tooltip, drag, etc.)
+    overlay:SetScript("OnEnter", function(self)
+        local parent = self:GetParent()
+        if parent:GetScript("OnEnter") then parent:GetScript("OnEnter")(parent) end
+    end)
+    overlay:SetScript("OnLeave", function(self)
+        local parent = self:GetParent()
+        if parent:GetScript("OnLeave") then parent:GetScript("OnLeave")(parent) end
+    end)
+    overlay:Hide()
+    button.merchantOverlay = overlay
+    return overlay
+end
+
+local function UpdateMerchantOverlay(button)
+    if merchantProtectionActive and button.itemData and button.itemData.itemID and IsItemProtected(button.itemData.itemID) then
+        local overlay = CreateMerchantOverlay(button)
+        overlay:SetFrameLevel(button:GetFrameLevel() + 20)
+        overlay:Show()
+        merchantOverlayButtons[button] = true
+    else
+        if button.merchantOverlay then
+            button.merchantOverlay:Hide()
+        end
+        merchantOverlayButtons[button] = nil
+    end
+end
+
+do
+    local merchantFrame = CreateFrame("Frame")
+    merchantFrame:RegisterEvent("MERCHANT_SHOW")
+    merchantFrame:RegisterEvent("MERCHANT_CLOSED")
+    merchantFrame:SetScript("OnEvent", function(self, event)
+        merchantProtectionActive = (event == "MERCHANT_SHOW")
+        if not merchantProtectionActive then
+            -- Hide all overlays
+            for button in pairs(merchantOverlayButtons) do
+                if button.merchantOverlay then button.merchantOverlay:Hide() end
+            end
+            wipe(merchantOverlayButtons)
+        end
+        -- Overlays will be shown/hidden via UpdateUserLockIcon or next button update
+        -- Force refresh lock icons on all visible buttons
+        local BagFrame = ns:GetModule("BagFrame")
+        if BagFrame and BagFrame.RefreshLockIcons then BagFrame:RefreshLockIcons() end
+        local BankFrame = ns:GetModule("BankFrame")
+        if BankFrame and BankFrame.RefreshLockIcons then BankFrame:RefreshLockIcons() end
+    end)
+end
+
+-- Hook delete confirmation popups to prevent deleting protected items
+local function HookDeletePopup(dialogName)
+    if not StaticPopupDialogs or not StaticPopupDialogs[dialogName] then return end
+    local originalOnShow = StaticPopupDialogs[dialogName].OnShow
+    StaticPopupDialogs[dialogName].OnShow = function(self, ...)
+        local cursorType, itemID = GetCursorInfo()
+        if cursorType == "item" and itemID and IsItemProtected(itemID) then
+            local L = ns.L
+            ns:Print(string.format(L["ITEM_LOCKED_CANNOT_DELETE"], select(2, GetItemInfo(itemID)) or ""))
+            ClearCursor()
+            self:Hide()
+            return
+        end
+        if originalOnShow then
+            return originalOnShow(self, ...)
+        end
+    end
+end
+HookDeletePopup("DELETE_ITEM")
+HookDeletePopup("DELETE_GOOD_ITEM")
+
 -- Retail slot textures used when retailEmptySlots setting is enabled
 local RETAIL_SLOT_TEXTURES = {
     background = "Interface\\AddOns\\GudaBags\\Assets\\Themes\\retail\\HDActionBarBtn",
@@ -529,13 +708,28 @@ local function CreateButton(parent)
     pinIcon:Hide()
     button.pinIcon = pinIcon
 
-    -- Favorite star icon (top-right corner)
-    local favoriteStar = button:CreateTexture(nil, "OVERLAY", nil, 5)
-    favoriteStar:SetSize(14, 14)
-    favoriteStar:SetPoint("TOPRIGHT", button, "TOPRIGHT", -1, -1)
-    favoriteStar:SetAtlas("PetJournal-FavoritesIcon")
-    favoriteStar:Hide()
-    button.favoriteStar = favoriteStar
+    -- User lock icon container (above quality border)
+    local userLockFrame = CreateFrame("Frame", nil, button)
+    userLockFrame:SetAllPoints(button)
+    userLockFrame:SetFrameLevel(button:GetFrameLevel() + Constants.FRAME_LEVELS.BORDER + 2)
+
+    -- User lock icon stroke (bottom-right corner, slightly larger black copy for outline)
+    local userLockIconStroke = userLockFrame:CreateTexture(nil, "OVERLAY", nil, 6)
+    userLockIconStroke:SetSize(11, 11)
+    userLockIconStroke:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", 5, -4)
+    userLockIconStroke:SetTexture("Interface\\AddOns\\GudaBags\\Assets\\lock.png")
+    userLockIconStroke:SetVertexColor(0, 0, 0, 1)
+    userLockIconStroke:Hide()
+    button.userLockIconStroke = userLockIconStroke
+
+    -- User lock icon (bottom-right corner)
+    local userLockIcon = userLockFrame:CreateTexture(nil, "OVERLAY", nil, 7)
+    userLockIcon:SetSize(9, 9)
+    userLockIcon:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", 4, -3)
+    userLockIcon:SetTexture("Interface\\AddOns\\GudaBags\\Assets\\lock.png")
+    userLockIcon:Hide()
+    button.userLockIcon = userLockIcon
+    button.userLockFrame = userLockFrame
 
     -- Item level text (top-left corner)
     local itemLevelText = button:CreateFontString(nil, "OVERLAY", nil)
@@ -767,6 +961,18 @@ local function CreateButton(parent)
     -- Ctrl+Alt+Click to track/untrack items
     -- Also handle guild bank item clicks and read-only item linking
     button:HookScript("OnClick", function(self, mouseButton)
+        -- Complete warband bank deposit (PreClick blocked the template)
+        if self._warbandIntercept then
+            local data = self._warbandIntercept
+            self._warbandIntercept = nil
+            -- Restore IDs for future clicks
+            self.wrapper:SetID(data.bagID)
+            self:SetID(data.slot)
+            -- Deposit to warband bank
+            C_Container.UseContainerItem(data.bagID, data.slot, nil, Enum.BankType.Account)
+            return
+        end
+
         -- Wrap in pcall to prevent errors from breaking item interaction
         local success, err = pcall(function()
             -- Handle shift-click to link items in chat for read-only items (cached/view mode)
@@ -790,13 +996,34 @@ local function CreateButton(parent)
                 return
             end
 
-            -- Toggle favorite with Ctrl+Click (without Alt)
-            if mouseButton == "LeftButton" and IsControlKeyDown() and not IsAltKeyDown() and not IsShiftKeyDown() then
-                if self.itemData and self.itemData.itemID and not self.isReadOnly then
-                    local isFav = Database:ToggleFavorite(self.itemData.itemID)
-                    if self.favoriteStar then
-                        self.favoriteStar:SetShown(isFav)
+            -- Lock/unlock item with Ctrl+Right-Click
+            if mouseButton == "RightButton" and IsControlKeyDown() and not IsAltKeyDown() and not self.isReadOnly then
+                if self.itemData and self.itemData.itemID then
+                    local Database = ns:GetModule("Database")
+                    -- Equipment set items: toggle exception instead of manual lock
+                    if Database:GetSetting("autoLockSetItems") then
+                        local EquipSets = ns:GetModule("EquipmentSets")
+                        if EquipSets and EquipSets:IsInSet(self.itemData.itemID) then
+                            local isNowExcepted = Database:ToggleSetProtectionException(self.itemData.itemID)
+                            local L = ns.L
+                            local itemRef = self.itemData.link or self.itemData.name or ""
+                            if isNowExcepted then
+                                ns:Print(string.format(L["ITEM_SET_PROTECTION_REMOVED"], itemRef))
+                            else
+                                ns:Print(string.format(L["ITEM_SET_PROTECTION_RESTORED"], itemRef))
+                            end
+                            local BagFrame = ns:GetModule("BagFrame")
+                            if BagFrame and BagFrame.RefreshLockIcons then
+                                BagFrame:RefreshLockIcons()
+                            end
+                            local BankFrame = ns:GetModule("BankFrame")
+                            if BankFrame and BankFrame.RefreshLockIcons then
+                                BankFrame:RefreshLockIcons()
+                            end
+                            return
+                        end
                     end
+                    local isNowLocked = Database:ToggleItemLock(self.itemData.itemID)
                     local L = ns.L
                     if isFav then
                         ns:Print(format(L["FAVORITE_ADDED"], self.itemData.name or ""))
@@ -971,11 +1198,34 @@ local function CreateButton(parent)
         -- Suppress spurious "Item isn't ready yet" errors on retail
         SuppressItemErrors()
 
-        -- On Retail, the warband bank deposit is handled via the GetActiveBankType hook
-        -- in BankFrame.lua, so no special PreClick logic is needed here
-        if ns.IsRetail then
-            return
+        -- Intercept right-click to deposit into warband bank instead of character bank
+        -- The secure template calls UseContainerItem without bankType, defaulting to character bank
+        if ns.IsRetail and mouseButton == "RightButton" and not IsModifiedClick() then
+            local RetailBankScanner = ns:GetModule("RetailBankScanner")
+            local BankFooter = ns:GetModule("BankFrame.BankFooter")
+            if RetailBankScanner and RetailBankScanner:IsBankOpen()
+               and BankFooter and BankFooter:GetCurrentBankType() == "warband"
+               and self.itemData and self.itemData.itemID
+               and not self.itemData.isGuildBank and not self.isReadOnly then
+                -- Only intercept bag items (not bank items being withdrawn)
+                local isBagItem = false
+                for _, id in ipairs(Constants.BAG_IDS) do
+                    if self.itemData.bagID == id then
+                        isBagItem = true
+                        break
+                    end
+                end
+                if isBagItem then
+                    self._warbandIntercept = { bagID = self.itemData.bagID, slot = self.itemData.slot }
+                    self.wrapper:SetID(0)
+                    self:SetID(0)
+                end
+            end
         end
+
+        -- On Retail, don't do anything that could taint the secure click path
+        -- Protection is handled via spell guard (OnUpdate) and merchant overlays
+        if ns.IsRetail then return end
 
         -- For pseudo-item buttons, update to current empty slot BEFORE secure handler runs
         if self.isEmptySlotButton or (self.itemData and self.itemData.isEmptySlots) then
@@ -1594,12 +1844,30 @@ function ItemButton:UpdateFavoriteStar(button)
     if not button.favoriteStar then return end
     local itemData = button.itemData
     if itemData and itemData.itemID and not button.isReadOnly then
-        if Database:IsFavorite(itemData.itemID) then
-            button.favoriteStar:Show()
+        local Database = ns:GetModule("Database")
+        if Database:IsItemLocked(itemData.itemID) then
+            button.userLockIcon:Show()
+            if button.userLockIconStroke then button.userLockIconStroke:Show() end
+            UpdateMerchantOverlay(button)
+            UpdateSpellOverlay(button)
             return
         end
+        if Database:GetSetting("autoLockSetItems") then
+            local EquipSets = ns:GetModule("EquipmentSets")
+            if EquipSets and EquipSets:IsInSet(itemData.itemID)
+               and not Database:IsSetProtectionException(itemData.itemID) then
+                button.userLockIcon:Show()
+                if button.userLockIconStroke then button.userLockIconStroke:Show() end
+                UpdateMerchantOverlay(button)
+                UpdateSpellOverlay(button)
+                return
+            end
+        end
     end
-    button.favoriteStar:Hide()
+    button.userLockIcon:Hide()
+    if button.userLockIconStroke then button.userLockIconStroke:Hide() end
+    UpdateMerchantOverlay(button)
+    UpdateSpellOverlay(button)
 end
 
 function ItemButton:SetEmpty(button, bagID, slot, size, isReadOnly, isGuildBank)
@@ -1947,6 +2215,15 @@ function ItemButton:UpdateLockForItem(bagID, slotID)
             else
                 button.lockOverlay:Hide()
                 SetItemButtonDesaturated(button, false)
+            end
+
+            -- Refresh user lock icon using live API data (itemData may be stale)
+            if itemInfo and itemInfo.itemID and IsItemProtected(itemInfo.itemID) then
+                if button.userLockIcon then button.userLockIcon:Show() end
+                if button.userLockIconStroke then button.userLockIconStroke:Show() end
+            else
+                if button.userLockIcon then button.userLockIcon:Hide() end
+                if button.userLockIconStroke then button.userLockIconStroke:Hide() end
             end
             return  -- Found the button, done
         end

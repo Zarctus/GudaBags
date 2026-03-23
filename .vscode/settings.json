@@ -86,7 +86,9 @@
         "TooltipDataProcessor",
         "ItemRefTooltip",
         "CLOSE",
-        "TooltipUtil"
+        "TooltipUtil",
+        "ITEM_BIND_TO_BNETACCOUNT",
+        "ITEM_ACCOUNTBOUND"
     ],
     "Lua.type.weakUnionCheck": true
 }

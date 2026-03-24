@@ -964,6 +964,17 @@ local function CreateButton(parent)
             return
         end
 
+        -- On Retail, explicitly handle right-click to use/sell/deposit items
+        -- Must be OUTSIDE pcall to preserve hardware event context for protected API
+        -- Template's secure handler may not work outside Blizzard's ContainerFrame hierarchy
+        if ns.IsRetail and mouseButton == "RightButton"
+           and not IsControlKeyDown() and not IsAltKeyDown()
+           and self.itemData and self.itemData.bagID and self.itemData.slot
+           and not self.itemData.isGuildBank and not self.isReadOnly then
+            C_Container.UseContainerItem(self.itemData.bagID, self.itemData.slot)
+            return
+        end
+
         -- Wrap in pcall to prevent errors from breaking item interaction
         local success, err = pcall(function()
             -- Handle shift-click to link items in chat for read-only items (cached/view mode)
@@ -1016,7 +1027,7 @@ local function CreateButton(parent)
                     end
                     local isNowLocked = Database:ToggleItemLock(self.itemData.itemID)
                     local L = ns.L
-                    if isFav then
+                    if isNowLocked then
                         ns:Print(format(L["FAVORITE_ADDED"], self.itemData.name or ""))
                     else
                         ns:Print(format(L["FAVORITE_REMOVED"], self.itemData.name or ""))
@@ -1044,16 +1055,6 @@ local function CreateButton(parent)
                         BankFrame:RefreshPinIcons()
                     end
                 end
-                return
-            end
-
-            -- On Retail, explicitly handle right-click to use/sell/deposit items
-            -- Template's secure handler may not work outside Blizzard's ContainerFrame hierarchy
-            if ns.IsRetail and mouseButton == "RightButton"
-               and not IsControlKeyDown() and not IsAltKeyDown()
-               and self.itemData and self.itemData.bagID and self.itemData.slot
-               and not self.itemData.isGuildBank and not self.isReadOnly then
-                C_Container.UseContainerItem(self.itemData.bagID, self.itemData.slot)
                 return
             end
 

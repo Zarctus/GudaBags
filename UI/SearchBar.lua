@@ -51,6 +51,8 @@ local SPECIAL_CHIPS = {
     {key = "boe", localeKey = "CHIP_SPECIAL_BOE"},
     {key = "new", localeKey = "CHIP_SPECIAL_NEW"},
     {key = "lowlevel", localeKey = "CHIP_SPECIAL_LOWLEVEL", tooltipKey = "CHIP_SPECIAL_LOWLEVEL_TIP"},
+    {key = "myprof", localeKey = "CHIP_SPECIAL_MYPROF", tooltipKey = "CHIP_SPECIAL_MYPROF_TIP"},
+    {key = "notmyprof", localeKey = "CHIP_SPECIAL_NOTMYPROF", tooltipKey = "CHIP_SPECIAL_NOTMYPROF_TIP"},
 }
 
 -- classID mapping for type chips (locale-independent)

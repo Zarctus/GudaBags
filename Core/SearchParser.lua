@@ -3,6 +3,138 @@ local addonName, ns = ...
 local SearchParser = {}
 ns:RegisterModule("SearchParser", SearchParser)
 
+local Expansion = ns:GetModule("Expansion")
+
+-------------------------------------------------
+-- Profession → Trade Goods subClassID mapping
+-- Trade Goods classID = 7
+-- WoW Retail skillLineID → subClassIDs that profession uses
+-------------------------------------------------
+
+-- skillLineID constants for primary professions
+local PROF_ALCHEMY       = 171
+local PROF_BLACKSMITHING  = 164
+local PROF_ENCHANTING     = 333
+local PROF_ENGINEERING    = 202
+local PROF_HERBALISM      = 182
+local PROF_INSCRIPTION    = 773
+local PROF_JEWELCRAFTING  = 755
+local PROF_LEATHERWORKING = 165
+local PROF_MINING         = 186
+local PROF_SKINNING       = 393
+local PROF_TAILORING      = 197
+
+-- Secondary professions
+local PROF_COOKING        = 185
+local PROF_FISHING        = 356
+
+-- Trade Goods (classID 7) subClassID → set of professions that use them
+-- SubClassIDs: 1=Parts, 4=Jewelcrafting, 5=Cloth, 6=Leather, 7=Metal&Stone,
+--              8=Cooking, 9=Herb, 10=Elemental, 11=Other, 12=Enchanting,
+--              16=Inscription, 18=OptionalReagents
+local TRADEGOODS_SUBCLASS_TO_PROFESSIONS = {
+    [1]  = {[PROF_ENGINEERING] = true},                                     -- Parts
+    [4]  = {[PROF_JEWELCRAFTING] = true},                                   -- Jewelcrafting
+    [5]  = {[PROF_TAILORING] = true},                                       -- Cloth
+    [6]  = {[PROF_LEATHERWORKING] = true, [PROF_SKINNING] = true},          -- Leather
+    [7]  = {[PROF_BLACKSMITHING] = true, [PROF_MINING] = true, [PROF_ENGINEERING] = true, [PROF_JEWELCRAFTING] = true}, -- Metal & Stone
+    [8]  = {[PROF_COOKING] = true},                                         -- Cooking
+    [9]  = {[PROF_ALCHEMY] = true, [PROF_INSCRIPTION] = true, [PROF_HERBALISM] = true}, -- Herb
+    [12] = {[PROF_ENCHANTING] = true},                                      -- Enchanting
+    [16] = {[PROF_INSCRIPTION] = true},                                     -- Inscription
+}
+-- SubClassIDs 0, 2, 3, 10, 11, 18 are generic/cross-profession — never flagged as "not my prof"
+local TRADEGOODS_GENERIC_SUBCLASS = {
+    [0] = true, [2] = true, [3] = true, [10] = true, [11] = true, [18] = true,
+}
+
+-- Also handle Reagent classID = 5 as generic crafting material (never flagged)
+-- Also handle Recipe classID = 9 subClassID maps similarly
+local RECIPE_SUBCLASS_TO_PROFESSIONS = {
+    [1]  = {[PROF_LEATHERWORKING] = true},
+    [2]  = {[PROF_TAILORING] = true},
+    [3]  = {[PROF_ENGINEERING] = true},
+    [4]  = {[PROF_BLACKSMITHING] = true},
+    [5]  = {[PROF_COOKING] = true},
+    [6]  = {[PROF_ALCHEMY] = true},
+    [8]  = {[PROF_ENCHANTING] = true},
+    [10] = {[PROF_JEWELCRAFTING] = true},
+    [11] = {[PROF_INSCRIPTION] = true},
+}
+
+-- Cached set of the player's profession skillLineIDs
+local playerProfessionCache = nil
+local profCacheFrame = nil
+
+local function GetPlayerProfessions()
+    if playerProfessionCache then return playerProfessionCache end
+
+    local profs = {}
+
+    local function AddProfession(idx)
+        if not idx then return end
+        local _, _, _, _, _, _, skillLineID = GetProfessionInfo(idx)
+        if skillLineID then
+            profs[skillLineID] = true
+        end
+    end
+
+    if GetProfessions then
+        local prof1, prof2, arch, fishing, cooking = GetProfessions()
+        AddProfession(prof1)
+        AddProfession(prof2)
+        AddProfession(arch)
+        AddProfession(fishing)
+        AddProfession(cooking)
+    end
+
+    playerProfessionCache = profs
+
+    -- Register invalidation on first call
+    if not profCacheFrame then
+        profCacheFrame = CreateFrame("Frame")
+        profCacheFrame:RegisterEvent("SKILL_LINES_CHANGED")
+        profCacheFrame:SetScript("OnEvent", function()
+            playerProfessionCache = nil
+        end)
+    end
+
+    return profs
+end
+
+-- Check if a Trade Goods item belongs to at least one of the player's professions
+-- Returns true if the item is NOT used by any of the player's professions
+local function IsTradeGoodNotMyProfession(itemData)
+    local classID = itemData.classID
+    local subClassID = itemData.subClassID or 0
+
+    local profMap
+    if classID == 7 then
+        -- Trade Goods
+        if TRADEGOODS_GENERIC_SUBCLASS[subClassID] then
+            return false -- generic material, always considered "useful"
+        end
+        profMap = TRADEGOODS_SUBCLASS_TO_PROFESSIONS[subClassID]
+    elseif classID == 9 then
+        -- Recipes
+        profMap = RECIPE_SUBCLASS_TO_PROFESSIONS[subClassID]
+    else
+        return false
+    end
+
+    -- Unknown subclass mapping = treat as generic (not flagged)
+    if not profMap then return false end
+
+    local myProfs = GetPlayerProfessions()
+    for profID in pairs(profMap) do
+        if myProfs[profID] then
+            return false -- at least one of my professions uses this
+        end
+    end
+
+    return true -- none of my professions use this
+end
+
 -------------------------------------------------
 -- Quality Aliases (name → quality number)
 -------------------------------------------------
@@ -382,6 +514,18 @@ function SearchParser:MatchKeyword(keyword, itemData, context)
         local _, equipped = GetAverageItemLevel()
         if not equipped or equipped <= 0 then return false end
         return ilvl <= (equipped - 20)
+
+    elseif keyword == "notmyprof" then
+        -- Trade Goods / Recipes not used by any of the player's professions
+        local classID = itemData.classID
+        if classID ~= 7 and classID ~= 9 then return false end
+        return IsTradeGoodNotMyProfession(itemData)
+
+    elseif keyword == "myprof" then
+        -- Trade Goods / Recipes used by at least one of the player's professions
+        local classID = itemData.classID
+        if classID ~= 7 and classID ~= 9 then return false end
+        return not IsTradeGoodNotMyProfession(itemData)
 
     elseif keyword == "usable" then
         return itemData.isUsable == true

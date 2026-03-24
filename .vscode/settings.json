@@ -88,7 +88,8 @@
         "CLOSE",
         "TooltipUtil",
         "ITEM_BIND_TO_BNETACCOUNT",
-        "ITEM_ACCOUNTBOUND"
+        "ITEM_ACCOUNTBOUND",
+        "OKAY"
     ],
     "Lua.type.weakUnionCheck": true
 }

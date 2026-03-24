@@ -373,6 +373,16 @@ function SearchParser:MatchKeyword(keyword, itemData, context)
         end
         return false
 
+    elseif keyword == "lowlevel" then
+        -- Weapons/Armor whose item level is 20+ below equipped avg ilvl
+        local classID = itemData.classID
+        if classID ~= 2 and classID ~= 4 then return false end
+        local ilvl = itemData.itemLevel
+        if not ilvl or ilvl <= 0 then return false end
+        local _, equipped = GetAverageItemLevel()
+        if not equipped or equipped <= 0 then return false end
+        return ilvl <= (equipped - 20)
+
     elseif keyword == "usable" then
         return itemData.isUsable == true
 

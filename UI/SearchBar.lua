@@ -50,6 +50,7 @@ local TYPE_CHIPS = {
 local SPECIAL_CHIPS = {
     {key = "boe", localeKey = "CHIP_SPECIAL_BOE"},
     {key = "new", localeKey = "CHIP_SPECIAL_NEW"},
+    {key = "lowlevel", localeKey = "CHIP_SPECIAL_LOWLEVEL", tooltipKey = "CHIP_SPECIAL_LOWLEVEL_TIP"},
 }
 
 -- classID mapping for type chips (locale-independent)
@@ -322,11 +323,19 @@ local function CreateSpecialChip(chipStrip, chipDef, searchBar)
         if not searchBar.filterState.specials[chipDef.key] then
             self.bg:SetVertexColor(0.25, 0.25, 0.25, 0.8)
         end
+        if chipDef.tooltipKey then
+            GameTooltip:SetOwner(self, "ANCHOR_TOP")
+            GameTooltip:SetText(L[chipDef.tooltipKey] or chipDef.key)
+            GameTooltip:Show()
+        end
     end)
 
     btn:SetScript("OnLeave", function(self)
         if not searchBar.filterState.specials[chipDef.key] then
             self.bg:SetVertexColor(0.15, 0.15, 0.15, 0.8)
+        end
+        if chipDef.tooltipKey then
+            GameTooltip:Hide()
         end
     end)
 

@@ -140,11 +140,18 @@ local function CreateMailRow(parent, index)
     row.icon = icon
 
     -- Quality border around icon
-    local iconBorder = row:CreateTexture(nil, "OVERLAY")
-    iconBorder:SetSize(ICON_SIZE + 2, ICON_SIZE + 2)
-    iconBorder:SetPoint("CENTER", icon, "CENTER", 0, 0)
-    iconBorder:SetTexture("Interface\\Buttons\\WHITE8x8")
+    local iconBorder = CreateFrame("Frame", nil, row, "BackdropTemplate")
+    iconBorder:SetPoint("TOPLEFT", icon, "TOPLEFT", -1, 1)
+    iconBorder:SetPoint("BOTTOMRIGHT", icon, "BOTTOMRIGHT", 1, -1)
+    iconBorder:SetBackdrop({
+        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+        edgeSize = 12,
+        insets = { left = 2, right = 2, top = 2, bottom = 2 },
+    })
     iconBorder:Hide()
+    iconBorder.SetVertexColor = function(self, r, g, b, a)
+        self:SetBackdropBorderColor(r, g, b, a)
+    end
     row.iconBorder = iconBorder
 
     -- Item name / subject (top-left, after icon)
@@ -200,6 +207,19 @@ local function CreateMailRow(parent, index)
     row:SetScript("OnLeave", function()
         GameTooltip:Hide()
     end)
+    row:SetScript("OnClick", function(self, button)
+        if not self.mailData then return end
+        if IsModifiedClick("CHATLINK") then
+            local link = self.mailData.link
+            if not link and self.mailData.itemID then
+                _, link = GetItemInfo(self.mailData.itemID)
+            end
+            if link then
+                HandleModifiedItemClick(link)
+            end
+        end
+    end)
+    row:RegisterForClicks("LeftButtonUp", "RightButtonUp")
 
     row:Hide()
     return row
@@ -588,6 +608,13 @@ Events:Register("SETTING_CHANGED", function(event, key, value)
     if key == "bgAlpha" or key == "showBorders" or key == "theme" or key == "retailEmptySlots" then
         UpdateFrameAppearance()
     elseif key == "showFooter" or key == "showSearchBar" or key == "showFilterChips" then
+        UpdateFrameAppearance()
+        MailFrame:Refresh()
+    end
+end, MailFrame)
+
+Events:Register("PROFILE_LOADED", function()
+    if frame and frame:IsShown() then
         UpdateFrameAppearance()
         MailFrame:Refresh()
     end

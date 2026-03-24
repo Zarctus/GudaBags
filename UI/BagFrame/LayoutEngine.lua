@@ -404,7 +404,8 @@ local EXPANSION_HEADER_HEIGHT = 22  -- Height of expansion tier separator header
 
 -- Collect items for category view (skips empty slots but counts them)
 -- Returns array of {bagID, slot, itemData}, emptyCount, firstEmptySlot, soulEmptyCount, firstSoulEmptySlot
-function LayoutEngine:CollectItemsForCategoryView(bagsToShow, bags, isViewingCached)
+-- forceSoulVisible: if true, overrides hideSoulItems setting (used by bank view)
+function LayoutEngine:CollectItemsForCategoryView(bagsToShow, bags, isViewingCached, forceSoulVisible)
     local items = {}
     local emptyCount = 0
     local firstEmptySlot = nil  -- {bagID, slot} of first empty slot found
@@ -412,8 +413,9 @@ function LayoutEngine:CollectItemsForCategoryView(bagsToShow, bags, isViewingCac
     local firstSoulEmptySlot = nil  -- {bagID, slot} of first soul bag empty slot
 
     -- Check if soul shard items should be hidden (category view toggle)
+    -- Bank view always shows soul items (no toggle button in bank footer)
     local Database = ns:GetModule("Database")
-    local hideSoulItems = Database and Database:GetSetting("hideSoulItems")
+    local hideSoulItems = not forceSoulVisible and Database and Database:GetSetting("hideSoulItems")
 
     -- Get BagClassifier for accurate bag type detection
     local BagClassifier = ns:GetModule("BagFrame.BagClassifier")
@@ -591,7 +593,7 @@ end
 -- firstEmptySlot: {bagID, slot} of first empty slot for click handling
 -- soulEmptyCount: number of soul bag empty slots
 -- firstSoulEmptySlot: {bagID, slot} of first soul bag empty slot
-function LayoutEngine:BuildCategorySections(items, isViewingCached, emptyCount, firstEmptySlot, soulEmptyCount, firstSoulEmptySlot)
+function LayoutEngine:BuildCategorySections(items, isViewingCached, emptyCount, firstEmptySlot, soulEmptyCount, firstSoulEmptySlot, forceSoulVisible)
     local CategoryManager = ns:GetModule("CategoryManager")
     if not CategoryManager then
         return {{ categoryId = "All", categoryName = "All Items", categoryIcon = nil, items = items }}
@@ -662,7 +664,7 @@ function LayoutEngine:BuildCategorySections(items, isViewingCached, emptyCount, 
 
     -- Categorize each item and store category order index for merged group sorting
     local soulCategoryEnabled = sectionMap["Soul"] ~= nil
-    local hideSoulItems = Database and Database:GetSetting("hideSoulItems")
+    local hideSoulItems = not forceSoulVisible and Database and Database:GetSetting("hideSoulItems")
     for _, item in ipairs(items) do
         -- Soul bag items go to the Soul section when that category is enabled
         if soulCategoryEnabled and item.isInSoulBag then

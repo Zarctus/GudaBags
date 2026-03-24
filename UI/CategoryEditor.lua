@@ -747,6 +747,10 @@ local function CreateEditorFrame()
         end
     end, f)
 
+    Events:Register("PROFILE_LOADED", function()
+        ApplyEditorTheme()
+    end, f)
+
     f:Hide()
     return f
 end

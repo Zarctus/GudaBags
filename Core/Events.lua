@@ -23,6 +23,7 @@ local customEvents = {
     SETTING_CHANGED = true,
     BAGS_UPDATED = true,
     CATEGORIES_UPDATED = true,
+    PROFILE_LOADED = true,
 }
 
 function Events:Register(event, callback, owner)

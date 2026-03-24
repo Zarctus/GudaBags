@@ -1680,9 +1680,10 @@ end
 function BankFrame:RefreshCategoryView(bank, bagsToShow, settings, hasSearch, isReadOnly)
     local iconSize = settings.iconSize
 
-    local items, emptyCount, firstEmptySlot, soulEmptyCount, firstSoulEmptySlot = LayoutEngine:CollectItemsForCategoryView(bagsToShow, bank, isReadOnly)
+    -- Bank always shows soul bag items (no toggle button in bank footer)
+    local items, emptyCount, firstEmptySlot, soulEmptyCount, firstSoulEmptySlot = LayoutEngine:CollectItemsForCategoryView(bagsToShow, bank, isReadOnly, true)
 
-    local sections = LayoutEngine:BuildCategorySections(items, isReadOnly, emptyCount, firstEmptySlot, soulEmptyCount, firstSoulEmptySlot)
+    local sections = LayoutEngine:BuildCategorySections(items, isReadOnly, emptyCount, firstEmptySlot, soulEmptyCount, firstSoulEmptySlot, true)
 
     local frameWidth, frameHeight = LayoutEngine:CalculateCategoryFrameSize(sections, settings)
 
@@ -2086,6 +2087,10 @@ function BankFrame:IsShown()
     return frame and frame:IsShown()
 end
 
+function BankFrame:InvalidateLayout()
+    layoutCached = false
+end
+
 function BankFrame:GetFrame()
     return frame
 end
@@ -2129,44 +2134,6 @@ function BankFrame:IncrementalUpdate(dirtyBags)
     end
 
     local bank = BankScanner:GetCachedBank()
-
-    -- Detect bank bag configuration changes (bag swapped, new bank bag purchased)
-    -- Check live API directly to avoid stale scanner cache on bag removal
-    do
-        local configChanged = false
-        -- Check rendered bags for slot count changes
-        for bagID, slotButtons in pairs(buttonsByBag) do
-            local renderedCount = 0
-            for _ in pairs(slotButtons) do
-                renderedCount = renderedCount + 1
-            end
-            local actualCount = C_Container.GetContainerNumSlots(bagID) or 0
-            if renderedCount ~= actualCount then
-                ns:Debug("Bank config changed: bag", bagID, "rendered=", renderedCount, "actual=", actualCount)
-                configChanged = true
-                break
-            end
-        end
-        -- Check if dirty bags have data but no rendered buttons (new bag added)
-        if not configChanged and dirtyBags then
-            for bagID in pairs(dirtyBags) do
-                local numSlots = C_Container.GetContainerNumSlots(bagID) or 0
-                if numSlots > 0 and not buttonsByBag[bagID] then
-                    ns:Debug("Bank config changed: new bag", bagID, "with", numSlots, "slots")
-                    configChanged = true
-                    break
-                end
-            end
-        end
-        if configChanged then
-            -- Re-scan so Refresh() sees up-to-date slot counts
-            BankScanner:ScanAllBank()
-            layoutCached = false
-            self:Refresh()
-            return
-        end
-    end
-
     -- Cache settings once at start (avoid repeated GetSetting calls)
     local iconSize = Database:GetSetting("iconSize")
     local hasSearch = SearchBar:HasActiveFilters(frame)
@@ -2186,6 +2153,15 @@ function BankFrame:IncrementalUpdate(dirtyBags)
         local itemUpdates = {}
         local countUpdates = {}
         local ghostSlots = {}
+
+        -- Detect soul bags for category override (must match BuildCategorySections logic)
+        -- Bank always shows soul items (forceSoulVisible)
+        local soulCategoryEnabled = false
+        if CategoryManager then
+            local cats = CategoryManager:GetCategories()
+            local soulDef = cats and cats.definitions and cats.definitions["Soul"]
+            soulCategoryEnabled = soulDef and soulDef.enabled
+        end
 
         local function checkBag(bagID)
             local slotButtons = buttonsByBag[bagID] or {}
@@ -2226,6 +2202,10 @@ function BankFrame:IncrementalUpdate(dirtyBags)
                 ns:Debug("Bank CategoryView LAZY: bag", bagID, "has FEWER items", currentItemCount, "<", cachedButtonCount, "- keeping ghosts")
             end
 
+            -- Detect soul bag for category override
+            local bagType = BagClassifier and BagClassifier:GetBagType(bagID) or "regular"
+            local isSoulBag = (bagType == "soul")
+
             for slot, button in pairs(slotButtons) do
                 local slotKey = bagID .. ":" .. slot
                 local newItemData = bagData and bagData.slots and bagData.slots[slot]
@@ -2243,7 +2223,13 @@ function BankFrame:IncrementalUpdate(dirtyBags)
                         -- Keep cachedItemCategory so we know this slot existed
                         table.insert(ghostSlots, slotKey)
                     else
-                        local newCategory = CategoryManager and CategoryManager:CategorizeItem(newItemData, bagID, slot, isReadOnly) or "Miscellaneous"
+                        -- Soul bag items use "Soul" category override (same as BuildCategorySections)
+                        local newCategory
+                        if soulCategoryEnabled and isSoulBag then
+                            newCategory = "Soul"
+                        else
+                            newCategory = CategoryManager and CategoryManager:CategorizeItem(newItemData, bagID, slot, isReadOnly) or "Miscellaneous"
+                        end
 
                         if oldCategory ~= newCategory then
                             ns:Debug("Bank CategoryView REFRESH: category changed at", slotKey, "from", oldCategory, "to", newCategory)

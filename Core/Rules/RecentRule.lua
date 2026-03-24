@@ -269,19 +269,15 @@ end
 local function OnLootReceived(event, msg, ...)
     if not msg then return end
 
-    -- Only process actual loot messages, not created/conjured items
-    -- Valid loot patterns:
-    --   "You receive loot: [Item]"  - regular loot from mobs/chests
-    --   "You receive item: [Item]"  - quest rewards, mail, etc.
-    --   "You won: [Item]"           - roll wins
-    -- Excluded patterns:
-    --   "You create: [Item]"        - conjured items (mage water, warlock stones)
-    --   "PlayerName receives loot:" - other players' loot
-    if not (msg:find("^You receive") or msg:find("^You won")) then return end
+    -- Detaint: CHAT_MSG_LOOT msg can be a tainted secret string
+    -- Use string.find/match (not method syntax) with pcall to handle tainted values
+    local ok, itemID = pcall(function()
+        -- Only process actual loot messages, not created/conjured items
+        if not (string.find(msg, "^You receive") or string.find(msg, "^You won")) then return nil end
+        return string.match(msg, "|Hitem:(%d+)")
+    end)
 
-    -- Extract itemID directly from any item link in the message
-    local itemID = msg:match("|Hitem:(%d+)")
-    if itemID then
+    if ok and itemID then
         MarkItemRecent(tonumber(itemID))
     end
 end

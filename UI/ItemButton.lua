@@ -1047,6 +1047,16 @@ local function CreateButton(parent)
                 return
             end
 
+            -- On Retail, explicitly handle right-click to use/sell/deposit items
+            -- Template's secure handler may not work outside Blizzard's ContainerFrame hierarchy
+            if ns.IsRetail and mouseButton == "RightButton"
+               and not IsControlKeyDown() and not IsAltKeyDown()
+               and self.itemData and self.itemData.bagID and self.itemData.slot
+               and not self.itemData.isGuildBank and not self.isReadOnly then
+                C_Container.UseContainerItem(self.itemData.bagID, self.itemData.slot)
+                return
+            end
+
             -- Handle guild bank items (not handled by ContainerFrameItemButtonTemplate)
             if self.itemData and self.itemData.isGuildBank and not self.isReadOnly then
                 local tabIndex = self.itemData.bagID  -- bagID is actually tabIndex for guild bank

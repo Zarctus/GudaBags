@@ -967,10 +967,14 @@ local function CreateButton(parent)
         -- On Retail, explicitly handle right-click to use/sell/deposit items
         -- Must be OUTSIDE pcall to preserve hardware event context for protected API
         -- Template's secure handler may not work outside Blizzard's ContainerFrame hierarchy
+        -- Skip if SpellIsTargeting(): the template's handler already activated a targeting item
+        -- (e.g. leg enchants / spellthreads) — calling UseContainerItem again would try to
+        -- apply the targeting cursor to the item itself, causing "not a valid target" errors
         if ns.IsRetail and mouseButton == "RightButton"
            and not IsControlKeyDown() and not IsAltKeyDown()
            and self.itemData and self.itemData.bagID and self.itemData.slot
-           and not self.itemData.isGuildBank and not self.isReadOnly then
+           and not self.itemData.isGuildBank and not self.isReadOnly
+           and not SpellIsTargeting() then
             C_Container.UseContainerItem(self.itemData.bagID, self.itemData.slot)
             return
         end

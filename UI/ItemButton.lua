@@ -313,6 +313,10 @@ end
 local function IsJunkItem(itemData)
     if not itemData then return false end
 
+    -- Don't classify items with incomplete data as junk
+    -- (GetItemInfo hasn't cached yet — name defaults to "")
+    if not itemData.name or itemData.name == "" then return false end
+
     -- Profession tools are never junk
     if IsTool(itemData.name) then
         return false

@@ -39,6 +39,7 @@ local function InitializeGlobalDB()
     end
 
     GudaBags_DB.profiles = GudaBags_DB.profiles or {}
+    GudaBags_DB.goldBlacklist = GudaBags_DB.goldBlacklist or {}
 end
 
 local function InitializeCharDB()
@@ -591,6 +592,22 @@ function Database:GetTotalMoney(sameFactionOnly, sameRealmOnly)
         total = total + (char.money or 0)
     end
     return total
+end
+
+function Database:IsGoldBlacklisted(fullName)
+    if not GudaBags_DB.goldBlacklist then return false end
+    return GudaBags_DB.goldBlacklist[fullName] or false
+end
+
+function Database:ToggleGoldBlacklist(fullName)
+    if not GudaBags_DB.goldBlacklist then
+        GudaBags_DB.goldBlacklist = {}
+    end
+    if GudaBags_DB.goldBlacklist[fullName] then
+        GudaBags_DB.goldBlacklist[fullName] = nil
+    else
+        GudaBags_DB.goldBlacklist[fullName] = true
+    end
 end
 
 -- Count items in a container collection (bags or bank)

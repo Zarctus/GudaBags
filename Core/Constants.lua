@@ -237,6 +237,7 @@ Constants.DEFAULTS = {
     hoverBagline = false,
     showFooter = true,
     showTooltipCounts = true,
+    goldTrackAllRealms = false,  -- Show gold from all realms in money tooltip (Retail only)
     bagViewType = "single",
     bankViewType = "single",
     showCategoryCount = true,

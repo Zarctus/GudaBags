@@ -313,6 +313,10 @@ end
 local function IsJunkItem(itemData)
     if not itemData then return false end
 
+    -- Don't classify items with incomplete data as junk
+    -- (GetItemInfo hasn't cached yet — name defaults to "")
+    if not itemData.name or itemData.name == "" then return false end
+
     -- Profession tools are never junk
     if IsTool(itemData.name) then
         return false
@@ -1195,8 +1199,12 @@ local function CreateButton(parent)
                 end
                 if isBagItem then
                     self._warbandIntercept = { bagID = self.itemData.bagID, slot = self.itemData.slot }
-                    self.wrapper:SetID(0)
-                    self:SetID(0)
+                    -- SetID(0) blocks the secure template's default UseContainerItem
+                    -- Wrapped in pcall to contain any taint propagation
+                    pcall(function()
+                        self.wrapper:SetID(0)
+                        self:SetID(0)
+                    end)
                 end
             end
         end

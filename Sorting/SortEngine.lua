@@ -500,7 +500,10 @@ local function SnapshotSlots(bagIDs)
 
                     local shouldBeJunk = false
                     local isGrayItem = info.quality == 0
-                    if isGrayItem then
+                    if info.itemName == "" then
+                        -- Don't mark items with incomplete data as junk
+                        shouldBeJunk = false
+                    elseif isGrayItem then
                         shouldBeJunk = not IsTool(info.itemType, info.itemSubType, info.itemName)
                     elseif (info.quality == 1) and isEquippable and whiteItemsJunk then
                         local isValuableSlot = Constants.VALUABLE_EQUIP_SLOTS and Constants.VALUABLE_EQUIP_SLOTS[info.equipLoc]

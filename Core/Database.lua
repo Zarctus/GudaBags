@@ -39,6 +39,7 @@ local function InitializeGlobalDB()
     end
 
     GudaBags_DB.profiles = GudaBags_DB.profiles or {}
+    GudaBags_DB.goldBlacklist = GudaBags_DB.goldBlacklist or {}
 end
 
 local function InitializeCharDB()
@@ -553,15 +554,17 @@ function Database:GetMoney(fullName)
     return 0
 end
 
-function Database:GetAllCharacters(sameFactionOnly, sameRealmOnly)
+function Database:GetAllCharacters(sameFactionOnly, sameRealmOnly, skipBlacklist)
     local characters = {}
     local currentFaction = UnitFactionGroup("player")
     local currentRealm = GetRealmName()
+    local blacklist = not skipBlacklist and GudaBags_DB.goldBlacklist or {}
 
     for fullName, data in pairs(GudaBags_DB.characters) do
         local factionMatch = not sameFactionOnly or data.faction == currentFaction
         local realmMatch = not sameRealmOnly or data.realm == currentRealm
-        if factionMatch and realmMatch then
+        local notBlacklisted = not blacklist[fullName]
+        if factionMatch and realmMatch and notBlacklisted then
             table.insert(characters, {
                 fullName = fullName,
                 name = data.name,
@@ -591,6 +594,22 @@ function Database:GetTotalMoney(sameFactionOnly, sameRealmOnly)
         total = total + (char.money or 0)
     end
     return total
+end
+
+function Database:IsGoldBlacklisted(fullName)
+    if not GudaBags_DB.goldBlacklist then return false end
+    return GudaBags_DB.goldBlacklist[fullName] or false
+end
+
+function Database:ToggleGoldBlacklist(fullName)
+    if not GudaBags_DB.goldBlacklist then
+        GudaBags_DB.goldBlacklist = {}
+    end
+    if GudaBags_DB.goldBlacklist[fullName] then
+        GudaBags_DB.goldBlacklist[fullName] = nil
+    else
+        GudaBags_DB.goldBlacklist[fullName] = true
+    end
 end
 
 -- Count items in a container collection (bags or bank)

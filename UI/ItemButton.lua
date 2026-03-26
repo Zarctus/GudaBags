@@ -949,35 +949,23 @@ local function CreateButton(parent)
         return false  -- No empty slot found
     end
 
+    -- On Retail, DON'T override the template's OnClick handler.
+    -- The native ContainerFrameItemButtonMixin:OnClick calls
+    -- ContainerFrameItemButton_OnClick which correctly handles:
+    --   * Right-click to use/sell/deposit items (UseContainerItem with bank type)
+    --   * Left-click for pickup/split/spell targeting
+    --   * Modified clicks (shift-click for chat link, etc.)
+    -- Overriding OnClick would require calling UseContainerItem from addon
+    -- code, which can fail on Retail when hardware event context is lost.
+    -- Custom behaviors (lock, pin, track) are handled by HookScript below.
+
     -- Ctrl+Alt+Click to track/untrack items
     -- Also handle guild bank item clicks and read-only item linking
     button:HookScript("OnClick", function(self, mouseButton)
-        -- Complete warband bank deposit (PreClick blocked the template)
-        if self._warbandIntercept then
-            local data = self._warbandIntercept
-            self._warbandIntercept = nil
-            -- Restore IDs for future clicks
-            self.wrapper:SetID(data.bagID)
-            self:SetID(data.slot)
-            -- Deposit to warband bank
-            C_Container.UseContainerItem(data.bagID, data.slot, nil, Enum.BankType.Account)
-            return
-        end
 
-        -- On Retail, explicitly handle right-click to use/sell/deposit items
-        -- Must be OUTSIDE pcall to preserve hardware event context for protected API
-        -- Template's secure handler may not work outside Blizzard's ContainerFrame hierarchy
-        -- Skip if SpellIsTargeting(): the template's handler already activated a targeting item
-        -- (e.g. leg enchants / spellthreads) — calling UseContainerItem again would try to
-        -- apply the targeting cursor to the item itself, causing "not a valid target" errors
-        if ns.IsRetail and mouseButton == "RightButton"
-           and not IsControlKeyDown() and not IsAltKeyDown()
-           and self.itemData and self.itemData.bagID and self.itemData.slot
-           and not self.itemData.isGuildBank and not self.isReadOnly
-           and not SpellIsTargeting() then
-            C_Container.UseContainerItem(self.itemData.bagID, self.itemData.slot)
-            return
-        end
+        -- On Retail, normal clicks are handled by the template's native
+        -- OnClick handler (ContainerFrameItemButtonMixin:OnClick). Only
+        -- custom modified clicks (lock/pin/track) are handled here.
 
         -- Wrap in pcall to prevent errors from breaking item interaction
         local success, err = pcall(function()
@@ -1201,37 +1189,13 @@ local function CreateButton(parent)
     -- Also update pseudo-item slots to use current empty slot
     -- NOTE: On Retail, skip these operations to avoid tainting the secure click handler
     button:HookScript("PreClick", function(self, mouseButton)
-        -- Suppress spurious "Item isn't ready yet" errors on retail
-        SuppressItemErrors()
-
-        -- Intercept right-click to deposit into warband bank instead of character bank
-        -- The secure template calls UseContainerItem without bankType, defaulting to character bank
-        if ns.IsRetail and mouseButton == "RightButton" and not IsModifiedClick() then
-            local RetailBankScanner = ns:GetModule("RetailBankScanner")
-            local BankFooter = ns:GetModule("BankFrame.BankFooter")
-            if RetailBankScanner and RetailBankScanner:IsBankOpen()
-               and BankFooter and BankFooter:GetCurrentBankType() == "warband"
-               and self.itemData and self.itemData.itemID
-               and not self.itemData.isGuildBank and not self.isReadOnly then
-                -- Only intercept bag items (not bank items being withdrawn)
-                local isBagItem = false
-                for _, id in ipairs(Constants.BAG_IDS) do
-                    if self.itemData.bagID == id then
-                        isBagItem = true
-                        break
-                    end
-                end
-                if isBagItem then
-                    self._warbandIntercept = { bagID = self.itemData.bagID, slot = self.itemData.slot }
-                    self.wrapper:SetID(0)
-                    self:SetID(0)
-                end
-            end
-        end
-
-        -- On Retail, don't do anything that could taint the secure click path
-        -- Protection is handled via spell guard (OnUpdate) and merchant overlays
+        -- On Retail, skip all addon code in PreClick to preserve the
+        -- template's secure/hardware event context for UseContainerItem.
+        -- Protection is handled via spell guard (OnUpdate) and merchant overlays.
         if ns.IsRetail then return end
+
+        -- Suppress spurious "Item isn't ready yet" errors
+        SuppressItemErrors()
 
         -- For pseudo-item buttons, update to current empty slot BEFORE secure handler runs
         if self.isEmptySlotButton or (self.itemData and self.itemData.isEmptySlots) then

@@ -154,13 +154,21 @@ local function CloseGoldMenu()
     end
 end
 
--- Reposition level 2 submenu to open to the left of level 1
+-- Reposition level 2 submenu to open to the left of level 1, clamped to screen
 local function RepositionSubmenu()
     local list2 = _G["DropDownList2"]
     local list1 = _G["DropDownList1"]
     if list2 and list1 and list2:IsShown() then
         list2:ClearAllPoints()
         list2:SetPoint("TOPRIGHT", list1, "TOPLEFT", 0, 0)
+
+        -- Clamp to screen bottom
+        local screenHeight = UIParent:GetHeight()
+        local bottom = list2:GetBottom()
+        if bottom and bottom < 0 then
+            list2:ClearAllPoints()
+            list2:SetPoint("BOTTOMRIGHT", list1, "BOTTOMLEFT", 0, 0)
+        end
     end
 end
 

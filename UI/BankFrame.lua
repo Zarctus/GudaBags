@@ -2809,5 +2809,3 @@ ns.OnBankTypeChanged = function(bankType)
         BankFrame:Refresh()
     end
 end
-
--- (HideDefaultBankFrame moved above OnBankOpened)

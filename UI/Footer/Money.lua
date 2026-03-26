@@ -3,8 +3,8 @@ local addonName, ns = ...
 local Money = {}
 ns:RegisterModule("Footer.Money", Money)
 
+local L = ns.L
 local Utils = ns:GetModule("Utils")
-
 local Database = ns:GetModule("Database")
 
 local moneyFrame = nil
@@ -45,7 +45,18 @@ local function SetTooltipSmallFont()
     end
 end
 
-local L = ns.L
+-- Filter out gold-blacklisted characters from a character list
+local function FilterBlacklisted(chars)
+    local blacklist = GudaBags_DB and GudaBags_DB.goldBlacklist
+    if not blacklist then return chars end
+    local filtered = {}
+    for _, char in ipairs(chars) do
+        if not blacklist[char.fullName] then
+            table.insert(filtered, char)
+        end
+    end
+    return filtered
+end
 
 local function AddCharacterLine(char)
     local classColor = RAID_CLASS_COLORS[char.class]
@@ -68,7 +79,7 @@ local function ShowMoneyTooltip(frame)
 
     if allRealms then
         -- Cross-realm view: group by realm with subtotals
-        local chars = Database:GetAllCharacters(false, false)
+        local chars = FilterBlacklisted(Database:GetAllCharacters(false, false))
         local totalMoney = 0
         for _, c in ipairs(chars) do totalMoney = totalMoney + c.money end
 
@@ -99,8 +110,9 @@ local function ShowMoneyTooltip(frame)
         end
     else
         -- Same-realm view (original behavior)
-        local chars = Database:GetAllCharacters(false, true)
-        local totalMoney = Database:GetTotalMoney(false, true)
+        local chars = FilterBlacklisted(Database:GetAllCharacters(false, true))
+        local totalMoney = 0
+        for _, c in ipairs(chars) do totalMoney = totalMoney + c.money end
 
         GameTooltip:AddDoubleLine(L["TOOLTIP_REALM_GOLD"], FormatMoney(totalMoney), 1, 0.82, 0, 1, 1, 1)
         GameTooltip:AddLine(" ")
@@ -119,12 +131,11 @@ end
 
 -- Right-click dropdown menu for gold options
 local goldDropdown = CreateFrame("Frame", "GudaBagsGoldDropdown", UIParent, "UIDropDownMenuTemplate")
-goldDropdown.displayMode = "MENU"
 
 -- Click-away overlay to close dropdown when clicking outside
 local clickAwayOverlay = CreateFrame("Button", nil, UIParent)
 clickAwayOverlay:SetAllPoints(UIParent)
-clickAwayOverlay:SetFrameStrata("FULLSCREEN_DIALOG")
+clickAwayOverlay:SetFrameStrata("DIALOG")
 clickAwayOverlay:EnableMouse(true)
 clickAwayOverlay:RegisterForClicks("AnyUp")
 clickAwayOverlay:Hide()
@@ -136,6 +147,22 @@ end)
 goldDropdown:HookScript("OnHide", function()
     clickAwayOverlay:Hide()
 end)
+
+local function CloseGoldMenu()
+    if UIDROPDOWNMENU_OPEN_MENU == goldDropdown then
+        CloseDropDownMenus()
+    end
+end
+
+-- Reposition level 2 submenu to open to the left of level 1
+local function RepositionSubmenu()
+    local list2 = _G["DropDownList2"]
+    local list1 = _G["DropDownList1"]
+    if list2 and list1 and list2:IsShown() then
+        list2:ClearAllPoints()
+        list2:SetPoint("TOPRIGHT", list1, "TOPLEFT", 0, 0)
+    end
+end
 
 local function ShowGoldMenu(frame)
     UIDropDownMenu_Initialize(goldDropdown, function(self, level)
@@ -161,8 +188,8 @@ local function ShowGoldMenu(frame)
             info.value = "blacklist"
             UIDropDownMenu_AddButton(info, level)
         elseif level == 2 then
-            -- Character blacklist submenu
-            local allChars = Database:GetAllCharacters(false, false, true)  -- skipBlacklist=true to show all
+            -- Character blacklist submenu (show all characters, including blacklisted)
+            local allChars = Database:GetAllCharacters(false, false)
             for _, char in ipairs(allChars) do
                 local info = UIDropDownMenu_CreateInfo()
                 local classColor = RAID_CLASS_COLORS[char.class]
@@ -180,17 +207,13 @@ local function ShowGoldMenu(frame)
                 end
                 UIDropDownMenu_AddButton(info, level)
             end
+            -- Reposition submenu to the left after WoW finishes layout
+            C_Timer.After(0, RepositionSubmenu)
         end
     end, "MENU")
     ToggleDropDownMenu(1, nil, goldDropdown, frame, 0, frame:GetHeight())
     clickAwayOverlay:Show()
     clickAwayOverlay:SetFrameLevel(goldDropdown:GetFrameLevel() - 1)
-end
-
-local function CloseGoldMenu()
-    if UIDROPDOWNMENU_OPEN_MENU == goldDropdown then
-        CloseDropDownMenus()
-    end
 end
 
 local moneyFrameCount = 0

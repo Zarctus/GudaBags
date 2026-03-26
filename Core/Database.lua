@@ -554,17 +554,15 @@ function Database:GetMoney(fullName)
     return 0
 end
 
-function Database:GetAllCharacters(sameFactionOnly, sameRealmOnly, skipBlacklist)
+function Database:GetAllCharacters(sameFactionOnly, sameRealmOnly)
     local characters = {}
     local currentFaction = UnitFactionGroup("player")
     local currentRealm = GetRealmName()
-    local blacklist = not skipBlacklist and GudaBags_DB.goldBlacklist or {}
 
     for fullName, data in pairs(GudaBags_DB.characters) do
         local factionMatch = not sameFactionOnly or data.faction == currentFaction
         local realmMatch = not sameRealmOnly or data.realm == currentRealm
-        local notBlacklisted = not blacklist[fullName]
-        if factionMatch and realmMatch and notBlacklisted then
+        if factionMatch and realmMatch then
             table.insert(characters, {
                 fullName = fullName,
                 name = data.name,

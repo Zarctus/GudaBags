@@ -425,8 +425,6 @@ L["TOOLTIP_REALM_GOLD"] = "Realm gold:"
 L["TOOLTIP_RIGHT_CLICK_GOLD"] = "Right-click for options"
 L["GOLD_TRACK_ALL_REALMS"] = "Track all realms"
 L["GOLD_EXCLUDE_CHARACTER"] = "Exclude character"
-L["SETTINGS_GOLD_ALL_REALMS"] = "Track Gold Across Realms"
-L["SETTINGS_GOLD_ALL_REALMS_TIP"] = "Show gold from all realms in the money tooltip"
 L["HINT_UNTRACK"] = "|cFF00CCCCCtrl+Alt+Click|r to untrack"
 L["HINT_TRACK"] = "|cFF00CCCCCtrl+Alt+Click|r to track"
 

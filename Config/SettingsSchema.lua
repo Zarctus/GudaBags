@@ -127,8 +127,6 @@ function SettingsSchema.GetLayout()
         }},
         { type = "row", children = {
             { type = "checkbox", key = "showFooter", label = L["SETTINGS_SHOW_FOOTER"], tooltip = L["SETTINGS_SHOW_FOOTER_TIP"] },
-            { type = "checkbox", key = "goldTrackAllRealms", label = L["SETTINGS_GOLD_ALL_REALMS"], tooltip = L["SETTINGS_GOLD_ALL_REALMS_TIP"],
-              hidden = function() local Expansion = ns:GetModule("Expansion") return not (Expansion and Expansion.IsRetail) end },
         }},
 
     }

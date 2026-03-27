@@ -1196,16 +1196,18 @@ local function CreateButton(parent)
         -- Suppress spurious "Item isn't ready yet" errors on retail
         SuppressItemErrors()
 
-        -- Intercept right-click to deposit into warband bank instead of character bank
-        -- The secure template calls UseContainerItem without bankType, defaulting to character bank
+        -- Intercept all right-click bank operations on Retail.
+        -- The Blizzard template's UseContainerItem doesn't know the correct bankType
+        -- because GudaBags hides the default BankFrame. Handle all deposit/withdraw explicitly.
         if ns.IsRetail and mouseButton == "RightButton" and not IsModifiedClick() then
             local RetailBankScanner = ns:GetModule("RetailBankScanner")
             local BankFooter = ns:GetModule("BankFrame.BankFooter")
             if RetailBankScanner and RetailBankScanner:IsBankOpen()
-               and BankFooter and BankFooter:GetCurrentBankType() == "warband"
                and self.itemData and self.itemData.itemID
                and not self.itemData.isGuildBank and not self.isReadOnly then
-                -- Only intercept bag items (not bank items being withdrawn)
+                local currentBankType = BankFooter and BankFooter:GetCurrentBankType() or "character"
+                local bankTypeEnum = nil
+                -- Determine if item is in a player bag (deposit) or in the bank (withdraw)
                 local isBagItem = false
                 for _, id in ipairs(Constants.BAG_IDS) do
                     if self.itemData.bagID == id then
@@ -1214,9 +1216,24 @@ local function CreateButton(parent)
                     end
                 end
                 if isBagItem then
-                    self._warbandIntercept = { bagID = self.itemData.bagID, slot = self.itemData.slot }
-                    -- SetID(0) blocks the secure template's default UseContainerItem
-                    -- Wrapped in pcall to contain any taint propagation
+                    -- Deposit: use the bank type currently shown in GudaBags
+                    bankTypeEnum = (currentBankType == "warband") and Enum.BankType.Account or Enum.BankType.Character
+                else
+                    -- Withdraw: infer bankType from the item's container ID
+                    for _, id in ipairs(Constants.WARBAND_BANK_TAB_IDS or {}) do
+                        if self.itemData.bagID == id then
+                            bankTypeEnum = Enum.BankType.Account
+                            break
+                        end
+                    end
+                    if not bankTypeEnum then
+                        bankTypeEnum = Enum.BankType.Character
+                    end
+                end
+                if bankTypeEnum then
+                    self._bankIntercept = { bagID = self.itemData.bagID, slot = self.itemData.slot, bankType = bankTypeEnum }
+                    -- Zero the IDs to block the secure template's UseContainerItem.
+                    -- PostClick will then call UseContainerItem with the correct bankType.
                     pcall(function()
                         self.wrapper:SetID(0)
                         self:SetID(0)
@@ -1243,6 +1260,25 @@ local function CreateButton(parent)
 
         if mouseButton == "LeftButton" and ShouldBlockSwap(self) then
             ClearCursor()
+        end
+    end)
+
+    -- PostClick: perform the bank deposit/withdraw with the correct bankType.
+    -- Uses HookScript so the template's own PostClick still runs (HookScript, not SetScript).
+    -- Runs after the secure template's (now no-op) OnClick, still within hardware-event context.
+    button:HookScript("PostClick", function(self, mouseButton)
+        if self._bankIntercept then
+            local intercept = self._bankIntercept
+            self._bankIntercept = nil
+            -- Restore button IDs so future clicks don't see stale zeroes
+            if self.itemData and self.itemData.bagID ~= nil and self.itemData.slot then
+                pcall(function()
+                    self.wrapper:SetID(self.itemData.bagID)
+                    self:SetID(self.itemData.slot)
+                end)
+            end
+            -- Protected function: callable from addon code during hardware events
+            C_Container.UseContainerItem(intercept.bagID, intercept.slot, nil, intercept.bankType)
         end
     end)
 

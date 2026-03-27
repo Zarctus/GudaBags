@@ -89,7 +89,8 @@
         "TooltipUtil",
         "ITEM_BIND_TO_BNETACCOUNT",
         "ITEM_ACCOUNTBOUND",
-        "OKAY"
+        "OKAY",
+        "ToggleDropDownMenu"
     ],
     "Lua.type.weakUnionCheck": true
 }

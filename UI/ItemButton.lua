@@ -1572,8 +1572,11 @@ function ItemButton:SetItem(button, itemData, size, isReadOnly)
 
         -- Set real bagID/slot so template's click handler places items correctly
         -- itemData now contains real bagID/slot of first empty slot
-        button.wrapper:SetID(itemData.bagID)
-        button:SetID(itemData.slot)
+        -- Skip during combat to avoid tainting the secure click handler
+        if not InCombatLockdown() then
+            button.wrapper:SetID(itemData.bagID)
+            button:SetID(itemData.slot)
+        end
 
         return
     end
@@ -1582,14 +1585,17 @@ function ItemButton:SetItem(button, itemData, size, isReadOnly)
         -- Set IDs for ContainerFrameItemButtonTemplate's secure click handler
         -- Use invalid IDs for read-only mode or guild bank items to prevent template from
         -- interfering (guild bank items are handled by our own OnClick hook)
-        if isReadOnly or itemData.isGuildBank then
-            -- Set to 0 for read-only mode or guild bank items
-            -- Guild bank items use their own click handler, not the template's
-            button.wrapper:SetID(0)
-            button:SetID(0)
-        else
-            button.wrapper:SetID(itemData.bagID)
-            button:SetID(itemData.slot)
+        -- Skip during combat to avoid tainting the secure click handler
+        if not InCombatLockdown() then
+            if isReadOnly or itemData.isGuildBank then
+                -- Set to 0 for read-only mode or guild bank items
+                -- Guild bank items use their own click handler, not the template's
+                button.wrapper:SetID(0)
+                button:SetID(0)
+            else
+                button.wrapper:SetID(itemData.bagID)
+                button:SetID(itemData.slot)
+            end
         end
 
         -- Use template's built-in functions for icon and count
@@ -1812,8 +1818,10 @@ function ItemButton:SetItem(button, itemData, size, isReadOnly)
             button.newItemGlow:Hide()
         end
     else
-        button.wrapper:SetID(0)
-        button:SetID(0)
+        if not InCombatLockdown() then
+            button.wrapper:SetID(0)
+            button:SetID(0)
+        end
 
         SetItemButtonTexture(button, nil)
         SetItemButtonCount(button, 0)

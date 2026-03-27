@@ -2357,8 +2357,10 @@ function BankFrame:IncrementalUpdate(dirtyBags)
                 if firstEmptyBagID then
                     emptyBtn.itemData.bagID = firstEmptyBagID
                     emptyBtn.itemData.slot = firstEmptySlot
-                    emptyBtn.wrapper:SetID(firstEmptyBagID)
-                    emptyBtn:SetID(firstEmptySlot)
+                    if not InCombatLockdown() then
+                        emptyBtn.wrapper:SetID(firstEmptyBagID)
+                        emptyBtn:SetID(firstEmptySlot)
+                    end
                 end
             end
         end
@@ -2371,8 +2373,10 @@ function BankFrame:IncrementalUpdate(dirtyBags)
                 if firstSoulBagID then
                     soulBtn.itemData.bagID = firstSoulBagID
                     soulBtn.itemData.slot = firstSoulSlot
-                    soulBtn.wrapper:SetID(firstSoulBagID)
-                    soulBtn:SetID(firstSoulSlot)
+                    if not InCombatLockdown() then
+                        soulBtn.wrapper:SetID(firstSoulBagID)
+                        soulBtn:SetID(firstSoulSlot)
+                    end
                 end
             end
         end
@@ -2485,8 +2489,14 @@ end
 -- dirtyBags: table of {bagID = true} for bags that were updated
 ns.OnBankUpdated = function(dirtyBags)
     if not viewingCharacter and frame and frame:IsShown() then
-        -- Use incremental update if layout is cached, otherwise full refresh
-        if layoutCached then
+        -- During combat, defer full refresh to avoid taint on secure buttons
+        -- Incremental updates are safe (visual updates only, SetID is guarded)
+        if InCombatLockdown() then
+            if layoutCached then
+                BankFrame:IncrementalUpdate(dirtyBags)
+            end
+            RegisterCombatEndCallback()
+        elseif layoutCached then
             BankFrame:IncrementalUpdate(dirtyBags)
         else
             BankFrame:Refresh()

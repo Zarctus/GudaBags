@@ -1311,8 +1311,10 @@ function BagFrame:IncrementalUpdate(dirtyBags)
                     if firstEmptyBagID then
                         emptyBtn.itemData.bagID = firstEmptyBagID
                         emptyBtn.itemData.slot = firstEmptySlot
-                        emptyBtn.wrapper:SetID(firstEmptyBagID)
-                        emptyBtn:SetID(firstEmptySlot)
+                        if not InCombatLockdown() then
+                            emptyBtn.wrapper:SetID(firstEmptyBagID)
+                            emptyBtn:SetID(firstEmptySlot)
+                        end
                     end
                 end
             end
@@ -1325,8 +1327,10 @@ function BagFrame:IncrementalUpdate(dirtyBags)
                     if firstSoulBagID then
                         soulBtn.itemData.bagID = firstSoulBagID
                         soulBtn.itemData.slot = firstSoulSlot
-                        soulBtn.wrapper:SetID(firstSoulBagID)
-                        soulBtn:SetID(firstSoulSlot)
+                        if not InCombatLockdown() then
+                            soulBtn.wrapper:SetID(firstSoulBagID)
+                            soulBtn:SetID(firstSoulSlot)
+                        end
                     end
                 end
             end
@@ -1595,6 +1599,16 @@ ns.OnBagsUpdated = function(dirtyBags)
     -- Only auto-refresh when viewing current character
     if not viewingCharacter then
         if frame and frame:IsShown() then
+            -- During combat, defer full refresh to avoid taint on secure buttons
+            -- Incremental updates are safe (visual updates only, SetID is guarded)
+            if InCombatLockdown() then
+                if layoutCached then
+                    BagFrame:IncrementalUpdate(dirtyBags)
+                end
+                -- Schedule full refresh after combat to correct button IDs
+                RegisterCombatEndCallback()
+                return
+            end
             local viewType = Database:GetSetting("bagViewType") or "single"
             ns:Debug("OnBagsUpdated refreshing, viewType:", viewType)
             -- Use incremental update if layout is cached (for both single and category view)

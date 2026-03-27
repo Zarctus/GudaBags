@@ -39,12 +39,6 @@ local function AddInventorySection(tooltip, itemID, skipReadyCheck)
 
     local totalCount, characterCounts, warbandCount = Database:CountItemAcrossCharacters(itemID)
 
-    -- Don't show if only 1 item in current character's bags (no useful cross-location info)
-    if warbandCount == 0 and #characterCounts == 1 and characterCounts[1].isCurrent and characterCounts[1].count == 1
-        and (characterCounts[1].equippedCount or 0) == 0 then
-        return
-    end
-
     -- Don't show if no items found
     if totalCount == 0 then return end
 

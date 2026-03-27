@@ -253,6 +253,7 @@ function CategoryDropIndicator:OnItemButtonLeave()
 end
 
 function CategoryDropIndicator:HandleDrop()
+    if InCombatLockdown() then return false end
     ns:Debug("HandleDrop called")
     local infoType, itemID, itemLink = GetCursorInfo()
 

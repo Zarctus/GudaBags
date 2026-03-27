@@ -72,6 +72,11 @@ end)
 -------------------------------------------------
 
 RuleEngine:RegisterEvaluator("isJunk", function(ruleValue, itemData, context)
+    -- Skip items with incomplete data (GetItemInfo not cached yet)
+    if not itemData.name or itemData.name == "" then
+        return false == ruleValue
+    end
+
     -- For other characters, only check quality
     if context.isOtherChar then
         return (itemData.quality == 0) == ruleValue

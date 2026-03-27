@@ -2507,7 +2507,21 @@ ns.OnBankUpdated = function(dirtyBags)
     end
 end
 
+-- Disable the default Blizzard bank frame completely
+-- Must be called when bank opens since _G.BankFrame may not exist at addon load time
+local blizzBankDisabled = false
+local function HideDefaultBankFrame()
+    if blizzBankDisabled then return end
+    if _G.BankFrame then
+        blizzBankDisabled = true
+        _G.BankFrame:SetParent(hiddenParent)
+        _G.BankFrame:UnregisterAllEvents()
+    end
+end
+HideDefaultBankFrame()
+
 ns.OnBankOpened = function()
+    HideDefaultBankFrame()
     LoadComponents()
 
     if not frame then
@@ -2881,34 +2895,3 @@ ns.OnBankTypeChanged = function(bankType)
         BankFrame:Refresh()
     end
 end
-
--- Disable the default Blizzard bank frame completely
--- On Retail, BankFrame is reparented to an off-screen SHOWN parent so that
--- GetActiveBankType() works natively (no method override = no tainting).
--- On Classic, BankFrame is reparented to a hidden parent.
-local function HideDefaultBankFrame()
-    if _G.BankFrame then
-        if ns.IsRetail then
-            -- Use the off-screen visible parent so IsShown() works
-            _G.BankFrame:SetParent(offscreenParent)
-        else
-            _G.BankFrame:SetParent(hiddenParent)
-        end
-        _G.BankFrame:SetScript("OnShow", nil)
-        _G.BankFrame:SetScript("OnHide", nil)
-        _G.BankFrame:SetScript("OnEvent", nil)
-
-        -- On Retail, also neutralise BankPanel scripts to prevent side effects
-        -- when we Show() it for GetActiveBankType() to work
-        if ns.IsRetail and _G.BankFrame.BankPanel then
-            _G.BankFrame.BankPanel:SetScript("OnShow", nil)
-            _G.BankFrame.BankPanel:SetScript("OnHide", nil)
-            _G.BankFrame.BankPanel:SetScript("OnEvent", nil)
-        end
-
-        -- Keep BankFrame hidden initially (shown when bank opens)
-        _G.BankFrame:Hide()
-    end
-end
-
-HideDefaultBankFrame()

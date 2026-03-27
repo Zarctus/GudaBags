@@ -314,6 +314,10 @@ end
 local function IsJunkItem(itemData)
     if not itemData then return false end
 
+    -- Don't classify items with incomplete data as junk
+    -- (GetItemInfo hasn't cached yet — name defaults to "")
+    if not itemData.name or itemData.name == "" then return false end
+
     -- Profession tools are never junk
     if IsTool(itemData.name) then
         return false
@@ -1189,9 +1193,40 @@ local function CreateButton(parent)
     -- Also update pseudo-item slots to use current empty slot
     -- NOTE: On Retail, skip these operations to avoid tainting the secure click handler
     button:HookScript("PreClick", function(self, mouseButton)
-        -- On Retail, skip all addon code in PreClick to preserve the
-        -- template's secure/hardware event context for UseContainerItem.
-        -- Protection is handled via spell guard (OnUpdate) and merchant overlays.
+        -- Suppress spurious "Item isn't ready yet" errors on retail
+        SuppressItemErrors()
+
+        -- Intercept right-click to deposit into warband bank instead of character bank
+        -- The secure template calls UseContainerItem without bankType, defaulting to character bank
+        if ns.IsRetail and mouseButton == "RightButton" and not IsModifiedClick() then
+            local RetailBankScanner = ns:GetModule("RetailBankScanner")
+            local BankFooter = ns:GetModule("BankFrame.BankFooter")
+            if RetailBankScanner and RetailBankScanner:IsBankOpen()
+               and BankFooter and BankFooter:GetCurrentBankType() == "warband"
+               and self.itemData and self.itemData.itemID
+               and not self.itemData.isGuildBank and not self.isReadOnly then
+                -- Only intercept bag items (not bank items being withdrawn)
+                local isBagItem = false
+                for _, id in ipairs(Constants.BAG_IDS) do
+                    if self.itemData.bagID == id then
+                        isBagItem = true
+                        break
+                    end
+                end
+                if isBagItem then
+                    self._warbandIntercept = { bagID = self.itemData.bagID, slot = self.itemData.slot }
+                    -- SetID(0) blocks the secure template's default UseContainerItem
+                    -- Wrapped in pcall to contain any taint propagation
+                    pcall(function()
+                        self.wrapper:SetID(0)
+                        self:SetID(0)
+                    end)
+                end
+            end
+        end
+
+        -- On Retail, don't do anything that could taint the secure click path
+        -- Protection is handled via spell guard (OnUpdate) and merchant overlays
         if ns.IsRetail then return end
 
         -- Suppress spurious "Item isn't ready yet" errors

@@ -3,8 +3,8 @@ local addonName, ns = ...
 local Money = {}
 ns:RegisterModule("Footer.Money", Money)
 
+local L = ns.L
 local Utils = ns:GetModule("Utils")
-
 local Database = ns:GetModule("Database")
 
 local moneyFrame = nil
@@ -45,34 +45,183 @@ local function SetTooltipSmallFont()
     end
 end
 
+-- Filter out gold-blacklisted characters from a character list
+local function FilterBlacklisted(chars)
+    local blacklist = GudaBags_DB and GudaBags_DB.goldBlacklist
+    if not blacklist then return chars end
+    local filtered = {}
+    for _, char in ipairs(chars) do
+        if not blacklist[char.fullName] then
+            table.insert(filtered, char)
+        end
+    end
+    return filtered
+end
+
+local function AddCharacterLine(char)
+    local classColor = RAID_CLASS_COLORS[char.class]
+    local colorR, colorG, colorB = 0.7, 0.7, 0.7
+    if classColor then
+        colorR, colorG, colorB = classColor.r, classColor.g, classColor.b
+    end
+    local raceIcon = Utils:GetRaceIcon(char.race, char.sex)
+    local name = raceIcon .. " " .. char.name
+    GameTooltip:AddDoubleLine(name, FormatMoney(char.money), colorR, colorG, colorB, 1, 1, 1)
+end
+
 local function ShowMoneyTooltip(frame)
     if not frame then return end
 
-    GameTooltip:SetOwner(frame, "ANCHOR_TOPRIGHT", 0, 0)
+    GameTooltip:SetOwner(frame, "ANCHOR_TOPRIGHT", 0, frame:GetHeight() + 4)
     GameTooltip:ClearLines()
 
-    local chars = Database:GetAllCharacters(false, true)
-    local totalMoney = Database:GetTotalMoney(false, true)
+    local allRealms = Database:GetSetting("goldTrackAllRealms")
 
-    GameTooltip:AddDoubleLine("Realm gold:", FormatMoney(totalMoney), 1, 0.82, 0, 1, 1, 1)
-    GameTooltip:AddLine(" ")
+    if allRealms then
+        -- Cross-realm view: group by realm with subtotals
+        local chars = FilterBlacklisted(Database:GetAllCharacters(false, false))
+        local totalMoney = 0
+        for _, c in ipairs(chars) do totalMoney = totalMoney + c.money end
 
-    for _, char in ipairs(chars) do
-        local classColor = RAID_CLASS_COLORS[char.class]
-        local colorR, colorG, colorB = 0.7, 0.7, 0.7
+        GameTooltip:AddDoubleLine(L["TOOLTIP_ACCOUNT_GOLD"], FormatMoney(totalMoney), 1, 0.82, 0, 1, 1, 1)
+        GameTooltip:AddLine(" ")
 
-        if classColor then
-            colorR, colorG, colorB = classColor.r, classColor.g, classColor.b
+        -- Group characters by realm
+        local realms = {}
+        local realmOrder = {}
+        for _, char in ipairs(chars) do
+            local realm = char.realm
+            if not realms[realm] then
+                realms[realm] = { chars = {}, total = 0 }
+                table.insert(realmOrder, realm)
+            end
+            table.insert(realms[realm].chars, char)
+            realms[realm].total = realms[realm].total + char.money
         end
+        table.sort(realmOrder)
 
-        local raceIcon = Utils:GetRaceIcon(char.race, char.sex)
-        local name = raceIcon .. " " .. char.name
-        local money = FormatMoney(char.money)
-        GameTooltip:AddDoubleLine(name, money, colorR, colorG, colorB, 1, 1, 1)
+        for i, realm in ipairs(realmOrder) do
+            local realmData = realms[realm]
+            if i > 1 then GameTooltip:AddLine(" ") end
+            GameTooltip:AddDoubleLine(realm, FormatMoney(realmData.total), 0.6, 0.6, 0.6, 1, 1, 1)
+            for _, char in ipairs(realmData.chars) do
+                AddCharacterLine(char)
+            end
+        end
+    else
+        -- Same-realm view (original behavior)
+        local chars = FilterBlacklisted(Database:GetAllCharacters(false, true))
+        local totalMoney = 0
+        for _, c in ipairs(chars) do totalMoney = totalMoney + c.money end
+
+        GameTooltip:AddDoubleLine(L["TOOLTIP_REALM_GOLD"], FormatMoney(totalMoney), 1, 0.82, 0, 1, 1, 1)
+        GameTooltip:AddLine(" ")
+
+        for _, char in ipairs(chars) do
+            AddCharacterLine(char)
+        end
     end
+
+    GameTooltip:AddLine(" ")
+    GameTooltip:AddLine(L["TOOLTIP_RIGHT_CLICK_GOLD"], 0.5, 0.5, 0.5)
 
     SetTooltipSmallFont()
     GameTooltip:Show()
+end
+
+-- Right-click dropdown menu for gold options
+local goldDropdown = CreateFrame("Frame", "GudaBagsGoldDropdown", UIParent, "UIDropDownMenuTemplate")
+
+-- Click-away overlay to close dropdown when clicking outside
+local clickAwayOverlay = CreateFrame("Button", nil, UIParent)
+clickAwayOverlay:SetAllPoints(UIParent)
+clickAwayOverlay:SetFrameStrata("DIALOG")
+clickAwayOverlay:EnableMouse(true)
+clickAwayOverlay:RegisterForClicks("AnyUp")
+clickAwayOverlay:Hide()
+clickAwayOverlay:SetScript("OnClick", function()
+    CloseDropDownMenus()
+    clickAwayOverlay:Hide()
+end)
+
+goldDropdown:HookScript("OnHide", function()
+    clickAwayOverlay:Hide()
+end)
+
+local function CloseGoldMenu()
+    if UIDROPDOWNMENU_OPEN_MENU == goldDropdown then
+        CloseDropDownMenus()
+    end
+end
+
+-- Reposition level 2 submenu to open to the left of level 1, clamped to screen
+local function RepositionSubmenu()
+    local list2 = _G["DropDownList2"]
+    local list1 = _G["DropDownList1"]
+    if list2 and list1 and list2:IsShown() then
+        list2:ClearAllPoints()
+        list2:SetPoint("TOPRIGHT", list1, "TOPLEFT", 0, 0)
+
+        -- Clamp to screen bottom
+        local screenHeight = UIParent:GetHeight()
+        local bottom = list2:GetBottom()
+        if bottom and bottom < 0 then
+            list2:ClearAllPoints()
+            list2:SetPoint("BOTTOMRIGHT", list1, "BOTTOMLEFT", 0, 0)
+        end
+    end
+end
+
+local function ShowGoldMenu(frame)
+    UIDropDownMenu_Initialize(goldDropdown, function(self, level)
+        level = level or 1
+        if level == 1 then
+            -- Toggle: Track all realms
+            local info = UIDropDownMenu_CreateInfo()
+            info.text = L["GOLD_TRACK_ALL_REALMS"]
+            info.isNotRadio = true
+            info.keepShownOnClick = true
+            info.checked = Database:GetSetting("goldTrackAllRealms")
+            info.func = function()
+                Database:SetSetting("goldTrackAllRealms", not Database:GetSetting("goldTrackAllRealms"))
+                ShowMoneyTooltip(frame)
+            end
+            UIDropDownMenu_AddButton(info, level)
+
+            -- Submenu: Exclude characters
+            info = UIDropDownMenu_CreateInfo()
+            info.text = L["GOLD_EXCLUDE_CHARACTER"]
+            info.hasArrow = true
+            info.notCheckable = true
+            info.value = "blacklist"
+            UIDropDownMenu_AddButton(info, level)
+        elseif level == 2 then
+            -- Character blacklist submenu (show all characters, including blacklisted)
+            local allChars = Database:GetAllCharacters(false, false)
+            for _, char in ipairs(allChars) do
+                local info = UIDropDownMenu_CreateInfo()
+                local classColor = RAID_CLASS_COLORS[char.class]
+                if classColor then
+                    info.text = classColor:WrapTextInColorCode(char.name .. " - " .. char.realm)
+                else
+                    info.text = char.name .. " - " .. char.realm
+                end
+                info.isNotRadio = true
+                info.keepShownOnClick = true
+                info.checked = not Database:IsGoldBlacklisted(char.fullName)
+                info.func = function()
+                    Database:ToggleGoldBlacklist(char.fullName)
+                    ShowMoneyTooltip(frame)
+                end
+                UIDropDownMenu_AddButton(info, level)
+            end
+            -- Reposition submenu to the left after WoW finishes layout
+            C_Timer.After(0, RepositionSubmenu)
+        end
+    end, "MENU")
+    ToggleDropDownMenu(1, nil, goldDropdown, frame, 0, frame:GetHeight())
+    clickAwayOverlay:Show()
+    clickAwayOverlay:SetFrameLevel(goldDropdown:GetFrameLevel() - 1)
 end
 
 local moneyFrameCount = 0
@@ -96,16 +245,28 @@ function Money:Init(parent)
         GameTooltip:Hide()
     end)
 
+    moneyFrame:SetScript("OnMouseUp", function(self, button)
+        if button == "RightButton" then
+            ShowGoldMenu(self)
+        end
+    end)
+
     -- Set absolute sizes for money frame icons and font
     local coinButtons = {"GoldButton", "SilverButton", "CopperButton"}
     for _, buttonName in ipairs(coinButtons) do
         local coinButton = _G[frameName .. buttonName]
         if coinButton then
+            coinButton:RegisterForClicks("LeftButtonUp", "RightButtonUp")
             coinButton:SetScript("OnEnter", function(self)
                 ShowMoneyTooltip(self:GetParent())
             end)
             coinButton:SetScript("OnLeave", function()
                 GameTooltip:Hide()
+            end)
+            coinButton:SetScript("OnClick", function(self, button)
+                if button == "RightButton" then
+                    ShowGoldMenu(self:GetParent())
+                end
             end)
 
             -- Set absolute icon size
@@ -133,6 +294,7 @@ function Money:Show()
 end
 
 function Money:Hide()
+    CloseGoldMenu()
     if moneyFrame then
         moneyFrame:Hide()
     end

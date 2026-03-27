@@ -220,8 +220,8 @@ Constants.DEFAULTS = {
     -- General
     theme = "guda",
     bagColumns = 10,
-    bankColumns = 10,
-    guildBankColumns = 14,
+    bankColumns = 15,
+    guildBankColumns = 15,
     splitBagColumns = 2,
     splitBankColumns = 2,
     splitFullWidthBackpack = true,

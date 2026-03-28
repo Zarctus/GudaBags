@@ -109,14 +109,15 @@ local function UpdateFrameAppearance()
     local showFilterChips = Database:GetSetting("showFilterChips")
     local showFooter = Database:GetSetting("showFooter")
 
-    -- Update search bar visibility
-    if searchBar then
+    -- Update search bar visibility (use SearchBar module API to handle filter chips)
+    local SearchBar = ns:GetModule("SearchBar")
+    if SearchBar then
         if showSearchBar then
-            searchBar:Show()
+            SearchBar:Show(frame)
             searchBar:SetPoint("TOPLEFT", frame, "TOPLEFT", Constants.FRAME.PADDING, -(Constants.FRAME.TITLE_HEIGHT + Constants.FRAME.PADDING))
             searchBar:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -Constants.FRAME.PADDING, -(Constants.FRAME.TITLE_HEIGHT + Constants.FRAME.PADDING))
         else
-            searchBar:Hide()
+            SearchBar:Hide(frame)
         end
     end
 

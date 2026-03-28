@@ -1254,6 +1254,9 @@ end
 
 function GuildBankFrame:Hide()
     if frame then
+        -- Clear search/chip filters on close
+        SearchBar:ClearAllFilters(frame)
+
         frame:Hide()
         ItemButton:ReleaseAll(frame.container)
         ReleaseAllCategoryHeaders()

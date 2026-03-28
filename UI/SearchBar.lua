@@ -401,16 +401,19 @@ UpdateDropdownLabel = function(searchBar)
     for _ in pairs(state.types) do activeCount = activeCount + 1 end
     for _ in pairs(state.specials) do activeCount = activeCount + 1 end
 
+    local iconWidth = dropdown.icon and (dropdown.icon:GetWidth() + 3) or 0
     if activeCount > 0 then
-        dropdown.label:SetText((L["CHIP_TYPES_DROPDOWN"] or "Types") .. " (" .. activeCount .. ") \226\150\188")
+        dropdown.label:SetText((L["CHIP_TYPES_DROPDOWN"] or "Types") .. " (" .. activeCount .. ")")
         dropdown.label:SetTextColor(1, 1, 1)
         dropdown.bg:SetVertexColor(0.7, 0.55, 0.0, 0.9)
+        if dropdown.icon then dropdown.icon:SetVertexColor(1, 1, 1) end
     else
-        dropdown.label:SetText((L["CHIP_TYPES_DROPDOWN"] or "Types") .. " \226\150\188")
+        dropdown.label:SetText((L["CHIP_TYPES_DROPDOWN"] or "Types") .. "")
         dropdown.label:SetTextColor(0.55, 0.55, 0.55)
         dropdown.bg:SetVertexColor(0.15, 0.15, 0.15, 0.8)
+        if dropdown.icon then dropdown.icon:SetVertexColor(0.55, 0.55, 0.55) end
     end
-    dropdown:SetWidth(dropdown.label:GetStringWidth() + 14)
+    dropdown:SetWidth(iconWidth + dropdown.label:GetStringWidth() + 10)
 end
 
 local function ShowTypesDropdownMenu(searchBar, anchor)
@@ -425,6 +428,7 @@ local function ShowTypesDropdownMenu(searchBar, anchor)
         })
         typesDropdownMenu:SetBackdropColor(0.1, 0.1, 0.1, 0.95)
         typesDropdownMenu:SetBackdropBorderColor(0.3, 0.3, 0.3, 0.9)
+        typesDropdownMenu:EnableMouse(true)  -- Block mouse from reaching items behind
         typesDropdownMenu:Hide()
         typesDropdownMenu.items = {}
     end
@@ -712,9 +716,17 @@ local function CreateChipStrip(searchBar, parent)
     -- Types dropdown button (hidden by default, shown on overflow)
     local typesDropdown = CreateFrame("Button", nil, chipStrip)
     typesDropdown:SetHeight(Constants.FRAME.CHIP_SIZE)
+    -- Filter icon
+    local dropIcon = typesDropdown:CreateTexture(nil, "ARTWORK")
+    dropIcon:SetSize(10, 10)
+    dropIcon:SetPoint("LEFT", typesDropdown, "LEFT", 4, 0)
+    dropIcon:SetTexture("Interface\\AddOns\\GudaBags\\Assets\\search.png")
+    dropIcon:SetVertexColor(0.55, 0.55, 0.55)
+    typesDropdown.icon = dropIcon
+    -- Label
     local dropLabel = typesDropdown:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    dropLabel:SetPoint("CENTER", 0, 0)
-    dropLabel:SetText((L["CHIP_TYPES_DROPDOWN"] or "Types") .. " \226\150\188")
+    dropLabel:SetPoint("LEFT", dropIcon, "RIGHT", 3, 0)
+    dropLabel:SetText((L["CHIP_TYPES_DROPDOWN"] or "Types") .. "")
     dropLabel:SetTextColor(0.55, 0.55, 0.55)
     typesDropdown.label = dropLabel
     local dropBg = typesDropdown:CreateTexture(nil, "BACKGROUND")
@@ -722,13 +734,14 @@ local function CreateChipStrip(searchBar, parent)
     dropBg:SetTexture("Interface\\Buttons\\WHITE8x8")
     dropBg:SetVertexColor(0.15, 0.15, 0.15, 0.8)
     typesDropdown.bg = dropBg
-    typesDropdown:SetWidth(dropLabel:GetStringWidth() + 14)
+    typesDropdown:SetWidth(dropIcon:GetWidth() + 3 + dropLabel:GetStringWidth() + 10)
     typesDropdown:Hide()
     typesDropdown:SetScript("OnEnter", function(self)
         local state = searchBar.filterState
         local hasActive = next(state.types) or next(state.specials)
         if not hasActive then
             self.bg:SetVertexColor(0.25, 0.25, 0.25, 0.8)
+            if self.icon then self.icon:SetVertexColor(0.8, 0.8, 0.8) end
         end
     end)
     typesDropdown:SetScript("OnLeave", function(self)
@@ -736,6 +749,7 @@ local function CreateChipStrip(searchBar, parent)
         local hasActive = next(state.types) or next(state.specials)
         if not hasActive then
             self.bg:SetVertexColor(0.15, 0.15, 0.15, 0.8)
+            if self.icon then self.icon:SetVertexColor(0.55, 0.55, 0.55) end
         end
     end)
     typesDropdown:SetScript("OnClick", function(self)
@@ -1309,6 +1323,24 @@ function SearchBar:HasActiveFilters(parent)
     local instance = instances[parent]
     if not instance then return false end
     return HasAnyFilter(instance.filterState)
+end
+
+function SearchBar:ClearAllFilters(parent)
+    local instance = instances[parent]
+    if not instance then return end
+    if instance.searchBox then
+        instance.searchBox:SetText("")
+    end
+    if instance.filterState then
+        instance.filterState.qualities = {}
+        instance.filterState.types = {}
+        instance.filterState.specials = {}
+        instance.filterState.parsed = nil
+        instance.filterState.equipSet = nil
+        ResetChipVisuals(instance)
+        UpdateChipStripVisibility(instance)
+    end
+    ClearEquipSetFilter(instance)
 end
 
 -- Returns the total height of search bar + chip strip when visible

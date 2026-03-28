@@ -1542,10 +1542,28 @@ ns.OnBagsUpdated = function(dirtyBags)
             ns:Debug("OnBagsUpdated refreshing, viewType:", viewType)
             -- Use incremental update if layout is cached (for both single and category view)
             -- This preserves ghost slots when items are removed
-            -- Exception: when groupIdenticalItems is active, incremental updates can't
-            -- handle regrouping (count changes in grouped stacks) — force full refresh
+            -- Exception: when groupIdenticalItems is actively grouping (enabled + no interaction
+            -- window open), incremental updates can't handle regrouping — force full refresh.
+            -- When interaction window IS open, grouping is disabled, so incremental works fine
+            -- and preserves ghost slots.
             local groupItems = Database:GetSetting("groupIdenticalItems")
-            if layoutCached and not (viewType == "category" and groupItems) then
+            local groupingActive = viewType == "category" and groupItems
+            if groupingActive then
+                -- Check if any interaction window suppresses grouping
+                local BankFrameModule = ns:GetModule("BankFrame")
+                local GuildBankFrameModule = ns:GetModule("GuildBankFrame")
+                if (BankFrameModule and BankFrameModule:IsShown())
+                    or (GuildBankFrameModule and GuildBankFrameModule:IsShown())
+                    or (MerchantFrame and MerchantFrame:IsShown())
+                    or (MailFrame and MailFrame:IsShown())
+                    or (TradeFrame and TradeFrame:IsShown())
+                    or (AuctionFrame and AuctionFrame:IsShown())
+                    or (AuctionHouseFrame and AuctionHouseFrame:IsShown())
+                    or (ItemSocketingFrame and ItemSocketingFrame:IsShown()) then
+                    groupingActive = false  -- Grouping suppressed, incremental is safe
+                end
+            end
+            if layoutCached and not groupingActive then
                 BagFrame:IncrementalUpdate(dirtyBags)
             else
                 BagFrame:Refresh()

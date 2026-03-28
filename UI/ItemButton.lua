@@ -1495,6 +1495,11 @@ function ItemButton:SetItem(button, itemData, size, isReadOnly)
         button.wrapper:SetSize(size, size)
         button.currentSize = size
 
+        -- Scale slot background extension proportionally (default 37px → 9px extension)
+        local slotExtend = math.max(1, math.floor(size * 9 / 37))
+        button.slotBackground:ClearAllPoints()
+        button.slotBackground:SetPoint("TOPLEFT", button, "TOPLEFT", -slotExtend, slotExtend)
+        button.slotBackground:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", slotExtend, -slotExtend)
     end
 
     button.slotBackground:SetVertexColor(0.5, 0.5, 0.5, settings.bgAlpha)
@@ -1905,6 +1910,12 @@ function ItemButton:SetEmpty(button, bagID, slot, size, isReadOnly, isGuildBank)
         button:SetSize(size, size)
         button.wrapper:SetSize(size, size)
         button.currentSize = size
+
+        -- Scale slot background extension proportionally (default 37px → 9px extension)
+        local slotExtend = math.max(1, math.floor(size * 9 / 37))
+        button.slotBackground:ClearAllPoints()
+        button.slotBackground:SetPoint("TOPLEFT", button, "TOPLEFT", -slotExtend, slotExtend)
+        button.slotBackground:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", slotExtend, -slotExtend)
     end
 
     button.slotBackground:SetVertexColor(0.5, 0.5, 0.5, settings.bgAlpha)

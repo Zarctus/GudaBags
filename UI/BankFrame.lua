@@ -273,6 +273,7 @@ local function CreateBankFrame()
     container:SetSize(1, 1)  -- Will be resized based on content
     scrollFrame:SetScrollChild(container)
     f.container = container
+    f.container.masqueGroup = "Bank"
 
     -- Enable container as drop zone for empty space
     container:EnableMouse(true)

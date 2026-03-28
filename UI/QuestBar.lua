@@ -195,6 +195,7 @@ local function CreateItemButton(parent, name, isMain)
     highlight:SetAllPoints()
     highlight:SetTexture("Interface\\Buttons\\ButtonHilight-Square")
     highlight:SetBlendMode("ADD")
+    button.highlight = highlight
 
     -- Quality border
     local border = Utils:CreateItemBorder(button)
@@ -297,6 +298,17 @@ local function CreateItemButton(parent, name, isMain)
                 QuestBar:SavePosition()
             end
         end)
+    end
+
+    -- Register with Masque if active
+    local MasqueModule = ns:GetModule("Masque")
+    if MasqueModule and MasqueModule:IsActive() then
+        MasqueModule:AddButton(button, "Quest Items", {
+            Icon = button.icon,
+            Cooldown = button.cooldown,
+            Count = button.count,
+            Highlight = button.highlight,
+        })
     end
 
     return button
@@ -537,6 +549,7 @@ local function UpdateButton(button, itemData)
     end
 
     -- Sunny yellow-gold color for border and inner shadow
+    -- Quality borders coexist with Masque's button chrome
     local sunnyR, sunnyG, sunnyB = 1.0, 0.85, 0.2
     button.border:SetVertexColor(sunnyR, sunnyG, sunnyB, 1)
     button.border:Show()

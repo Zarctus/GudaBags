@@ -113,6 +113,7 @@ local function CreateItemButton(parent, index)
     highlight:SetAllPoints()
     highlight:SetTexture("Interface\\Buttons\\ButtonHilight-Square")
     highlight:SetBlendMode("ADD")
+    button.highlight = highlight
 
     -- Quality border (same style as bag items)
     local border = Utils:CreateItemBorder(button)
@@ -239,11 +240,23 @@ local function CreateTrackedBarFrame()
     f:SetBackdropBorderColor(0.3, 0.3, 0.3, 0.9)
 
     -- Create item buttons (pool of maximum possible buttons)
+    local MasqueModule = ns:GetModule("Masque")
+    local masqueActive = MasqueModule and MasqueModule:IsActive()
     for i = 1, MAX_BUTTONS do
         local button = CreateItemButton(f, i)
         button:SetPoint("LEFT", f, "LEFT", PADDING + (i - 1) * (buttonSize + BUTTON_SPACING), 0)
         button:Hide()
         itemButtons[i] = button
+
+        -- Register with Masque if active
+        if masqueActive then
+            MasqueModule:AddButton(button, "Tracked Items", {
+                Icon = button.icon,
+                Cooldown = button.cooldown,
+                Count = button.count,
+                Highlight = button.highlight,
+            })
+        end
     end
 
     f:Hide()
@@ -334,6 +347,7 @@ local function UpdateButton(button, itemID)
     end
 
     -- Border: quest items get quest color, otherwise quality color
+    -- Quality borders coexist with Masque's button chrome
     if isQuestItem then
         local questColor = isQuestStarter and Constants.COLORS.QUEST_STARTER or Constants.COLORS.QUEST
         button.border:SetVertexColor(questColor[1], questColor[2], questColor[3], 1)

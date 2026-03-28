@@ -211,6 +211,16 @@ end
 
 -- Apply retail/default slot textures to a single button
 local function ApplyThemeToButton(button, slotTex)
+    -- When Masque is active, it owns Normal/Highlight textures — skip slot bg/highlight
+    local MasqueModule = ns:GetModule("Masque")
+    if MasqueModule and MasqueModule:IsActive() then
+        button.slotBackground:Hide()
+        if button.retailSlotBg then button.retailSlotBg:Hide() end
+        button.highlight:Hide()
+        if button.retailHighlight then button.retailHighlight:Hide() end
+        return
+    end
+
     if slotTex then
         button.slotBackground:Hide()
         button.retailSlotBg:SetTexture(slotTex.background)
@@ -232,6 +242,11 @@ local buttonIndex = 0
 
 -- Full reset function for pool (called on Release)
 local function ResetButton(pool, button)
+    -- Remove from Masque before reset
+    local MasqueModule = ns:GetModule("Masque")
+    local masqueActive = MasqueModule and MasqueModule:IsActive()
+    if masqueActive then MasqueModule:RemoveButton(button) end
+
     button:SetShown(false)  -- Use SetShown to avoid taint during combat
     button.wrapper:SetShown(false)
     button.wrapper:ClearAllPoints()
@@ -250,8 +265,11 @@ local function ResetButton(pool, button)
     if button.IconOverlay then button.IconOverlay:Hide() end
     if button.NewItemTexture then button.NewItemTexture:Hide() end
     if button.BattlepayItemTexture then button.BattlepayItemTexture:Hide() end
-    local normalTex = button:GetNormalTexture()
-    if normalTex then normalTex:Hide() end
+    -- Don't hide NormalTexture when Masque is active — Masque manages it
+    if not masqueActive then
+        local normalTex = button:GetNormalTexture()
+        if normalTex then normalTex:Hide() end
+    end
 
     -- Clear visual state to prevent texture bleeding
     SetItemButtonTexture(button, nil)
@@ -425,16 +443,33 @@ local function CreateButton(parent)
     end)
 
     -- Hide template's built-in visual elements (we use our own)
+    -- Always hide NormalTexture to prevent template's quest handlers from showing borders
+    -- Hide template's NormalTexture — we use our own visuals
+    local MasqueModule = ns:GetModule("Masque")
+    local masqueActive = MasqueModule and MasqueModule:IsActive()
     local normalTex = button:GetNormalTexture()
     if normalTex then
-        normalTex:SetTexture(nil)
-        normalTex:Hide()
+        if masqueActive then
+            -- Keep texture object alive for Masque but hide initially — Masque will manage it
+            normalTex:Hide()
+        else
+            normalTex:SetTexture(nil)
+            normalTex:Hide()
+        end
+    end
+
+    -- Prevent template handlers (UpdateQuestItem etc.) from re-setting NormalTexture
+    -- This stops quest indicator borders from appearing on all slots
+    if masqueActive then
+        button.SetNormalTexture = function() end
     end
 
     if button.IconBorder then button.IconBorder:Hide() end
     if button.IconOverlay then button.IconOverlay:Hide() end
     if button.NormalTexture then
-        button.NormalTexture:SetTexture(nil)
+        if not masqueActive then
+            button.NormalTexture:SetTexture(nil)
+        end
         button.NormalTexture:Hide()
     end
     if button.NewItemTexture then button.NewItemTexture:Hide() end
@@ -475,6 +510,16 @@ local function CreateButton(parent)
     DisableOverlay(button.LevelLinkLockIcon)
     DisableOverlay(button.BagIndicator)
     DisableOverlay(button.StackSplitFrame)
+
+    -- Disable template's quest item texture (we use our own quest icons)
+    -- The template's UpdateQuestItem() shows this with quest borders/bangs on quest items
+    local questTex = button.IconQuestTexture or _G[name .. "IconQuestTexture"]
+    DisableOverlay(questTex)
+
+    -- No-op the template's quest update method to prevent it from managing quest visuals
+    if button.UpdateQuestItem then
+        button.UpdateQuestItem = function() end
+    end
 
     -- Disable any mouse blocking on the icon texture layer
     if button.icon then button.icon:SetDrawLayer("ARTWORK", 0) end
@@ -1291,6 +1336,12 @@ function ItemButton:Acquire(parent)
     button:SetShown(true)
     button.owner = parent
 
+    -- Register with Masque if active
+    local MasqueModule = ns:GetModule("Masque")
+    if MasqueModule and MasqueModule:IsActive() then
+        MasqueModule:AddButton(button, parent.masqueGroup or "Bags")
+    end
+
     -- Apply retail slot textures immediately so first-open doesn't flash default
     ApplyThemeToButton(button, GetEffectiveSlotTextures())
 
@@ -1399,8 +1450,13 @@ function ItemButton:SetItem(button, itemData, size, isReadOnly)
     if button.IconOverlay then button.IconOverlay:Hide() end
     if button.NewItemTexture then button.NewItemTexture:Hide() end
     if button.BattlepayItemTexture then button.BattlepayItemTexture:Hide() end
-    local normalTex = button:GetNormalTexture()
-    if normalTex then normalTex:Hide() end
+    local MasqueModule = ns:GetModule("Masque")
+    local masqueActive = MasqueModule and MasqueModule:IsActive()
+    -- Don't hide NormalTexture when Masque is active — Masque manages it
+    if not masqueActive then
+        local normalTex = button:GetNormalTexture()
+        if normalTex then normalTex:Hide() end
+    end
 
     -- Reset visual state from previous item (lazy cleanup)
     -- These elements might not be explicitly set below
@@ -1493,7 +1549,11 @@ function ItemButton:SetItem(button, itemData, size, isReadOnly)
             button.junkOverlay:Hide()
         end
 
+        -- Determine quest indicator status (used for both border and quest icons below)
+        local showQuestIndicator = not (itemData.quality == 0 and IsJunkItem(itemData)) and (itemData.isQuestItem or (itemData.hasDuration and itemData.itemID and GetItemSpell(itemData.itemID)))
+
         -- Quality border (quest items override with golden border)
+        -- These are quality indicators that coexist with Masque's button chrome
         local isEquipment = itemData.itemType == "Armor" or itemData.itemType == "Weapon"
         local showBorder = isEquipment and settings.equipmentBorders or (not isEquipment and settings.otherBorders)
 
@@ -1514,8 +1574,6 @@ function ItemButton:SetItem(button, itemData, size, isReadOnly)
             end
         end
 
-        -- Quest items and usable duration items show border with quest color
-        local showQuestIndicator = not (itemData.quality == 0 and IsJunkItem(itemData)) and (itemData.isQuestItem or (itemData.hasDuration and itemData.itemID and GetItemSpell(itemData.itemID)))
         if showQuestIndicator then
             local questColor = itemData.isQuestStarter and Constants.COLORS.QUEST_STARTER or Constants.COLORS.QUEST
             button.border:SetVertexColor(questColor[1], questColor[2], questColor[3], 1)
@@ -1794,8 +1852,12 @@ function ItemButton:SetEmpty(button, bagID, slot, size, isReadOnly, isGuildBank)
     if button.IconOverlay then button.IconOverlay:Hide() end
     if button.NewItemTexture then button.NewItemTexture:Hide() end
     if button.BattlepayItemTexture then button.BattlepayItemTexture:Hide() end
-    local normalTex = button:GetNormalTexture()
-    if normalTex then normalTex:Hide() end
+    -- Don't hide NormalTexture when Masque is active — Masque manages it
+    local MasqueModule = ns:GetModule("Masque")
+    if not (MasqueModule and MasqueModule:IsActive()) then
+        local normalTex = button:GetNormalTexture()
+        if normalTex then normalTex:Hide() end
+    end
 
     button.itemData = {bagID = bagID, slot = slot, isGuildBank = isGuildBank or false}
     button.isReadOnly = isReadOnly or false

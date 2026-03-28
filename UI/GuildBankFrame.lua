@@ -715,6 +715,7 @@ local function CreateGuildBankFrame()
     container:SetSize(1, 1)
     scrollFrame:SetScrollChild(container)
     f.container = container
+    f.container.masqueGroup = "Guild Bank"
 
     -- Empty message
     local emptyMessage = CreateFrame("Frame", nil, f)

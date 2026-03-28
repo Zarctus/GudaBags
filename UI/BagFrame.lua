@@ -241,6 +241,7 @@ local function CreateBagFrame()
     secureButtonContainer:SetPoint("TOPLEFT", f, "TOPLEFT", Constants.FRAME.PADDING, -(Constants.FRAME.TITLE_HEIGHT + SearchBar:GetTotalHeight(f) + Constants.FRAME.PADDING + 6))
     secureButtonContainer:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -Constants.FRAME.PADDING, Constants.FRAME.FOOTER_HEIGHT + Constants.FRAME.PADDING + 6)
     f.container = secureButtonContainer
+    f.container.masqueGroup = "Bags"
 
     -- Sync secure container visibility with main frame
     f:HookScript("OnShow", function() secureButtonContainer:Show() end)

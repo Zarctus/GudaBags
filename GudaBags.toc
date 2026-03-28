@@ -6,6 +6,7 @@
 ## SavedVariables: GudaBags_DB
 ## SavedVariablesPerCharacter: GudaBags_CharDB
 ## IconTexture: Interface\AddOns\GudaBags\Assets\bags.png
+## OptionalDeps: Masque
 
 ## Category: Guda
 
@@ -24,6 +25,7 @@ Core\Events.lua
 Core\Database.lua
 Core\ProfileManager.lua
 Core\Theme.lua
+Core\Masque.lua
 Core\Bindings.lua
 Core\SlashCommands.lua
 

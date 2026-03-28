@@ -414,6 +414,7 @@ local function CreateMailFrame()
     container:SetSize(1, 1)
     scrollFrame:SetScrollChild(container)
     f.container = container
+    f.container.masqueGroup = "Mail"
 
     -- Pre-create row frames
     local containerWidth = 420 - Constants.FRAME.PADDING * 2 - 20

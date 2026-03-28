@@ -87,13 +87,19 @@ local function ShowMoneyTooltip(frame)
 
     local allRealms = Database:GetSetting("goldTrackAllRealms")
 
+    -- Get warband gold (Retail only)
+    local warbandMoney = 0
+    if ns.IsRetail and C_Bank and C_Bank.FetchDepositedMoney then
+        warbandMoney = Money:GetWarbandMoney() or 0
+    end
+
     if allRealms then
         -- Cross-realm view: group by realm with subtotals
         local chars = FilterBlacklisted(Database:GetAllCharacters(false, false))
         local totalMoney = 0
         for _, c in ipairs(chars) do totalMoney = totalMoney + c.money end
 
-        GameTooltip:AddDoubleLine(L["TOOLTIP_ACCOUNT_GOLD"], FormatMoney(totalMoney), 1, 0.82, 0, 1, 1, 1)
+        GameTooltip:AddDoubleLine(L["TOOLTIP_ACCOUNT_GOLD"], FormatMoney(totalMoney + warbandMoney), 1, 0.82, 0, 1, 1, 1)
         GameTooltip:AddLine(" ")
 
         -- Group characters by realm
@@ -124,12 +130,18 @@ local function ShowMoneyTooltip(frame)
         local totalMoney = 0
         for _, c in ipairs(chars) do totalMoney = totalMoney + c.money end
 
-        GameTooltip:AddDoubleLine(L["TOOLTIP_REALM_GOLD"], FormatMoney(totalMoney), 1, 0.82, 0, 1, 1, 1)
+        GameTooltip:AddDoubleLine(L["TOOLTIP_REALM_GOLD"], FormatMoney(totalMoney + warbandMoney), 1, 0.82, 0, 1, 1, 1)
         GameTooltip:AddLine(" ")
 
         for _, char in ipairs(chars) do
             AddCharacterLine(char)
         end
+    end
+
+    -- Warband gold line (Retail only)
+    if warbandMoney > 0 then
+        GameTooltip:AddLine(" ")
+        GameTooltip:AddDoubleLine(L["TOOLTIP_WARBAND_GOLD"] or "Warband gold:", FormatMoney(warbandMoney), 0, 0.8, 0.8, 1, 1, 1)
     end
 
     GameTooltip:AddLine(" ")

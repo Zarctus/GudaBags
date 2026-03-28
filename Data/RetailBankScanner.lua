@@ -827,6 +827,9 @@ if C_Bank then
             if warbandLocked == nil then
                 RetailBankScanner:CacheBankTabs(BANK_TYPE_ACCOUNT)
             end
+            -- Rescan bank to pick up new tab slots
+            RetailBankScanner:ScanAllBank()
+            RetailBankScanner:SaveToDatabase()
             -- Notify UI to refresh (e.g., after purchasing a new tab)
             if ns.OnRetailBankTabsUpdated then
                 ns.OnRetailBankTabsUpdated()

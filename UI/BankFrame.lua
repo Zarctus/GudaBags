@@ -871,7 +871,46 @@ function BankFrame:ShowSideTabs(characterFullName, bankType)
 
     ns:Debug("  Final tabs count:", #tabs)
 
-    -- Default single tab if nothing found
+    local bankTypeEnum = isWarband
+        and (Enum and Enum.BankType and Enum.BankType.Account)
+        or (Enum and Enum.BankType and Enum.BankType.Character)
+    local canPurchaseMore = bankTypeEnum
+        and C_Bank and C_Bank.CanPurchaseBankTab and C_Bank.CanPurchaseBankTab(bankTypeEnum)
+        and not (C_Bank.HasMaxBankTabs and C_Bank.HasMaxBankTabs(bankTypeEnum))
+
+    -- No purchased tabs: show only purchase tab and auto-show purchase prompt
+    if (not tabs or #tabs == 0) and RetailBankScanner and RetailBankScanner:IsBankOpen() and canPurchaseMore then
+        -- Hide "All" tab and any existing side tabs
+        if frame.sideTabs[0] then frame.sideTabs[0]:Hide() end
+        for i = 1, #frame.sideTabs do
+            if frame.sideTabs[i] then frame.sideTabs[i]:Hide() end
+        end
+
+        -- Show only the purchase tab
+        if frame.purchaseTab and frame.purchaseTab.bankTypeEnum ~= bankTypeEnum then
+            frame.purchaseTab:Hide()
+            frame.purchaseTab = nil
+        end
+        if not frame.purchaseTab then
+            frame.purchaseTab = CreatePurchaseTab(frame.sideTabBar, bankTypeEnum)
+        end
+        frame.purchaseTab.bankTypeEnum = bankTypeEnum
+        frame.purchaseTab:SetAttribute("overrideBankType", bankTypeEnum)
+        frame.purchaseTab:ClearAllPoints()
+        frame.purchaseTab:SetPoint("TOP", frame.sideTabBar, "TOP", 0, 0)
+        frame.purchaseTab:Show()
+
+        frame.sideTabBar:SetSize(TAB_SIZE, TAB_SIZE + TAB_SPACING)
+        frame.sideTabBar:Show()
+
+        -- Auto-show purchase prompt
+        showingPurchasePrompt = true
+        self:UpdateSideTabSelection()
+        self:ShowPurchasePrompt(bankTypeEnum)
+        return
+    end
+
+    -- Default single tab if nothing found (offline/cached view)
     if not tabs or #tabs == 0 then
         tabs = {{
             index = 1,
@@ -881,13 +920,6 @@ function BankFrame:ShowSideTabs(characterFullName, bankType)
     end
 
     -- Hide side tabs if only 1 character bank tab AND no more can be purchased
-    -- For warband, always show since we have at least "All" + tab
-    local bankTypeEnum = isWarband
-        and (Enum and Enum.BankType and Enum.BankType.Account)
-        or (Enum and Enum.BankType and Enum.BankType.Character)
-    local canPurchaseMore = bankTypeEnum
-        and C_Bank and C_Bank.CanPurchaseBankTab and C_Bank.CanPurchaseBankTab(bankTypeEnum)
-        and not (C_Bank.HasMaxBankTabs and C_Bank.HasMaxBankTabs(bankTypeEnum))
     if #tabs <= 1 and not isWarband and not canPurchaseMore then
         frame.sideTabBar:Hide()
         return

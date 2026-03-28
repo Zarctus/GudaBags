@@ -1423,16 +1423,10 @@ function BankFooter:SetNarrowMode(isNarrow)
 
     if isNarrow then
         -- 2-row layout: Bag slots on row 1, Money on row 2 left-aligned
-        frame:SetHeight(44)
-        frame.currentHeight = 44
+        frame:SetHeight(52)
+        frame.currentHeight = 52
 
-        -- Bag slots stay on top row
-        if frame.mainBankButton then
-            frame.mainBankButton:ClearAllPoints()
-            frame.mainBankButton:SetPoint("TOPLEFT", frame, "TOPLEFT", 0, 0)
-        end
-
-        -- Money on bottom row, left-aligned with 4px gap
+        -- Money on bottom row, left-aligned below bag slots
         if frame.moneyFrame then
             frame.moneyFrame:ClearAllPoints()
             frame.moneyFrame:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 1, 0)

@@ -211,18 +211,29 @@ end
 
 -- Apply retail/default slot textures to a single button
 local function ApplyThemeToButton(button, slotTex)
-    -- Always apply slot backgrounds — Masque's Normal texture layers on top when active,
-    -- and our backgrounds show through when Masque group is disabled
-    if slotTex then
+    local minimalMode = Database:GetSetting("minimalEmptySlots")
+
+    if minimalMode then
+        -- Minimal mode: thin border outline, no slot icon
         button.slotBackground:Hide()
+        if button.retailSlotBg then button.retailSlotBg:Hide() end
+        if button.minimalSlot then button.minimalSlot:Show() end
+        button.highlight:Show()
+        if button.retailHighlight then button.retailHighlight:Hide() end
+    elseif slotTex then
+        -- Retail-style slot textures
+        button.slotBackground:Hide()
+        if button.minimalSlot then button.minimalSlot:Hide() end
         button.retailSlotBg:SetTexture(slotTex.background)
         button.retailSlotBg:Show()
         button.highlight:Hide()
         button.retailHighlight:SetTexture(slotTex.highlight)
         button.retailHighlight:Show()
     else
+        -- Default classic slot icon
         button.slotBackground:Show()
         if button.retailSlotBg then button.retailSlotBg:Hide() end
+        if button.minimalSlot then button.minimalSlot:Hide() end
         button.highlight:Show()
         if button.retailHighlight then button.retailHighlight:Hide() end
     end
@@ -286,6 +297,7 @@ local function ResetButton(pool, button)
     if button.pinIcon then button.pinIcon:Hide() end
     if button.pinIconShadow then button.pinIconShadow:Hide() end
     if button.searchGlow then button.searchGlow:Hide() end
+    if button.minimalSlot then button.minimalSlot:Hide() end
     if button.cooldown then CooldownFrame_Set(button.cooldown, 0, 0, false) end
 end
 
@@ -554,6 +566,14 @@ local function CreateButton(parent)
     retailSlotBg:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", 2, -2)
     retailSlotBg:Hide()
     button.retailSlotBg = retailSlotBg
+
+    -- Minimal slot (slightly lighter than bag background — hidden by default)
+    local minimalSlot = button:CreateTexture(nil, "BACKGROUND", nil, -1)
+    minimalSlot:SetAllPoints(button)
+    minimalSlot:SetTexture("Interface\\Buttons\\WHITE8x8")
+    minimalSlot:SetVertexColor(0.05, 0.05, 0.05, 0.5)
+    minimalSlot:Hide()
+    button.minimalSlot = minimalSlot
 
     -- Item icon fills button completely to match empty slot size
     local icon = button.icon or button.Icon or _G[name .. "IconTexture"]
@@ -1851,8 +1871,10 @@ function ItemButton:SetEmpty(button, bagID, slot, size, isReadOnly, isGuildBank)
     if button.NewItemTexture then button.NewItemTexture:Hide() end
     if button.BattlepayItemTexture then button.BattlepayItemTexture:Hide() end
     -- Don't hide NormalTexture when Masque is active — Masque manages it
+    -- Exception: always hide on minimal empty slots (no Masque chrome on empties)
     local MasqueModule = ns:GetModule("Masque")
-    if not (MasqueModule and MasqueModule:IsActive()) then
+    local masqueActive = MasqueModule and MasqueModule:IsActive()
+    if not masqueActive or Database:GetSetting("minimalEmptySlots") then
         local normalTex = button:GetNormalTexture()
         if normalTex then normalTex:Hide() end
     end

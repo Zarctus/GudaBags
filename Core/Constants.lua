@@ -251,6 +251,7 @@ Constants.DEFAULTS = {
     autoVendorJunk = true,  -- Auto sell gray items at merchants
     autoRepair = false,  -- Auto repair all items at repair-capable merchants
     retailEmptySlots = false,  -- Use retail-style empty slot textures (Classic only)
+    minimalEmptySlots = false,  -- Show empty slots as thin border outline instead of slot icon
     gudaSort = false,  -- Use GudaBags custom sort engine instead of Blizzard's (Retail only)
 
     -- Icons

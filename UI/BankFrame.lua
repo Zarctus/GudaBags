@@ -2566,6 +2566,7 @@ local appearanceSettings = {
     questBarColumns = true,
     theme = true,
     retailEmptySlots = true,
+    minimalEmptySlots = true,
 }
 
 local resizeSettings = {

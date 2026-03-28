@@ -1405,6 +1405,7 @@ local appearanceSettings = {
     showBorders = true,
     theme = true,
     retailEmptySlots = true,
+    minimalEmptySlots = true,
 }
 
 -- Handle setting changes (live update)

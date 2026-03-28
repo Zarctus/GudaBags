@@ -126,8 +126,9 @@ local function UpdateFrameAppearance()
     local topOffset = showSearchBar
         and (Constants.FRAME.TITLE_HEIGHT + Constants.FRAME.SEARCH_BAR_HEIGHT + chipHeight + Constants.FRAME.PADDING + 6)
         or (Constants.FRAME.TITLE_HEIGHT + Constants.FRAME.PADDING + 2)
+    local footerHeight = GuildBankFooter:GetHeight()
     local bottomOffset = showFooter
-        and (Constants.FRAME.FOOTER_HEIGHT + Constants.FRAME.PADDING + 6)
+        and (footerHeight + Constants.FRAME.PADDING + 6)
         or Constants.FRAME.PADDING
 
     frame.scrollFrame:ClearAllPoints()
@@ -709,7 +710,7 @@ local function CreateGuildBankFrame()
     -- Scroll frame
     local scrollFrame = CreateFrame("ScrollFrame", "GudaGuildBankScrollFrame", f, "UIPanelScrollFrameTemplate")
     scrollFrame:SetPoint("TOPLEFT", f, "TOPLEFT", Constants.FRAME.PADDING, -(Constants.FRAME.TITLE_HEIGHT + SearchBar:GetTotalHeight(f) + Constants.FRAME.PADDING + 6))
-    scrollFrame:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -Constants.FRAME.PADDING - 20, Constants.FRAME.FOOTER_HEIGHT + Constants.FRAME.PADDING + 6)
+    scrollFrame:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -Constants.FRAME.PADDING - 20, GuildBankFooter:GetHeight() + Constants.FRAME.PADDING + 6)
     f.scrollFrame = scrollFrame
 
     -- Style the scroll bar and hide initially (Refresh will show if needed)
@@ -1048,8 +1049,9 @@ function GuildBankFrame:Refresh()
     local topOffset = showSearchBar
         and (Constants.FRAME.TITLE_HEIGHT + Constants.FRAME.SEARCH_BAR_HEIGHT + chipHeight + Constants.FRAME.PADDING + 6)
         or (Constants.FRAME.TITLE_HEIGHT + Constants.FRAME.PADDING + 2)
+    local footerHeight = GuildBankFooter:GetHeight()
     local bottomOffset = showFooter
-        and (Constants.FRAME.FOOTER_HEIGHT + Constants.FRAME.PADDING + 6)
+        and (footerHeight + Constants.FRAME.PADDING + 6)
         or Constants.FRAME.PADDING
     local chromeHeight = topOffset + bottomOffset
 

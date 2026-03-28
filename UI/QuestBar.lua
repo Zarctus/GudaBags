@@ -343,14 +343,7 @@ local function CreateFlyout(parent)
     f:SetFrameStrata("DIALOG")
     f:SetFrameLevel(100)
 
-    f:SetBackdrop({
-        bgFile = "Interface\\Buttons\\WHITE8x8",
-        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-        edgeSize = 10,
-        insets = { left = 2, right = 2, top = 2, bottom = 2 },
-    })
-    f:SetBackdropColor(0.1, 0.1, 0.1, 0.95)
-    f:SetBackdropBorderColor(0.6, 0.5, 0.0, 1)
+    f:SetBackdrop(nil)
 
     -- Create flyout buttons (vertical stack, top to bottom)
     for i = 1, MAX_FLYOUT_ITEMS do
@@ -468,14 +461,7 @@ local function CreateQuestBarFrame()
     f:SetFrameStrata("MEDIUM")
     f:SetFrameLevel(Constants.FRAME_LEVELS.BASE)
 
-    f:SetBackdrop({
-        bgFile = "Interface\\Buttons\\WHITE8x8",
-        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-        edgeSize = 10,
-        insets = { left = 2, right = 2, top = 2, bottom = 2 },
-    })
-    f:SetBackdropColor(0.1, 0.1, 0.1, 0.85)
-    f:SetBackdropBorderColor(0.6, 0.5, 0.0, 0.9)
+    f:SetBackdrop(nil)
 
     -- Create main button (used in flyout mode / columns=1)
     mainButton = CreateItemButton(f, "GudaQuestBarMainButton", true)

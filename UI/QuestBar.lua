@@ -22,7 +22,6 @@ local pendingRefresh = false
 local initialized = false
 
 -- Constants
-local BUTTON_SPACING = 2
 local PADDING = 0
 local MAX_FLYOUT_ITEMS = 8
 local MAX_GRID_ITEMS = 40  -- Max items in grid layout (5 columns * 8 rows)
@@ -51,6 +50,10 @@ end
 
 local function GetColumns()
     return Database:GetSetting("questBarColumns") or 1
+end
+
+local function GetButtonSpacing()
+    return Database:GetSetting("questBarSpacing") or 2
 end
 
 -------------------------------------------------
@@ -162,6 +165,22 @@ local function CreateItemButton(parent, name, isMain)
     button:RegisterForDrag("LeftButton")
     button:SetScript("OnDragStart", function() end)
     button:SetScript("OnReceiveDrag", function() end)
+
+    -- Hide template's NormalTexture (UI-Quickslot2) — we use our own visuals
+    local MasqueModule = ns:GetModule("Masque")
+    local masqueActive = MasqueModule and MasqueModule:IsActive()
+    local normalTex = button:GetNormalTexture()
+    if normalTex then
+        if masqueActive then
+            normalTex:Hide()
+        else
+            normalTex:SetTexture(nil)
+            normalTex:Hide()
+        end
+    end
+    if masqueActive then
+        button.SetNormalTexture = function() end
+    end
 
     -- Background
     local bg = button:CreateTexture(nil, "BACKGROUND")
@@ -300,12 +319,12 @@ local function CreateItemButton(parent, name, isMain)
         end)
     end
 
-    -- Register with Masque if active
-    local MasqueModule = ns:GetModule("Masque")
-    if MasqueModule and MasqueModule:IsActive() then
+    -- Register with Masque if active (reuse masqueActive from above)
+    if masqueActive then
         MasqueModule:AddButton(button, "Quest Items", {
             Icon = button.icon,
             Cooldown = button.cooldown,
+            Normal = button:GetNormalTexture(),
             Count = button.count,
             Highlight = button.highlight,
         })
@@ -336,7 +355,7 @@ local function CreateFlyout(parent)
     -- Create flyout buttons (vertical stack, top to bottom)
     for i = 1, MAX_FLYOUT_ITEMS do
         local button = CreateItemButton(f, "GudaQuestBarFlyoutItem" .. i, false)
-        button:SetPoint("TOP", f, "TOP", 0, -PADDING - (i - 1) * (buttonSize + BUTTON_SPACING))
+        button:SetPoint("TOP", f, "TOP", 0, -PADDING - (i - 1) * (buttonSize + GetButtonSpacing()))
         button:Hide()
         button.flyoutIndex = i
 
@@ -646,7 +665,7 @@ function QuestBar:ShowFlyout()
             UpdateButton(flyoutButtons[i], otherItem.data)
             flyoutButtons[i]:SetSize(buttonSize, buttonSize)
             flyoutButtons[i]:ClearAllPoints()
-            flyoutButtons[i]:SetPoint("TOP", flyout, "TOP", 0, -PADDING - (i - 1) * (buttonSize + BUTTON_SPACING))
+            flyoutButtons[i]:SetPoint("TOP", flyout, "TOP", 0, -PADDING - (i - 1) * (buttonSize + GetButtonSpacing()))
         else
             flyoutButtons[i]:Hide()
             flyoutButtons[i].itemIndex = nil
@@ -654,7 +673,7 @@ function QuestBar:ShowFlyout()
     end
 
     if visibleCount > 0 then
-        local height = PADDING * 2 + visibleCount * buttonSize + (visibleCount - 1) * BUTTON_SPACING
+        local height = PADDING * 2 + visibleCount * buttonSize + (visibleCount - 1) * GetButtonSpacing()
         local width = buttonSize + PADDING * 2
         flyout:SetSize(width, height)
         ShowFlyoutFrame()
@@ -793,14 +812,14 @@ function QuestBar:Refresh()
                         UpdateButton(flyoutButtons[i], otherItem.data)
                         flyoutButtons[i]:SetSize(buttonSize, buttonSize)
                         flyoutButtons[i]:ClearAllPoints()
-                        flyoutButtons[i]:SetPoint("TOP", flyout, "TOP", 0, -PADDING - (i - 1) * (buttonSize + BUTTON_SPACING))
+                        flyoutButtons[i]:SetPoint("TOP", flyout, "TOP", 0, -PADDING - (i - 1) * (buttonSize + GetButtonSpacing()))
                     else
                         flyoutButtons[i]:Hide()
                         flyoutButtons[i].itemIndex = nil
                     end
                 end
                 if visibleCount > 0 then
-                    local height = PADDING * 2 + visibleCount * buttonSize + (visibleCount - 1) * BUTTON_SPACING
+                    local height = PADDING * 2 + visibleCount * buttonSize + (visibleCount - 1) * GetButtonSpacing()
                     local width = buttonSize + PADDING * 2
                     flyout:SetSize(width, height)
                 end
@@ -813,13 +832,13 @@ function QuestBar:Refresh()
 
             local visibleCount = math.min(#questItems, columns)
             local effectiveColumns = math.min(columns, visibleCount)
-            local frameWidth = PADDING * 2 + effectiveColumns * buttonSize + (effectiveColumns - 1) * BUTTON_SPACING
+            local frameWidth = PADDING * 2 + effectiveColumns * buttonSize + (effectiveColumns - 1) * GetButtonSpacing()
             local frameHeight = PADDING * 2 + buttonSize
             frame:SetSize(frameWidth, frameHeight)
 
             for i = 1, MAX_GRID_ITEMS do
                 if i <= visibleCount then
-                    local x = PADDING + (i - 1) * (buttonSize + BUTTON_SPACING)
+                    local x = PADDING + (i - 1) * (buttonSize + GetButtonSpacing())
                     local y = -PADDING
 
                     gridButtons[i]:SetSize(buttonSize, buttonSize)
@@ -845,14 +864,14 @@ function QuestBar:Refresh()
                         UpdateButton(flyoutButtons[i], item.data)
                         flyoutButtons[i]:SetSize(buttonSize, buttonSize)
                         flyoutButtons[i]:ClearAllPoints()
-                        flyoutButtons[i]:SetPoint("TOP", flyout, "TOP", 0, -PADDING - (i - 1) * (buttonSize + BUTTON_SPACING))
+                        flyoutButtons[i]:SetPoint("TOP", flyout, "TOP", 0, -PADDING - (i - 1) * (buttonSize + GetButtonSpacing()))
                     else
                         flyoutButtons[i]:Hide()
                         flyoutButtons[i].itemIndex = nil
                     end
                 end
                 if flyoutCount > 0 then
-                    local height = PADDING * 2 + flyoutCount * buttonSize + (flyoutCount - 1) * BUTTON_SPACING
+                    local height = PADDING * 2 + flyoutCount * buttonSize + (flyoutCount - 1) * GetButtonSpacing()
                     local width = buttonSize + PADDING * 2
                     flyout:SetSize(width, height)
                 end
@@ -920,15 +939,32 @@ function QuestBar:UpdateSize()
     end
 
     local buttonSize = GetButtonSize()
+    local shadowSize = math.max(4, math.floor(buttonSize * 0.18))
+
+    -- Helper to resize inner shadow on a button
+    local function ResizeInnerShadow(button)
+        if not button.innerShadow then return end
+        button.innerShadow.top:SetHeight(shadowSize)
+        button.innerShadow.bottom:SetHeight(shadowSize)
+        button.innerShadow.left:SetWidth(shadowSize)
+        button.innerShadow.right:SetWidth(shadowSize)
+    end
 
     if mainButton then
         mainButton:SetSize(buttonSize, buttonSize)
+        ResizeInnerShadow(mainButton)
+    end
+
+    for i, button in ipairs(gridButtons) do
+        button:SetSize(buttonSize, buttonSize)
+        ResizeInnerShadow(button)
     end
 
     for i, button in ipairs(flyoutButtons) do
         button:SetSize(buttonSize, buttonSize)
+        ResizeInnerShadow(button)
         button:ClearAllPoints()
-        button:SetPoint("TOP", flyout, "TOP", 0, -PADDING - (i - 1) * (buttonSize + BUTTON_SPACING))
+        button:SetPoint("TOP", flyout, "TOP", 0, -PADDING - (i - 1) * (buttonSize + GetButtonSpacing()))
     end
 
     self:Refresh()
@@ -979,6 +1015,15 @@ end
 Events:OnPlayerLogin(function()
     QuestBar:Init()
     QuestBar:Show()
+end, QuestBar)
+
+-- Handle setting changes directly (don't rely on BagFrame which may not be open)
+Events:Register("SETTING_CHANGED", function(key)
+    if key == "questBarSize" or key == "questBarColumns" or key == "questBarSpacing" then
+        QuestBar:UpdateSize()
+    elseif key == "iconFontSize" then
+        QuestBar:UpdateFontSize()
+    end
 end, QuestBar)
 
 -- Refresh after combat ends if we deferred during lockdown

@@ -239,7 +239,21 @@ local function CreateSideTab(parent, index, isAllTab)
 
         local ItemButton = ns:GetModule("ItemButton")
         if ItemButton and frame and frame.container then
-            ItemButton:ResetAllAlpha(frame.container)
+            -- Re-apply search filter state instead of blindly resetting alpha
+            local hasSearch = SearchBar:HasActiveFilters(frame)
+            if hasSearch then
+                for btn in ItemButton:GetActiveButtons() do
+                    if btn.owner == frame.container then
+                        if btn.itemData and btn.itemData.itemID then
+                            ItemButton:SetSearchState(btn, SearchBar:ItemMatchesFilters(frame, btn.itemData))
+                        else
+                            ItemButton:SetSearchState(btn, false)
+                        end
+                    end
+                end
+            else
+                ItemButton:ResetAllAlpha(frame.container)
+            end
         end
     end)
 
@@ -743,7 +757,7 @@ local function CreateGuildBankFrame()
     purchasePrompt:Hide()
 
     -- Main prompt text
-    local promptText = purchasePrompt:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    local promptText = purchasePrompt:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     promptText:SetPoint("CENTER", purchasePrompt, "CENTER", 0, 60)
     promptText:SetTextColor(1, 0.82, 0)  -- Gold
     promptText:SetText(ns.L["GUILD_BANK_PURCHASE_PROMPT"] or "Do you wish to purchase this tab?")
@@ -927,14 +941,8 @@ function GuildBankFrame:Refresh()
             frame.purchasePrompt:Show()
         end
 
-        -- Set minimum frame size for purchase prompt
-        local columns = Database:GetSetting("guildBankColumns")
-        local iconSize = Database:GetSetting("iconSize")
-        local spacing = Database:GetSetting("iconSpacing")
-        local minWidth = (iconSize * columns) + (Constants.FRAME.PADDING * 2)
-        local minHeight = (6 * iconSize) + (5 * spacing) + 80
-
-        frame:SetSize(math.max(minWidth, 300), minHeight)
+        -- Fixed size for purchase prompt (slightly wider for prompt text)
+        frame:SetSize(Constants.FRAME.GUILD_BANK_MIN_WIDTH + 150, Constants.FRAME.GUILD_BANK_MIN_HEIGHT)
         GuildBankFooter:UpdateSlotInfo(0, 0)
         return
     end
@@ -957,13 +965,7 @@ function GuildBankFrame:Refresh()
         frame.emptyMessage:Show()
         self:HideSideTabs()
 
-        local columns = Database:GetSetting("guildBankColumns")
-        local iconSize = Database:GetSetting("iconSize")
-        local spacing = Database:GetSetting("iconSpacing")
-        local minWidth = (iconSize * columns) + (Constants.FRAME.PADDING * 2)
-        local minHeight = (6 * iconSize) + (5 * spacing) + 80
-
-        frame:SetSize(math.max(minWidth, 250), minHeight)
+        frame:SetSize(Constants.FRAME.GUILD_BANK_MIN_WIDTH, Constants.FRAME.GUILD_BANK_MIN_HEIGHT)
         GuildBankFooter:UpdateSlotInfo(0, 0)
         return
     end
@@ -1051,11 +1053,10 @@ function GuildBankFrame:Refresh()
         or Constants.FRAME.PADDING
     local chromeHeight = topOffset + bottomOffset
 
-    local frameWidth = math.max(contentWidth + (Constants.FRAME.PADDING * 2), Constants.FRAME.MIN_WIDTH)
+    local frameWidth = math.max(contentWidth + (Constants.FRAME.PADDING * 2), Constants.FRAME.GUILD_BANK_MIN_WIDTH)
     local frameHeightNeeded = actualContentHeight + chromeHeight
 
-    local minFrameHeight = (6 * iconSize) + (5 * spacing) + chromeHeight
-    local adjustedFrameHeight = math.max(frameHeightNeeded, minFrameHeight)
+    local adjustedFrameHeight = math.max(frameHeightNeeded, Constants.FRAME.GUILD_BANK_MIN_HEIGHT)
 
     local screenHeight = UIParent:GetHeight()
     local maxFrameHeight = screenHeight - 100

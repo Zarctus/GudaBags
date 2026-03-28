@@ -338,6 +338,9 @@ local function CreateSpecialChip(chipStrip, chipDef, searchBar)
     return btn
 end
 
+-- Forward declaration (defined later with dropdown logic)
+local UpdateDropdownLabel
+
 local function ResetChipVisuals(searchBar)
     -- Reset quality dots
     if searchBar.qualityDots then
@@ -360,6 +363,10 @@ local function ResetChipVisuals(searchBar)
             chip.bg:SetVertexColor(0.15, 0.15, 0.15, 0.8)
         end
     end
+    -- Reset dropdown label
+    if searchBar.typesDropdown then
+        UpdateDropdownLabel(searchBar)
+    end
 end
 
 local function ClearEquipSetFilter(searchBar)
@@ -377,6 +384,270 @@ local function ClearEquipSetFilter(searchBar)
         if searchBar.searchBox.placeholder then
             searchBar.searchBox.placeholder:Show()
         end
+    end
+end
+
+-------------------------------------------------
+-- Chip Layout Overflow — collapse type/special chips into dropdown
+-------------------------------------------------
+local typesDropdownMenu = nil  -- shared dropdown menu frame
+
+UpdateDropdownLabel = function(searchBar)
+    local dropdown = searchBar.typesDropdown
+    if not dropdown then return end
+
+    local activeCount = 0
+    local state = searchBar.filterState
+    for _ in pairs(state.types) do activeCount = activeCount + 1 end
+    for _ in pairs(state.specials) do activeCount = activeCount + 1 end
+
+    if activeCount > 0 then
+        dropdown.label:SetText((L["CHIP_TYPES_DROPDOWN"] or "Types") .. " (" .. activeCount .. ") \226\150\188")
+        dropdown.label:SetTextColor(1, 1, 1)
+        dropdown.bg:SetVertexColor(0.7, 0.55, 0.0, 0.9)
+    else
+        dropdown.label:SetText((L["CHIP_TYPES_DROPDOWN"] or "Types") .. " \226\150\188")
+        dropdown.label:SetTextColor(0.55, 0.55, 0.55)
+        dropdown.bg:SetVertexColor(0.15, 0.15, 0.15, 0.8)
+    end
+    dropdown:SetWidth(dropdown.label:GetStringWidth() + 14)
+end
+
+local function ShowTypesDropdownMenu(searchBar, anchor)
+    if not typesDropdownMenu then
+        typesDropdownMenu = CreateFrame("Frame", "GudaBagsTypesDropdown", UIParent, "BackdropTemplate")
+        typesDropdownMenu:SetFrameStrata("TOOLTIP")
+        typesDropdownMenu:SetBackdrop({
+            bgFile = "Interface\\Buttons\\WHITE8x8",
+            edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+            edgeSize = 10,
+            insets = { left = 2, right = 2, top = 2, bottom = 2 },
+        })
+        typesDropdownMenu:SetBackdropColor(0.1, 0.1, 0.1, 0.95)
+        typesDropdownMenu:SetBackdropBorderColor(0.3, 0.3, 0.3, 0.9)
+        typesDropdownMenu:Hide()
+        typesDropdownMenu.items = {}
+    end
+
+    -- If already showing for this searchBar, toggle off
+    if typesDropdownMenu:IsShown() and typesDropdownMenu.owner == searchBar then
+        typesDropdownMenu:Hide()
+        return
+    end
+    typesDropdownMenu.owner = searchBar
+
+    -- Clear old items
+    for _, item in ipairs(typesDropdownMenu.items) do
+        item:Hide()
+    end
+
+    local yOffset = -4
+    local maxWidth = 0
+    local itemIndex = 0
+
+    -- Add type chips
+    for _, chipDef in ipairs(TYPE_CHIPS) do
+        itemIndex = itemIndex + 1
+        local item = typesDropdownMenu.items[itemIndex]
+        if not item then
+            item = CreateFrame("Button", nil, typesDropdownMenu)
+            item:SetHeight(18)
+            local itemLabel = item:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+            itemLabel:SetPoint("LEFT", 6, 0)
+            item.label = itemLabel
+            local itemBg = item:CreateTexture(nil, "BACKGROUND")
+            itemBg:SetAllPoints()
+            itemBg:SetTexture("Interface\\Buttons\\WHITE8x8")
+            itemBg:SetVertexColor(0, 0, 0, 0)
+            item.bg = itemBg
+            typesDropdownMenu.items[itemIndex] = item
+        end
+
+        item.label:SetText(L[chipDef.localeKey] or chipDef.key)
+        item.chipKey = chipDef.key
+        item.chipCategory = "types"
+        item:SetPoint("TOPLEFT", typesDropdownMenu, "TOPLEFT", 4, yOffset)
+        item:SetPoint("TOPRIGHT", typesDropdownMenu, "TOPRIGHT", -4, yOffset)
+
+        -- Set visual state
+        if searchBar.filterState.types[chipDef.key] then
+            item.label:SetTextColor(1, 1, 1)
+            item.bg:SetVertexColor(0.7, 0.55, 0.0, 0.6)
+        else
+            item.label:SetTextColor(0.7, 0.7, 0.7)
+            item.bg:SetVertexColor(0, 0, 0, 0)
+        end
+
+        item:SetScript("OnEnter", function(self)
+            if not searchBar.filterState.types[self.chipKey] then
+                self.bg:SetVertexColor(0.25, 0.25, 0.25, 0.8)
+            end
+        end)
+        item:SetScript("OnLeave", function(self)
+            if not searchBar.filterState.types[self.chipKey] then
+                self.bg:SetVertexColor(0, 0, 0, 0)
+            end
+        end)
+        item:SetScript("OnClick", function(self)
+            local state = searchBar.filterState
+            if state.types[self.chipKey] then
+                state.types[self.chipKey] = nil
+                self.label:SetTextColor(0.7, 0.7, 0.7)
+                self.bg:SetVertexColor(0, 0, 0, 0)
+            else
+                state.types[self.chipKey] = true
+                self.label:SetTextColor(1, 1, 1)
+                self.bg:SetVertexColor(0.7, 0.55, 0.0, 0.6)
+            end
+            -- Also update inline chip visuals if they exist
+            for _, chip in ipairs(searchBar.typeChips) do
+                if chip.chipKey == self.chipKey then
+                    if state.types[self.chipKey] then
+                        chip.label:SetTextColor(1, 1, 1)
+                        chip.bg:SetVertexColor(0.7, 0.55, 0.0, 0.9)
+                    else
+                        chip.label:SetTextColor(0.55, 0.55, 0.55)
+                        chip.bg:SetVertexColor(0.15, 0.15, 0.15, 0.8)
+                    end
+                end
+            end
+            UpdateDropdownLabel(searchBar)
+            NotifyFilterChanged(searchBar)
+        end)
+
+        local w = item.label:GetStringWidth() + 16
+        if w > maxWidth then maxWidth = w end
+        yOffset = yOffset - 18
+        item:Show()
+    end
+
+    -- Add separator
+    yOffset = yOffset - 4
+
+    -- Add special chips
+    for _, chipDef in ipairs(SPECIAL_CHIPS) do
+        itemIndex = itemIndex + 1
+        local item = typesDropdownMenu.items[itemIndex]
+        if not item then
+            item = CreateFrame("Button", nil, typesDropdownMenu)
+            item:SetHeight(18)
+            local itemLabel = item:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+            itemLabel:SetPoint("LEFT", 6, 0)
+            item.label = itemLabel
+            local itemBg = item:CreateTexture(nil, "BACKGROUND")
+            itemBg:SetAllPoints()
+            itemBg:SetTexture("Interface\\Buttons\\WHITE8x8")
+            itemBg:SetVertexColor(0, 0, 0, 0)
+            item.bg = itemBg
+            typesDropdownMenu.items[itemIndex] = item
+        end
+
+        item.label:SetText(L[chipDef.localeKey] or chipDef.key)
+        item.chipKey = chipDef.key
+        item.chipCategory = "specials"
+        item:SetPoint("TOPLEFT", typesDropdownMenu, "TOPLEFT", 4, yOffset)
+        item:SetPoint("TOPRIGHT", typesDropdownMenu, "TOPRIGHT", -4, yOffset)
+
+        if searchBar.filterState.specials[chipDef.key] then
+            item.label:SetTextColor(1, 1, 1)
+            item.bg:SetVertexColor(0.2, 0.6, 0.8, 0.6)
+        else
+            item.label:SetTextColor(0.7, 0.7, 0.7)
+            item.bg:SetVertexColor(0, 0, 0, 0)
+        end
+
+        item:SetScript("OnEnter", function(self)
+            if not searchBar.filterState.specials[self.chipKey] then
+                self.bg:SetVertexColor(0.25, 0.25, 0.25, 0.8)
+            end
+        end)
+        item:SetScript("OnLeave", function(self)
+            if not searchBar.filterState.specials[self.chipKey] then
+                self.bg:SetVertexColor(0, 0, 0, 0)
+            end
+        end)
+        item:SetScript("OnClick", function(self)
+            local state = searchBar.filterState
+            if state.specials[self.chipKey] then
+                state.specials[self.chipKey] = nil
+                self.label:SetTextColor(0.7, 0.7, 0.7)
+                self.bg:SetVertexColor(0, 0, 0, 0)
+            else
+                state.specials[self.chipKey] = true
+                self.label:SetTextColor(1, 1, 1)
+                self.bg:SetVertexColor(0.2, 0.6, 0.8, 0.6)
+            end
+            for _, chip in ipairs(searchBar.specialChips) do
+                if chip.chipKey == self.chipKey then
+                    if state.specials[self.chipKey] then
+                        chip.label:SetTextColor(1, 1, 1)
+                        chip.bg:SetVertexColor(0.2, 0.6, 0.8, 0.9)
+                    else
+                        chip.label:SetTextColor(0.55, 0.55, 0.55)
+                        chip.bg:SetVertexColor(0.15, 0.15, 0.15, 0.8)
+                    end
+                end
+            end
+            UpdateDropdownLabel(searchBar)
+            NotifyFilterChanged(searchBar)
+        end)
+
+        local w = item.label:GetStringWidth() + 16
+        if w > maxWidth then maxWidth = w end
+        yOffset = yOffset - 18
+        item:Show()
+    end
+
+    typesDropdownMenu:SetSize(math.max(maxWidth, 80), -yOffset + 4)
+    typesDropdownMenu:ClearAllPoints()
+    typesDropdownMenu:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 0, -2)
+    typesDropdownMenu:Show()
+
+    -- Close on click outside
+    typesDropdownMenu:SetScript("OnUpdate", function(self)
+        if not MouseIsOver(self) and not MouseIsOver(anchor) then
+            if IsMouseButtonDown("LeftButton") or IsMouseButtonDown("RightButton") then
+                self:Hide()
+            end
+        end
+    end)
+end
+
+local CHIP_COLLAPSE_WIDTH = 420
+
+local function UpdateChipLayout(searchBar)
+    local chipStrip = searchBar.chipStrip
+    if not chipStrip or not chipStrip:IsShown() then return end
+
+    local availableWidth = chipStrip:GetWidth()
+    if availableWidth <= 0 then return end
+
+    if availableWidth < CHIP_COLLAPSE_WIDTH then
+        -- Collapse: hide type/special chips and separators, show dropdown
+        for _, chip in ipairs(searchBar.typeChips) do chip:Hide() end
+        for _, chip in ipairs(searchBar.specialChips) do chip:Hide() end
+        if searchBar.chipSep1 then searchBar.chipSep1:Hide() end
+        if searchBar.chipSep2 then searchBar.chipSep2:Hide() end
+
+        local spacing = Constants.FRAME.CHIP_SPACING
+        local chipSize = Constants.FRAME.CHIP_SIZE
+        local qualityWidth = 4 + (#searchBar.qualityDots * (chipSize + spacing))
+        local sepWidth = 2 + 1 + spacing
+
+        local dropdown = searchBar.typesDropdown
+        if dropdown then
+            dropdown:ClearAllPoints()
+            dropdown:SetPoint("LEFT", chipStrip, "LEFT", qualityWidth + sepWidth, 0)
+            dropdown:Show()
+            UpdateDropdownLabel(searchBar)
+        end
+    else
+        -- Normal: show all chips as buttons, hide dropdown
+        for _, chip in ipairs(searchBar.typeChips) do chip:Show() end
+        for _, chip in ipairs(searchBar.specialChips) do chip:Show() end
+        if searchBar.chipSep1 then searchBar.chipSep1:Show() end
+        if searchBar.chipSep2 then searchBar.chipSep2:Show() end
+        if searchBar.typesDropdown then searchBar.typesDropdown:Hide() end
     end
 end
 
@@ -407,6 +678,7 @@ local function CreateChipStrip(searchBar, parent)
     sep1:SetPoint("LEFT", chipStrip, "LEFT", xOffset, 0)
     sep1:SetTexture("Interface\\Buttons\\WHITE8x8")
     sep1:SetVertexColor(0.3, 0.3, 0.3, 0.5)
+    searchBar.chipSep1 = sep1
     xOffset = xOffset + 1 + spacing
 
     -- Type chips
@@ -425,6 +697,7 @@ local function CreateChipStrip(searchBar, parent)
     sep2:SetPoint("LEFT", chipStrip, "LEFT", xOffset, 0)
     sep2:SetTexture("Interface\\Buttons\\WHITE8x8")
     sep2:SetVertexColor(0.3, 0.3, 0.3, 0.5)
+    searchBar.chipSep2 = sep2
     xOffset = xOffset + 1 + spacing
 
     -- Special chips
@@ -435,6 +708,40 @@ local function CreateChipStrip(searchBar, parent)
         xOffset = xOffset + chip:GetWidth() + spacing
         searchBar.specialChips[#searchBar.specialChips + 1] = chip
     end
+
+    -- Types dropdown button (hidden by default, shown on overflow)
+    local typesDropdown = CreateFrame("Button", nil, chipStrip)
+    typesDropdown:SetHeight(Constants.FRAME.CHIP_SIZE)
+    local dropLabel = typesDropdown:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    dropLabel:SetPoint("CENTER", 0, 0)
+    dropLabel:SetText((L["CHIP_TYPES_DROPDOWN"] or "Types") .. " \226\150\188")
+    dropLabel:SetTextColor(0.55, 0.55, 0.55)
+    typesDropdown.label = dropLabel
+    local dropBg = typesDropdown:CreateTexture(nil, "BACKGROUND")
+    dropBg:SetAllPoints()
+    dropBg:SetTexture("Interface\\Buttons\\WHITE8x8")
+    dropBg:SetVertexColor(0.15, 0.15, 0.15, 0.8)
+    typesDropdown.bg = dropBg
+    typesDropdown:SetWidth(dropLabel:GetStringWidth() + 14)
+    typesDropdown:Hide()
+    typesDropdown:SetScript("OnEnter", function(self)
+        local state = searchBar.filterState
+        local hasActive = next(state.types) or next(state.specials)
+        if not hasActive then
+            self.bg:SetVertexColor(0.25, 0.25, 0.25, 0.8)
+        end
+    end)
+    typesDropdown:SetScript("OnLeave", function(self)
+        local state = searchBar.filterState
+        local hasActive = next(state.types) or next(state.specials)
+        if not hasActive then
+            self.bg:SetVertexColor(0.15, 0.15, 0.15, 0.8)
+        end
+    end)
+    typesDropdown:SetScript("OnClick", function(self)
+        ShowTypesDropdownMenu(searchBar, self)
+    end)
+    searchBar.typesDropdown = typesDropdown
 
     -- Clear-all button at far right
     local clearAll = CreateFrame("Button", nil, chipStrip)
@@ -464,11 +771,22 @@ local function CreateChipStrip(searchBar, parent)
         state.types = {}
         state.specials = {}
         ResetChipVisuals(searchBar)
+        UpdateDropdownLabel(searchBar)
+        -- Close dropdown menu if open
+        if typesDropdownMenu and typesDropdownMenu:IsShown() then
+            typesDropdownMenu:Hide()
+        end
         NotifyFilterChanged(searchBar)
     end)
 
     searchBar.chipClearButton = clearAll
     searchBar.chipStrip = chipStrip
+
+    -- Detect width changes and update chip layout (collapse/expand)
+    chipStrip:SetScript("OnSizeChanged", function()
+        UpdateChipLayout(searchBar)
+    end)
+
     return chipStrip
 end
 

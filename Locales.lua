@@ -396,6 +396,7 @@ L["CHIP_TYPE_JNK"] = "Jnk"
 L["CHIP_SPECIAL_BOE"] = "BoE"
 L["CHIP_SPECIAL_NEW"] = "New"
 L["CHIP_CLEAR_ALL"] = "Clear all filters"
+L["CHIP_TYPES_DROPDOWN"] = "Types"
 
 -- Transfer
 L["TRANSFER_TO_BANK"] = "Transfer to Bank"

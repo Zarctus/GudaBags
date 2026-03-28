@@ -173,6 +173,8 @@ Constants.FRAME = {
     MAX_WIDTH = 800,
     MIN_HEIGHT = 150,
     MAX_HEIGHT = 600,
+    GUILD_BANK_MIN_WIDTH = 260,
+    GUILD_BANK_MIN_HEIGHT = 340,
 }
 
 -- Frame level hierarchy for z-ordering between bag/bank frames.

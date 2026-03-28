@@ -844,7 +844,49 @@ function BankFooter:Init(parent)
             end
         end)
 
+        flySlot:SetScript("OnClick", function(self)
+            if self.bagID and self.bagID >= 5 and self.bagID <= 11 then
+                if self.needPurchase then
+                    local cost = BankScanner:GetBankSlotCost()
+                    if cost then
+                        StaticPopup_Show("GUDABAGS_PURCHASE_BANK_SLOT", FormatMoney(cost))
+                    end
+                else
+                    local bankBagIndex = self.bagID - 4
+                    local itemID, texture, invSlot = GetBankBagInfo(bankBagIndex)
+                    if CursorHasItem() then
+                        PickupInventoryItem(invSlot)
+                    elseif itemID then
+                        PickupInventoryItem(invSlot)
+                    end
+                end
+            end
+        end)
+
         frame.flyoutSlots[i] = flySlot
+    end
+
+    -- Refresh flyout slot icons and purchase state
+    local function UpdateFlyoutSlots()
+        if not frame.flyoutSlots then return end
+        local purchased = GetNumBankSlots and GetNumBankSlots() or 0
+        for idx, slot in pairs(frame.flyoutSlots) do
+            if idx > 0 then
+                if idx > purchased then
+                    slot.needPurchase = true
+                    slot.icon:SetTexture("Interface\\PaperDoll\\UI-PaperDoll-Slot-Bag")
+                    slot:SetAlpha(0.4)
+                else
+                    slot.needPurchase = false
+                    slot:SetAlpha(1)
+                    local invSlot = BankButtonIDToInvSlotID and BankButtonIDToInvSlotID(idx) or nil
+                    if invSlot then
+                        local textureName = GetInventoryItemTexture("player", invSlot)
+                        slot.icon:SetTexture(textureName or "Interface\\PaperDoll\\UI-PaperDoll-Slot-Bag")
+                    end
+                end
+            end
+        end
     end
 
     -- Toggle flyout on click
@@ -853,16 +895,7 @@ function BankFooter:Init(parent)
         if button == "LeftButton" then
             bankFlyoutExpanded = not bankFlyoutExpanded
             if bankFlyoutExpanded then
-                -- Update flyout icons
-                for idx, slot in pairs(frame.flyoutSlots) do
-                    if idx > 0 then
-                        local invSlot = BankButtonIDToInvSlotID and BankButtonIDToInvSlotID(idx) or nil
-                        if invSlot then
-                            local textureName = GetInventoryItemTexture("player", invSlot)
-                            slot.icon:SetTexture(textureName or "Interface\\PaperDoll\\UI-PaperDoll-Slot-Bag")
-                        end
-                    end
-                end
+                UpdateFlyoutSlots()
                 bankFlyout:Show()
                 self:SetBackdropBorderColor(1, 0.82, 0, 1)
             else
@@ -872,6 +905,11 @@ function BankFooter:Init(parent)
         end
     end)
     frame.bankFlyoutExpanded = false
+
+    -- Expose for external refresh (e.g. after purchasing a bank slot)
+    function BankFooter:RefreshFlyoutSlots()
+        UpdateFlyoutSlots()
+    end
 
     -- Slot counter after bag containers (with tooltip frame for hover)
     local slotInfoFrame = CreateFrame("Frame", nil, frame)

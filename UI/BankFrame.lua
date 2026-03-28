@@ -1399,7 +1399,8 @@ function BankFrame:Refresh()
         local iconSize = Database:GetSetting("iconSize")
         local spacing = Database:GetSetting("iconSpacing")
         local minWidth = (iconSize * columns) + (Constants.FRAME.PADDING * 2)
-        local minHeight = math.max((6 * iconSize) + (5 * spacing) + 80, Constants.FRAME.BANK_MIN_HEIGHT)
+        local minHeight = (6 * iconSize) + (5 * spacing) + 80
+        if ns.IsRetail then minHeight = math.max(minHeight, Constants.FRAME.BANK_MIN_HEIGHT) end
 
         frame:SetSize(math.max(minWidth, 250), minHeight)
         BankFooter:UpdateSlotInfo(0, 0)
@@ -1568,8 +1569,9 @@ function BankFrame:RefreshSingleView(bank, bagsToShow, settings, hasSearch, isRe
     local frameWidth = math.max(contentWidth + (Constants.FRAME.PADDING * 2), Constants.FRAME.MIN_WIDTH)
     local frameHeightNeeded = actualContentHeight + chromeHeight
 
-    -- Apply minimum height (2 rows of icons + spacing + chrome, min 340)
-    local minFrameHeight = math.max((2 * iconSize) + (1 * spacing) + chromeHeight, Constants.FRAME.BANK_MIN_HEIGHT)
+    -- Apply minimum height (2 rows of icons + spacing + chrome)
+    local minFrameHeight = (2 * iconSize) + (1 * spacing) + chromeHeight
+    if ns.IsRetail then minFrameHeight = math.max(minFrameHeight, Constants.FRAME.BANK_MIN_HEIGHT) end
     local adjustedFrameHeight = math.max(frameHeightNeeded, minFrameHeight)
 
     -- Check screen limits
@@ -1882,8 +1884,9 @@ function BankFrame:RefreshSingleViewWithTabs(bank, settings, hasSearch, isReadOn
     local chromeHeight = topOffset + bottomOffset
     local frameHeightNeeded = containerHeight + chromeHeight
 
-    -- Apply minimum height (2 rows of icons + spacing + chrome, min 340)
-    local minFrameHeight = math.max((2 * iconSize) + (1 * spacing) + chromeHeight, Constants.FRAME.BANK_MIN_HEIGHT)
+    -- Apply minimum height (2 rows of icons + spacing + chrome)
+    local minFrameHeight = (2 * iconSize) + (1 * spacing) + chromeHeight
+    if ns.IsRetail then minFrameHeight = math.max(minFrameHeight, Constants.FRAME.BANK_MIN_HEIGHT) end
     local adjustedFrameHeight = math.max(frameHeightNeeded, minFrameHeight)
 
     -- Check screen limits
@@ -2041,8 +2044,9 @@ function BankFrame:RefreshCategoryView(bank, bagsToShow, settings, hasSearch, is
     -- Recalculate frame height using our scroll frame chrome (may differ from LayoutEngine)
     local correctFrameHeight = contentHeight + chromeHeight
 
-    -- Apply minimum frame height (2 rows of icons + chrome, min 340)
-    local minFrameHeight = math.max((2 * iconSize) + chromeHeight, Constants.FRAME.BANK_MIN_HEIGHT)
+    -- Apply minimum frame height (2 rows of icons + chrome)
+    local minFrameHeight = (2 * iconSize) + chromeHeight
+    if ns.IsRetail then minFrameHeight = math.max(minFrameHeight, Constants.FRAME.BANK_MIN_HEIGHT) end
     local adjustedFrameHeight = math.max(correctFrameHeight, minFrameHeight)
 
     -- Check screen limits
@@ -3091,6 +3095,7 @@ if not ns.IsRetail then
             BankScanner:ScanAllBank()
             layoutCached = false
             BankFrame:Refresh()
+            BankFooter:RefreshFlyoutSlots()
         end
     end, BankFrame)
 end

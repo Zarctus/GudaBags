@@ -622,6 +622,8 @@ local CHIP_COLLAPSE_WIDTH = 420
 local function UpdateChipLayout(searchBar)
     local chipStrip = searchBar.chipStrip
     if not chipStrip or not chipStrip:IsShown() then return end
+    -- Skip when narrow mode is active — SetNarrowMode handles layout
+    if searchBar.isNarrowMode then return end
 
     local availableWidth = chipStrip:GetWidth()
     if availableWidth <= 0 then return end
@@ -1348,9 +1350,171 @@ function SearchBar:GetTotalHeight(parent)
     local instance = instances[parent]
     if not instance then return Constants.FRAME.SEARCH_BAR_HEIGHT end
     if AreFilterChipsEnabled() then
-        return Constants.FRAME.SEARCH_BAR_HEIGHT + Constants.FRAME.CHIP_STRIP_HEIGHT + 1
+        local chipHeight = instance.isNarrowMode and 28 or Constants.FRAME.CHIP_STRIP_HEIGHT  -- isNarrowMode = < 220
+        return Constants.FRAME.SEARCH_BAR_HEIGHT + chipHeight + 1
     end
     return Constants.FRAME.SEARCH_BAR_HEIGHT
+end
+
+function SearchBar:SetNarrowMode(parent, isCompact, isNarrow)
+    local instance = instances[parent]
+    if not instance then return end
+    -- Default isNarrow to isCompact if not provided (backward compat)
+    if isNarrow == nil then isNarrow = isCompact end
+    if instance.isCompactMode == isCompact and instance.isNarrowMode == isNarrow then return end
+    instance.isCompactMode = isCompact
+    instance.isNarrowMode = isNarrow
+
+    -- Update placeholder text (compact: < 260)
+    if instance.searchBox and instance.searchBox.placeholder then
+        if isCompact then
+            instance.searchBox.placeholder:SetText("Search...")
+        else
+            instance.searchBox.placeholder:SetText(L["SEARCH_PLACEHOLDER"])
+        end
+    end
+
+    -- Update chip strip layout
+    if instance.chipStrip and AreFilterChipsEnabled() then
+        local spacing = Constants.FRAME.CHIP_SPACING
+        local chipSize = Constants.FRAME.CHIP_SIZE
+        local smallChipSize = 10
+
+        if isNarrow then
+            -- < 220: 2-row chip strip with Types dropdown, smaller dots
+            instance.chipStrip:SetHeight(28)
+
+            local xOffset = 4
+            for _, dot in ipairs(instance.qualityDots) do
+                dot:SetSize(smallChipSize, smallChipSize)
+                if dot.dot then dot.dot:SetSize(smallChipSize - 4, smallChipSize - 4) end
+                dot:ClearAllPoints()
+                dot:SetPoint("TOPLEFT", instance.chipStrip, "TOPLEFT", xOffset, -1)
+                xOffset = xOffset + smallChipSize + spacing
+            end
+
+            if instance.chipClearButton then
+                instance.chipClearButton:ClearAllPoints()
+                instance.chipClearButton:SetPoint("TOPRIGHT", instance.chipStrip, "TOPRIGHT", -4, -1)
+            end
+
+            -- Hide inline chips, show Types dropdown on row 2
+            if instance.chipSep1 then instance.chipSep1:Hide() end
+            if instance.chipSep2 then instance.chipSep2:Hide() end
+            for _, chip in ipairs(instance.typeChips) do chip:Hide() end
+            for _, chip in ipairs(instance.specialChips) do chip:Hide() end
+
+            if instance.typesDropdown then
+                instance.typesDropdown:ClearAllPoints()
+                instance.typesDropdown:SetPoint("BOTTOMLEFT", instance.chipStrip, "BOTTOMLEFT", 0, 2)
+                instance.typesDropdown:Show()
+                UpdateDropdownLabel(instance)
+            end
+        elseif isCompact then
+            -- < 260 but >= 220: normal dots on single row, normal type chips
+            instance.chipStrip:SetHeight(Constants.FRAME.CHIP_STRIP_HEIGHT)
+
+            local xOffset = 4
+            for _, dot in ipairs(instance.qualityDots) do
+                dot:SetSize(chipSize, chipSize)
+                if dot.dot then dot.dot:SetSize(chipSize - 4, chipSize - 4) end
+                dot:ClearAllPoints()
+                dot:SetPoint("LEFT", instance.chipStrip, "LEFT", xOffset, 0)
+                xOffset = xOffset + chipSize + spacing
+            end
+
+            -- Separator 1
+            if instance.chipSep1 then
+                instance.chipSep1:ClearAllPoints()
+                xOffset = xOffset + 2
+                instance.chipSep1:SetPoint("LEFT", instance.chipStrip, "LEFT", xOffset, 0)
+                instance.chipSep1:Show()
+                xOffset = xOffset + 1 + spacing
+            end
+
+            -- Type chips
+            for _, chip in ipairs(instance.typeChips) do
+                chip:ClearAllPoints()
+                chip:SetPoint("LEFT", instance.chipStrip, "LEFT", xOffset, 0)
+                chip:Show()
+                xOffset = xOffset + chip:GetWidth() + spacing
+            end
+
+            -- Separator 2
+            if instance.chipSep2 then
+                instance.chipSep2:ClearAllPoints()
+                xOffset = xOffset + 2
+                instance.chipSep2:SetPoint("LEFT", instance.chipStrip, "LEFT", xOffset, 0)
+                instance.chipSep2:Show()
+                xOffset = xOffset + 1 + spacing
+            end
+
+            -- Special chips
+            for _, chip in ipairs(instance.specialChips) do
+                chip:ClearAllPoints()
+                chip:SetPoint("LEFT", instance.chipStrip, "LEFT", xOffset, 0)
+                chip:Show()
+                xOffset = xOffset + chip:GetWidth() + spacing
+            end
+
+            if instance.chipClearButton then
+                instance.chipClearButton:ClearAllPoints()
+                instance.chipClearButton:SetPoint("RIGHT", instance.chipStrip, "RIGHT", -4, 0)
+            end
+
+            -- Let UpdateChipLayout handle dropdown collapse if still too wide
+            UpdateChipLayout(instance)
+        else
+            -- >= 260: full size dots, normal layout
+            instance.chipStrip:SetHeight(Constants.FRAME.CHIP_STRIP_HEIGHT)
+
+            local xOffset = 4
+            for _, dot in ipairs(instance.qualityDots) do
+                dot:SetSize(chipSize, chipSize)
+                if dot.dot then dot.dot:SetSize(chipSize - 4, chipSize - 4) end
+                dot:ClearAllPoints()
+                dot:SetPoint("LEFT", instance.chipStrip, "LEFT", xOffset, 0)
+                xOffset = xOffset + chipSize + spacing
+            end
+
+            if instance.chipSep1 then
+                instance.chipSep1:ClearAllPoints()
+                xOffset = xOffset + 2
+                instance.chipSep1:SetPoint("LEFT", instance.chipStrip, "LEFT", xOffset, 0)
+                instance.chipSep1:Show()
+                xOffset = xOffset + 1 + spacing
+            end
+
+            for _, chip in ipairs(instance.typeChips) do
+                chip:ClearAllPoints()
+                chip:SetPoint("LEFT", instance.chipStrip, "LEFT", xOffset, 0)
+                chip:Show()
+                xOffset = xOffset + chip:GetWidth() + spacing
+            end
+
+            if instance.chipSep2 then
+                instance.chipSep2:ClearAllPoints()
+                xOffset = xOffset + 2
+                instance.chipSep2:SetPoint("LEFT", instance.chipStrip, "LEFT", xOffset, 0)
+                instance.chipSep2:Show()
+                xOffset = xOffset + 1 + spacing
+            end
+
+            for _, chip in ipairs(instance.specialChips) do
+                chip:ClearAllPoints()
+                chip:SetPoint("LEFT", instance.chipStrip, "LEFT", xOffset, 0)
+                chip:Show()
+                xOffset = xOffset + chip:GetWidth() + spacing
+            end
+
+            if instance.chipClearButton then
+                instance.chipClearButton:ClearAllPoints()
+                instance.chipClearButton:SetPoint("RIGHT", instance.chipStrip, "RIGHT", -4, 0)
+            end
+
+            UpdateChipLayout(instance)
+        end
+    end
 end
 
 -- Check if an item matches all active filters (chips + text operators)

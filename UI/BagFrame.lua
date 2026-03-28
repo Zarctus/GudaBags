@@ -238,7 +238,7 @@ local function CreateBagFrame()
 
     -- Use the separate secure button container instead of creating one as child of f
     -- This keeps f unprotected so it can be shown during combat
-    secureButtonContainer:SetPoint("TOPLEFT", f, "TOPLEFT", Constants.FRAME.PADDING, -(Constants.FRAME.TITLE_HEIGHT + SearchBar:GetTotalHeight(f) + Constants.FRAME.PADDING + 6))
+    secureButtonContainer:SetPoint("TOPLEFT", f, "TOPLEFT", Constants.FRAME.PADDING, -(Header:GetHeight() + SearchBar:GetTotalHeight(f) + Constants.FRAME.PADDING + 6))
     secureButtonContainer:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -Constants.FRAME.PADDING, Constants.FRAME.FOOTER_HEIGHT + Constants.FRAME.PADDING + 6)
     f.container = secureButtonContainer
     f.container.masqueGroup = "Bags"
@@ -303,6 +303,9 @@ local function CreateBagFrame()
             BankFrameModule:ViewCharacter(fullName, charData)
         end
     end)
+
+    -- Note: Responsive narrow mode is handled in Refresh() which pre-calculates
+    -- expected frame width and applies narrow mode before sizing
 
     return f
 end
@@ -376,6 +379,19 @@ function BagFrame:Refresh()
     local hasSearch = SearchBar:HasActiveFilters(frame)
     -- viewType already declared at top of function
 
+    -- Pre-calculate expected frame width to determine responsive modes BEFORE sizing
+    local expectedWidth = (iconSize * columns) + (spacing * (columns - 1)) + (Constants.FRAME.PADDING * 2)
+    expectedWidth = math.max(expectedWidth, Constants.FRAME.MIN_WIDTH)
+    -- < 260: visual compact (smaller chips, smaller font, shorter placeholder)
+    -- < 220: layout reflow (footer 2-row, Types dropdown instead of chips)
+    local isCompact = expectedWidth < 260
+    local isNarrow = expectedWidth < 220
+
+    -- Apply modes to all components before calculating heights
+    Header:SetNarrowMode(isCompact)
+    SearchBar:SetNarrowMode(frame, isCompact, isNarrow)
+    Footer:SetNarrowMode(isNarrow)
+
     -- Calculate common settings
     local showSearchBar = Database:GetSetting("showSearchBar")
     local showFooterSetting = Database:GetSetting("showFooter")
@@ -395,6 +411,9 @@ function BagFrame:Refresh()
         showFooter = showFooter,
         showCategoryCount = showCategoryCount,
         splitColumns = splitColumns,
+        footerHeight = Footer:GetHeight(),
+        searchBarHeight = SearchBar:GetTotalHeight(frame),
+        headerHeight = Header:GetHeight(),
     }
 
     -- Classify bags by type
@@ -1571,15 +1590,16 @@ UpdateFrameAppearance = function()
     local showSearchBar = Database:GetSetting("showSearchBar")
     local showFooter = Database:GetSetting("showFooter")
     -- Always show footer space for cached views (money display)
-    local footerHeight = (not showFooter and not isViewingCached) and Constants.FRAME.PADDING or (Constants.FRAME.FOOTER_HEIGHT + Constants.FRAME.PADDING + 6)
+    local dynamicFooterHeight = Footer:GetHeight()
+    local footerHeight = (not showFooter and not isViewingCached) and Constants.FRAME.PADDING or (dynamicFooterHeight + Constants.FRAME.PADDING + 6)
 
     frame.container:ClearAllPoints()
     if showSearchBar then
         SearchBar:Show(frame)
-        frame.container:SetPoint("TOPLEFT", frame, "TOPLEFT", Constants.FRAME.PADDING, -(Constants.FRAME.TITLE_HEIGHT + SearchBar:GetTotalHeight(frame) + Constants.FRAME.PADDING + 6))
+        frame.container:SetPoint("TOPLEFT", frame, "TOPLEFT", Constants.FRAME.PADDING, -(Header:GetHeight() + SearchBar:GetTotalHeight(frame) + Constants.FRAME.PADDING + 6))
     else
         SearchBar:Hide(frame)
-        frame.container:SetPoint("TOPLEFT", frame, "TOPLEFT", Constants.FRAME.PADDING, -(Constants.FRAME.TITLE_HEIGHT + Constants.FRAME.PADDING + 2))
+        frame.container:SetPoint("TOPLEFT", frame, "TOPLEFT", Constants.FRAME.PADDING, -(Header:GetHeight() + Constants.FRAME.PADDING + 2))
     end
     frame.container:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -Constants.FRAME.PADDING, footerHeight)
 

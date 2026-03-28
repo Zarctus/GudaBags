@@ -306,6 +306,21 @@ function Money:Update()
     MoneyFrame_Update(moneyFrame.frameName, money)
 end
 
+function Money:SetFontSize(size)
+    if not moneyFrame then return end
+    local coinButtons = {"GoldButton", "SilverButton", "CopperButton"}
+    for _, buttonName in ipairs(coinButtons) do
+        local coinButton = _G[moneyFrame.frameName .. buttonName]
+        if coinButton then
+            local text = coinButton:GetFontString()
+            if text then
+                local fontName, _, fontFlags = text:GetFont()
+                text:SetFont(fontName, size, fontFlags)
+            end
+        end
+    end
+end
+
 function Money:GetFrame()
     return moneyFrame
 end

@@ -211,16 +211,8 @@ end
 
 -- Apply retail/default slot textures to a single button
 local function ApplyThemeToButton(button, slotTex)
-    -- When Masque is active, it owns Normal/Highlight textures — skip slot bg/highlight
-    local MasqueModule = ns:GetModule("Masque")
-    if MasqueModule and MasqueModule:IsActive() then
-        button.slotBackground:Hide()
-        if button.retailSlotBg then button.retailSlotBg:Hide() end
-        button.highlight:Hide()
-        if button.retailHighlight then button.retailHighlight:Hide() end
-        return
-    end
-
+    -- Always apply slot backgrounds — Masque's Normal texture layers on top when active,
+    -- and our backgrounds show through when Masque group is disabled
     if slotTex then
         button.slotBackground:Hide()
         button.retailSlotBg:SetTexture(slotTex.background)
@@ -1554,8 +1546,14 @@ function ItemButton:SetItem(button, itemData, size, isReadOnly)
 
         -- Quality border (quest items override with golden border)
         -- These are quality indicators that coexist with Masque's button chrome
-        local isEquipment = itemData.itemType == "Armor" or itemData.itemType == "Weapon"
-        local showBorder = isEquipment and settings.equipmentBorders or (not isEquipment and settings.otherBorders)
+        -- equipmentBorders = uncommon (green) and above for all item types
+        -- otherBorders = white/common items only
+        local showBorder = false
+        if itemData.quality and itemData.quality >= 2 then
+            showBorder = settings.equipmentBorders
+        elseif itemData.quality and itemData.quality == 1 then
+            showBorder = settings.otherBorders
+        end
 
         -- Helper to show inner shadow with color
         local function ShowInnerShadow(color)

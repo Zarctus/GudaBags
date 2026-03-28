@@ -239,6 +239,14 @@ local function ApplyThemeToButton(button, slotTex)
     end
 end
 
+-- Scale slot background extension based on icon size (default 37px → 9px extension)
+local function UpdateSlotBackgroundSize(button, size)
+    local slotExtend = math.max(1, math.floor(size * 9 / 37))
+    button.slotBackground:ClearAllPoints()
+    button.slotBackground:SetPoint("TOPLEFT", button, "TOPLEFT", -slotExtend, slotExtend)
+    button.slotBackground:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", slotExtend, -slotExtend)
+end
+
 -- Phase 1: Use Blizzard's optimized CreateObjectPool API
 local buttonPool = nil  -- Lazy initialized
 local buttonIndex = 0
@@ -588,40 +596,7 @@ local function CreateButton(parent)
     button.border = border
 
     -- Inner shadow/glow for quality colors (inset effect)
-    local shadowSize = 4
-    local innerShadow = {
-        top = button:CreateTexture(nil, "ARTWORK", nil, 1),
-        bottom = button:CreateTexture(nil, "ARTWORK", nil, 1),
-        left = button:CreateTexture(nil, "ARTWORK", nil, 1),
-        right = button:CreateTexture(nil, "ARTWORK", nil, 1),
-    }
-    -- Top edge
-    innerShadow.top:SetPoint("TOPLEFT", button, "TOPLEFT", 0, 0)
-    innerShadow.top:SetPoint("TOPRIGHT", button, "TOPRIGHT", 0, 0)
-    innerShadow.top:SetHeight(shadowSize)
-    innerShadow.top:SetTexture("Interface\\Buttons\\WHITE8x8")
-    innerShadow.top:SetGradient("VERTICAL", CreateColor(0, 0, 0, 0), CreateColor(0, 0, 0, 0.6))
-    -- Bottom edge
-    innerShadow.bottom:SetPoint("BOTTOMLEFT", button, "BOTTOMLEFT", 0, 0)
-    innerShadow.bottom:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", 0, 0)
-    innerShadow.bottom:SetHeight(shadowSize)
-    innerShadow.bottom:SetTexture("Interface\\Buttons\\WHITE8x8")
-    innerShadow.bottom:SetGradient("VERTICAL", CreateColor(0, 0, 0, 0.6), CreateColor(0, 0, 0, 0))
-    -- Left edge
-    innerShadow.left:SetPoint("TOPLEFT", button, "TOPLEFT", 0, 0)
-    innerShadow.left:SetPoint("BOTTOMLEFT", button, "BOTTOMLEFT", 0, 0)
-    innerShadow.left:SetWidth(shadowSize)
-    innerShadow.left:SetTexture("Interface\\Buttons\\WHITE8x8")
-    innerShadow.left:SetGradient("HORIZONTAL", CreateColor(0, 0, 0, 0.6), CreateColor(0, 0, 0, 0))
-    -- Right edge
-    innerShadow.right:SetPoint("TOPRIGHT", button, "TOPRIGHT", 0, 0)
-    innerShadow.right:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", 0, 0)
-    innerShadow.right:SetWidth(shadowSize)
-    innerShadow.right:SetTexture("Interface\\Buttons\\WHITE8x8")
-    innerShadow.right:SetGradient("HORIZONTAL", CreateColor(0, 0, 0, 0), CreateColor(0, 0, 0, 0.6))
-    -- Hide by default
-    for _, tex in pairs(innerShadow) do tex:Hide() end
-    button.innerShadow = innerShadow
+    button.innerShadow = Utils:CreateInnerShadow(button, 4)
 
     -- Custom highlight
     local highlight = button:CreateTexture(nil, "HIGHLIGHT")
@@ -1495,11 +1470,7 @@ function ItemButton:SetItem(button, itemData, size, isReadOnly)
         button.wrapper:SetSize(size, size)
         button.currentSize = size
 
-        -- Scale slot background extension proportionally (default 37px → 9px extension)
-        local slotExtend = math.max(1, math.floor(size * 9 / 37))
-        button.slotBackground:ClearAllPoints()
-        button.slotBackground:SetPoint("TOPLEFT", button, "TOPLEFT", -slotExtend, slotExtend)
-        button.slotBackground:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", slotExtend, -slotExtend)
+        UpdateSlotBackgroundSize(button, size)
     end
 
     button.slotBackground:SetVertexColor(0.5, 0.5, 0.5, settings.bgAlpha)
@@ -1911,11 +1882,7 @@ function ItemButton:SetEmpty(button, bagID, slot, size, isReadOnly, isGuildBank)
         button.wrapper:SetSize(size, size)
         button.currentSize = size
 
-        -- Scale slot background extension proportionally (default 37px → 9px extension)
-        local slotExtend = math.max(1, math.floor(size * 9 / 37))
-        button.slotBackground:ClearAllPoints()
-        button.slotBackground:SetPoint("TOPLEFT", button, "TOPLEFT", -slotExtend, slotExtend)
-        button.slotBackground:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", slotExtend, -slotExtend)
+        UpdateSlotBackgroundSize(button, size)
     end
 
     button.slotBackground:SetVertexColor(0.5, 0.5, 0.5, settings.bgAlpha)

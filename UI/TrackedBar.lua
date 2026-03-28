@@ -84,22 +84,8 @@ local function CreateItemButton(parent, index)
     button:SetScript("OnDragStart", function() end)
     button:SetScript("OnReceiveDrag", function() end)
 
-    -- Hide template's NormalTexture (UI-Quickslot2) — we use our own visuals
-    local MasqueModule = ns:GetModule("Masque")
-    local masqueActive = MasqueModule and MasqueModule:IsActive()
-    local normalTex = button:GetNormalTexture()
-    if normalTex then
-        if masqueActive then
-            normalTex:Hide()
-        else
-            normalTex:SetTexture(nil)
-            normalTex:Hide()
-        end
-    end
-    -- Prevent template from re-setting NormalTexture
-    if masqueActive then
-        button.SetNormalTexture = function() end
-    end
+    -- Hide template's NormalTexture (Masque-aware)
+    Utils:HideNormalTexture(button)
 
     -- Background (slot style)
     local bg = button:CreateTexture(nil, "BACKGROUND")

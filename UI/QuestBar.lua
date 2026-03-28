@@ -166,21 +166,10 @@ local function CreateItemButton(parent, name, isMain)
     button:SetScript("OnDragStart", function() end)
     button:SetScript("OnReceiveDrag", function() end)
 
-    -- Hide template's NormalTexture (UI-Quickslot2) — we use our own visuals
+    -- Hide template's NormalTexture (Masque-aware)
+    Utils:HideNormalTexture(button)
     local MasqueModule = ns:GetModule("Masque")
     local masqueActive = MasqueModule and MasqueModule:IsActive()
-    local normalTex = button:GetNormalTexture()
-    if normalTex then
-        if masqueActive then
-            normalTex:Hide()
-        else
-            normalTex:SetTexture(nil)
-            normalTex:Hide()
-        end
-    end
-    if masqueActive then
-        button.SetNormalTexture = function() end
-    end
 
     -- Background
     local bg = button:CreateTexture(nil, "BACKGROUND")
@@ -221,40 +210,7 @@ local function CreateItemButton(parent, name, isMain)
     button.border = border
 
     -- Inner shadow/glow for quest colors (inset effect with more spread)
-    local shadowSize = 8
-    local innerShadow = {
-        top = button:CreateTexture(nil, "ARTWORK", nil, 1),
-        bottom = button:CreateTexture(nil, "ARTWORK", nil, 1),
-        left = button:CreateTexture(nil, "ARTWORK", nil, 1),
-        right = button:CreateTexture(nil, "ARTWORK", nil, 1),
-    }
-    -- Top edge
-    innerShadow.top:SetPoint("TOPLEFT", button, "TOPLEFT", 0, 0)
-    innerShadow.top:SetPoint("TOPRIGHT", button, "TOPRIGHT", 0, 0)
-    innerShadow.top:SetHeight(shadowSize)
-    innerShadow.top:SetTexture("Interface\\Buttons\\WHITE8x8")
-    innerShadow.top:SetGradient("VERTICAL", CreateColor(0, 0, 0, 0), CreateColor(0, 0, 0, 0.6))
-    -- Bottom edge
-    innerShadow.bottom:SetPoint("BOTTOMLEFT", button, "BOTTOMLEFT", 0, 0)
-    innerShadow.bottom:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", 0, 0)
-    innerShadow.bottom:SetHeight(shadowSize)
-    innerShadow.bottom:SetTexture("Interface\\Buttons\\WHITE8x8")
-    innerShadow.bottom:SetGradient("VERTICAL", CreateColor(0, 0, 0, 0.6), CreateColor(0, 0, 0, 0))
-    -- Left edge
-    innerShadow.left:SetPoint("TOPLEFT", button, "TOPLEFT", 0, 0)
-    innerShadow.left:SetPoint("BOTTOMLEFT", button, "BOTTOMLEFT", 0, 0)
-    innerShadow.left:SetWidth(shadowSize)
-    innerShadow.left:SetTexture("Interface\\Buttons\\WHITE8x8")
-    innerShadow.left:SetGradient("HORIZONTAL", CreateColor(0, 0, 0, 0.6), CreateColor(0, 0, 0, 0))
-    -- Right edge
-    innerShadow.right:SetPoint("TOPRIGHT", button, "TOPRIGHT", 0, 0)
-    innerShadow.right:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", 0, 0)
-    innerShadow.right:SetWidth(shadowSize)
-    innerShadow.right:SetTexture("Interface\\Buttons\\WHITE8x8")
-    innerShadow.right:SetGradient("HORIZONTAL", CreateColor(0, 0, 0, 0), CreateColor(0, 0, 0, 0.6))
-    -- Hide by default
-    for _, tex in pairs(innerShadow) do tex:Hide() end
-    button.innerShadow = innerShadow
+    button.innerShadow = Utils:CreateInnerShadow(button, 8)
 
     -- Tooltip
     button:SetScript("OnEnter", function(self)

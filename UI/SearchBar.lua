@@ -239,49 +239,46 @@ local function CreateQualityDot(chipStrip, qualityIndex, searchBar)
     return btn
 end
 
-local function CreateTypeChip(chipStrip, chipDef, searchBar)
+local function CreateFilterChip(chipStrip, chipDef, searchBar, filterCategory, activeColor)
     local btn = CreateFrame("Button", nil, chipStrip)
     local label = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     label:SetPoint("CENTER", 0, 0)
     label:SetText(L[chipDef.localeKey] or chipDef.key)
     btn.label = label
 
-    -- Size to fit text + padding
     local textWidth = label:GetStringWidth() or 20
     btn:SetSize(textWidth + 10, Constants.FRAME.CHIP_SIZE)
 
-    -- Background
     local bg = btn:CreateTexture(nil, "BACKGROUND")
     bg:SetAllPoints()
     bg:SetTexture("Interface\\Buttons\\WHITE8x8")
     bg:SetVertexColor(0.15, 0.15, 0.15, 0.8)
     btn.bg = bg
 
-    -- Start inactive
     label:SetTextColor(0.55, 0.55, 0.55)
 
     btn:SetScript("OnEnter", function(self)
-        if not searchBar.filterState.types[chipDef.key] then
+        if not searchBar.filterState[filterCategory][chipDef.key] then
             self.bg:SetVertexColor(0.25, 0.25, 0.25, 0.8)
         end
     end)
 
     btn:SetScript("OnLeave", function(self)
-        if not searchBar.filterState.types[chipDef.key] then
+        if not searchBar.filterState[filterCategory][chipDef.key] then
             self.bg:SetVertexColor(0.15, 0.15, 0.15, 0.8)
         end
     end)
 
     btn:SetScript("OnClick", function(self)
         local state = searchBar.filterState
-        if state.types[chipDef.key] then
-            state.types[chipDef.key] = nil
+        if state[filterCategory][chipDef.key] then
+            state[filterCategory][chipDef.key] = nil
             self.label:SetTextColor(0.55, 0.55, 0.55)
             self.bg:SetVertexColor(0.15, 0.15, 0.15, 0.8)
         else
-            state.types[chipDef.key] = true
+            state[filterCategory][chipDef.key] = true
             self.label:SetTextColor(1, 1, 1)
-            self.bg:SetVertexColor(0.7, 0.55, 0.0, 0.9)
+            self.bg:SetVertexColor(activeColor[1], activeColor[2], activeColor[3], activeColor[4])
         end
         NotifyFilterChanged(searchBar)
     end)
@@ -290,52 +287,15 @@ local function CreateTypeChip(chipStrip, chipDef, searchBar)
     return btn
 end
 
+local TYPE_CHIP_COLOR = {0.7, 0.55, 0.0, 0.9}
+local SPECIAL_CHIP_COLOR = {0.2, 0.6, 0.8, 0.9}
+
+local function CreateTypeChip(chipStrip, chipDef, searchBar)
+    return CreateFilterChip(chipStrip, chipDef, searchBar, "types", TYPE_CHIP_COLOR)
+end
+
 local function CreateSpecialChip(chipStrip, chipDef, searchBar)
-    local btn = CreateFrame("Button", nil, chipStrip)
-    local label = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    label:SetPoint("CENTER", 0, 0)
-    label:SetText(L[chipDef.localeKey] or chipDef.key)
-    btn.label = label
-
-    local textWidth = label:GetStringWidth() or 20
-    btn:SetSize(textWidth + 10, Constants.FRAME.CHIP_SIZE)
-
-    local bg = btn:CreateTexture(nil, "BACKGROUND")
-    bg:SetAllPoints()
-    bg:SetTexture("Interface\\Buttons\\WHITE8x8")
-    bg:SetVertexColor(0.15, 0.15, 0.15, 0.8)
-    btn.bg = bg
-
-    label:SetTextColor(0.55, 0.55, 0.55)
-
-    btn:SetScript("OnEnter", function(self)
-        if not searchBar.filterState.specials[chipDef.key] then
-            self.bg:SetVertexColor(0.25, 0.25, 0.25, 0.8)
-        end
-    end)
-
-    btn:SetScript("OnLeave", function(self)
-        if not searchBar.filterState.specials[chipDef.key] then
-            self.bg:SetVertexColor(0.15, 0.15, 0.15, 0.8)
-        end
-    end)
-
-    btn:SetScript("OnClick", function(self)
-        local state = searchBar.filterState
-        if state.specials[chipDef.key] then
-            state.specials[chipDef.key] = nil
-            self.label:SetTextColor(0.55, 0.55, 0.55)
-            self.bg:SetVertexColor(0.15, 0.15, 0.15, 0.8)
-        else
-            state.specials[chipDef.key] = true
-            self.label:SetTextColor(1, 1, 1)
-            self.bg:SetVertexColor(0.2, 0.6, 0.8, 0.9)
-        end
-        NotifyFilterChanged(searchBar)
-    end)
-
-    btn.chipKey = chipDef.key
-    return btn
+    return CreateFilterChip(chipStrip, chipDef, searchBar, "specials", SPECIAL_CHIP_COLOR)
 end
 
 -- Forward declaration (defined later with dropdown logic)

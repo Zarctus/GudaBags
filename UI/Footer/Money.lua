@@ -13,6 +13,16 @@ local GOLD_ICON = "|TInterface\\MoneyFrame\\UI-GoldIcon:10|t"
 local SILVER_ICON = "|TInterface\\MoneyFrame\\UI-SilverIcon:10|t"
 local COPPER_ICON = "|TInterface\\MoneyFrame\\UI-CopperIcon:10|t"
 
+local function FormatGoldWithCommas(n)
+    local formatted = tostring(n)
+    while true do
+        local k
+        formatted, k = string.gsub(formatted, "^(-?%d+)(%d%d%d)", "%1,%2")
+        if k == 0 then break end
+    end
+    return formatted
+end
+
 local function FormatMoney(amount)
     local gold = math.floor(amount / 10000)
     local silver = math.floor((amount % 10000) / 100)
@@ -20,7 +30,7 @@ local function FormatMoney(amount)
 
     local result = ""
     if gold > 0 then
-        result = string.format("%d %s ", gold, GOLD_ICON)
+        result = string.format("%s %s ", FormatGoldWithCommas(gold), GOLD_ICON)
     end
     if silver > 0 or gold > 0 then
         result = result .. string.format("%d %s ", silver, SILVER_ICON)

@@ -330,7 +330,7 @@ local function CreateBankFrame()
         local promptQuestion = purchasePrompt:CreateFontString(nil, "OVERLAY", "GameFontNormal")
         promptQuestion:SetPoint("TOP", promptDesc, "BOTTOM", 0, -16)
         promptQuestion:SetTextColor(0.9, 0.9, 0.9)
-        promptQuestion:SetText("Do you wish to purchase this tab?")
+        promptQuestion:SetText(ns.L["BANK_PURCHASE_PROMPT"])
         purchasePrompt.promptQuestion = promptQuestion
 
         -- Tabs purchased counter
@@ -348,7 +348,7 @@ local function CreateBankFrame()
         local costLabel = costFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
         costLabel:SetPoint("LEFT", costFrame, "LEFT", 0, 0)
         costLabel:SetTextColor(0.8, 0.8, 0.8)
-        costLabel:SetText("Cost:")
+        costLabel:SetText(ns.L["BANK_PURCHASE_COST"])
         purchasePrompt.costLabel = costLabel
 
         local costValue = costFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
@@ -360,14 +360,14 @@ local function CreateBankFrame()
         local purchaseBtn = CreateFrame("Button", "GudaBankPurchaseBtn", purchasePrompt, "UIPanelButtonTemplate,BankPanelPurchaseButtonScriptTemplate")
         purchaseBtn:SetSize(120, 28)
         purchaseBtn:SetPoint("LEFT", costFrame, "RIGHT", 15, 0)
-        purchaseBtn:SetText("Purchase")
+        purchaseBtn:SetText(ns.L["BANK_PURCHASE_TAB"])
         purchaseBtn:RegisterForClicks("AnyUp")
         purchasePrompt.purchaseBtn = purchaseBtn
 
         purchaseBtn:SetScript("OnEnter", function(self)
             if self.insufficientFunds then
                 GameTooltip:SetOwner(self, "ANCHOR_TOP")
-                GameTooltip:SetText("Not enough gold", 1, 0.3, 0.3)
+                GameTooltip:SetText(ns.L["BANK_PURCHASE_NOT_ENOUGH_GOLD"], 1, 0.3, 0.3)
                 GameTooltip:Show()
             end
         end)
@@ -645,11 +645,11 @@ function BankFrame:ShowPurchasePrompt(bankTypeEnum)
 
     -- Set title and description based on bank type
     if isWarband then
-        prompt.promptTitle:SetText("Warband Bank")
-        prompt.promptDesc:SetText("The Warband Bank offers storage that is shared with all members of your Warband.")
+        prompt.promptTitle:SetText(ns.L["BANK_TITLE_WARBAND"])
+        prompt.promptDesc:SetText(ns.L["BANK_DESC_WARBAND"])
     else
-        prompt.promptTitle:SetText("Bank")
-        prompt.promptDesc:SetText("The Bank offers additional storage for your items.")
+        prompt.promptTitle:SetText(ns.L["BANK_TITLE_CHARACTER"])
+        prompt.promptDesc:SetText(ns.L["BANK_DESC_CHARACTER"])
     end
 
     -- Update tabs purchased counter
@@ -660,7 +660,7 @@ function BankFrame:ShowPurchasePrompt(bankTypeEnum)
             and #(Constants.WARBAND_BANK_TAB_IDS or {})
             or #(Constants.CHARACTER_BANK_TAB_IDS or {})
         if maxTabs == 0 then maxTabs = isWarband and 5 or 6 end
-        prompt.tabsText:SetText(string.format("(%d/%d tabs purchased)", numPurchased, maxTabs))
+        prompt.tabsText:SetText(string.format(ns.L["BANK_TABS_PURCHASED"], numPurchased, maxTabs))
     end
 
     -- Get cost (use newer FetchNextPurchasableBankTabData API with fallback)
@@ -713,7 +713,7 @@ function BankFrame:ShowPurchasePrompt(bankTypeEnum)
     prompt:Show()
 
     -- Set frame to minimum size for purchase prompt
-    frame:SetSize(math.max(frame:GetWidth(), 380), math.max(frame:GetHeight(), 340))
+    frame:SetSize(math.max(frame:GetWidth(), 380), math.max(frame:GetHeight(), Constants.FRAME.BANK_MIN_HEIGHT))
 end
 
 -- Hide purchase prompt and restore normal content
@@ -1367,7 +1367,7 @@ function BankFrame:Refresh()
         local iconSize = Database:GetSetting("iconSize")
         local spacing = Database:GetSetting("iconSpacing")
         local minWidth = (iconSize * columns) + (Constants.FRAME.PADDING * 2)
-        local minHeight = (6 * iconSize) + (5 * spacing) + 80
+        local minHeight = math.max((6 * iconSize) + (5 * spacing) + 80, Constants.FRAME.BANK_MIN_HEIGHT)
 
         frame:SetSize(math.max(minWidth, 250), minHeight)
         BankFooter:UpdateSlotInfo(0, 0)
@@ -1536,8 +1536,8 @@ function BankFrame:RefreshSingleView(bank, bagsToShow, settings, hasSearch, isRe
     local frameWidth = math.max(contentWidth + (Constants.FRAME.PADDING * 2), Constants.FRAME.MIN_WIDTH)
     local frameHeightNeeded = actualContentHeight + chromeHeight
 
-    -- Apply minimum height (2 rows of icons + spacing + chrome)
-    local minFrameHeight = (2 * iconSize) + (1 * spacing) + chromeHeight
+    -- Apply minimum height (2 rows of icons + spacing + chrome, min 340)
+    local minFrameHeight = math.max((2 * iconSize) + (1 * spacing) + chromeHeight, Constants.FRAME.BANK_MIN_HEIGHT)
     local adjustedFrameHeight = math.max(frameHeightNeeded, minFrameHeight)
 
     -- Check screen limits
@@ -1850,8 +1850,8 @@ function BankFrame:RefreshSingleViewWithTabs(bank, settings, hasSearch, isReadOn
     local chromeHeight = topOffset + bottomOffset
     local frameHeightNeeded = containerHeight + chromeHeight
 
-    -- Apply minimum height (2 rows of icons + spacing + chrome)
-    local minFrameHeight = (2 * iconSize) + (1 * spacing) + chromeHeight
+    -- Apply minimum height (2 rows of icons + spacing + chrome, min 340)
+    local minFrameHeight = math.max((2 * iconSize) + (1 * spacing) + chromeHeight, Constants.FRAME.BANK_MIN_HEIGHT)
     local adjustedFrameHeight = math.max(frameHeightNeeded, minFrameHeight)
 
     -- Check screen limits
@@ -2009,8 +2009,8 @@ function BankFrame:RefreshCategoryView(bank, bagsToShow, settings, hasSearch, is
     -- Recalculate frame height using our scroll frame chrome (may differ from LayoutEngine)
     local correctFrameHeight = contentHeight + chromeHeight
 
-    -- Apply minimum frame height (2 rows of icons + chrome)
-    local minFrameHeight = (2 * iconSize) + chromeHeight
+    -- Apply minimum frame height (2 rows of icons + chrome, min 340)
+    local minFrameHeight = math.max((2 * iconSize) + chromeHeight, Constants.FRAME.BANK_MIN_HEIGHT)
     local adjustedFrameHeight = math.max(correctFrameHeight, minFrameHeight)
 
     -- Check screen limits

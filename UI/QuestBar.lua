@@ -936,18 +936,41 @@ function QuestBar:UpdateSize()
         button.innerShadow.right:SetWidth(shadowSize)
     end
 
+    -- Helper to re-anchor child elements to fill resized button
+    local function ReanchorChildren(button)
+        if button.icon then
+            button.icon:ClearAllPoints()
+            button.icon:SetAllPoints(button)
+        end
+        if button.bg then
+            button.bg:ClearAllPoints()
+            button.bg:SetAllPoints(button)
+        end
+        if button.cooldown then
+            button.cooldown:ClearAllPoints()
+            button.cooldown:SetAllPoints(button.icon)
+        end
+        if button.highlight then
+            button.highlight:ClearAllPoints()
+            button.highlight:SetAllPoints(button)
+        end
+    end
+
     if mainButton then
         mainButton:SetSize(buttonSize, buttonSize)
+        ReanchorChildren(mainButton)
         ResizeInnerShadow(mainButton)
     end
 
     for i, button in ipairs(gridButtons) do
         button:SetSize(buttonSize, buttonSize)
+        ReanchorChildren(button)
         ResizeInnerShadow(button)
     end
 
     for i, button in ipairs(flyoutButtons) do
         button:SetSize(buttonSize, buttonSize)
+        ReanchorChildren(button)
         ResizeInnerShadow(button)
         button:ClearAllPoints()
         button:SetPoint("TOP", flyout, "TOP", 0, -PADDING - (i - 1) * (buttonSize + GetButtonSpacing()))
@@ -973,19 +996,16 @@ end
 -------------------------------------------------
 
 local function OnBagUpdate()
-    -- Only refresh if enabled AND shown (avoid work when disabled)
-    if frame and frame:IsShown() then
-        -- Skip refreshes during sort (will refresh once via BAGS_UPDATED when sort completes)
-        local SortEngine = ns:GetModule("SortEngine")
-        if SortEngine and (SortEngine:IsSorting() or SortEngine:IsRestacking()) then return end
-        QuestBar:Refresh()
-    end
+    if not frame then return end
+    -- Skip refreshes during sort (will refresh once via BAGS_UPDATED when sort completes)
+    local SortEngine = ns:GetModule("SortEngine")
+    if SortEngine and (SortEngine:IsSorting() or SortEngine:IsRestacking()) then return end
+    QuestBar:Refresh()
 end
 
 local function OnCooldownUpdate()
-    if frame and frame:IsShown() then
-        QuestBar:Refresh()
-    end
+    if not frame then return end
+    QuestBar:Refresh()
 end
 
 local function OnQuestLogUpdate()
@@ -1023,7 +1043,7 @@ end, QuestBar)
 Events:Register("BAG_UPDATE", OnBagUpdate, QuestBar)
 Events:Register("BAG_UPDATE_COOLDOWN", OnCooldownUpdate, QuestBar)
 Events:Register("BAGS_UPDATED", function()
-    if frame and frame:IsShown() then QuestBar:Refresh() end
+    if frame then QuestBar:Refresh() end
 end, QuestBar)
 Events:Register("QUEST_LOG_UPDATE", OnQuestLogUpdate, QuestBar)
 Events:Register("QUEST_ACCEPTED", OnQuestLogUpdate, QuestBar)

@@ -674,22 +674,20 @@ end
 -------------------------------------------------
 
 local function OnBagUpdate()
-    if frame and frame:IsShown() then
-        -- Skip refreshes during sort (will refresh once via BAGS_UPDATED when sort completes)
-        local SortEngine = ns:GetModule("SortEngine")
-        if SortEngine and (SortEngine:IsSorting() or SortEngine:IsRestacking()) then return end
-        TrackedBar:Refresh()
-        -- Schedule a full refresh after combat for layout/attribute updates
-        if InCombatLockdown() then
-            pendingRefresh = true
-        end
+    if not frame then return end
+    -- Skip refreshes during sort (will refresh once via BAGS_UPDATED when sort completes)
+    local SortEngine = ns:GetModule("SortEngine")
+    if SortEngine and (SortEngine:IsSorting() or SortEngine:IsRestacking()) then return end
+    TrackedBar:Refresh()
+    -- Schedule a full refresh after combat for layout/attribute updates
+    if InCombatLockdown() then
+        pendingRefresh = true
     end
 end
 
 local function OnCooldownUpdate()
-    if frame and frame:IsShown() then
-        TrackedBar:Refresh()
-    end
+    if not frame then return end
+    TrackedBar:Refresh()
 end
 
 -------------------------------------------------
@@ -726,5 +724,5 @@ end, TrackedBar)
 Events:Register("BAG_UPDATE", OnBagUpdate, TrackedBar)
 Events:Register("BAG_UPDATE_COOLDOWN", OnCooldownUpdate, TrackedBar)
 Events:Register("BAGS_UPDATED", function()
-    if frame and frame:IsShown() then TrackedBar:Refresh() end
+    if frame then TrackedBar:Refresh() end
 end, TrackedBar)

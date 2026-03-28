@@ -1095,6 +1095,15 @@ function BankFrame:Refresh()
     local hasSearch = SearchBar:HasActiveFilters(frame)
     local viewType = Database:GetSetting("bankViewType") or "single"
 
+    -- Pre-calculate expected frame width for responsive modes
+    local expectedWidth = (iconSize * columns) + (spacing * (columns - 1)) + (Constants.FRAME.PADDING * 2)
+    expectedWidth = math.max(expectedWidth, Constants.FRAME.MIN_WIDTH)
+    local isCompact = expectedWidth < 260
+    local isNarrow = expectedWidth < 220
+
+    SearchBar:SetNarrowMode(frame, isCompact, isNarrow)
+    BankFooter:SetNarrowMode(isNarrow)
+
     -- Use appropriate bag IDs for classification
     local bagIDsToUse = isWarbandView and Constants.WARBAND_BANK_TAB_IDS or Constants.BANK_BAG_IDS
     local classifiedBags = BagClassifier:ClassifyBags(bank, isViewingCached or not isBankOpen, bagIDsToUse)
@@ -1228,11 +1237,10 @@ function BankFrame:RefreshSingleView(bank, bagsToShow, settings, hasSearch, isRe
     local topOffset = showSearchBar
         and (Constants.FRAME.TITLE_HEIGHT + Constants.FRAME.SEARCH_BAR_HEIGHT + chipHeight + Constants.FRAME.PADDING + 6)
         or (Constants.FRAME.TITLE_HEIGHT + Constants.FRAME.PADDING + 2)
-    -- Bottom offset: same as scroll frame SetPoint BOTTOMRIGHT
-    -- Footer is at PADDING-2 from bottom with height FOOTER_HEIGHT, so top is at (PADDING-2)+FOOTER_HEIGHT
-    -- Add extra padding (10) above footer for clearance
+    -- Bottom offset: dynamic footer height for responsive layout
+    local dynFooterHeight = BankFooter:GetHeight()
     local bottomOffset = showFooter
-        and (Constants.FRAME.FOOTER_HEIGHT + Constants.FRAME.PADDING)
+        and (dynFooterHeight + Constants.FRAME.PADDING)
         or Constants.FRAME.PADDING
     local chromeHeight = topOffset + bottomOffset
 
@@ -1348,8 +1356,9 @@ function BankFrame:RefreshSplitView(bank, bagsToShow, settings, hasSearch, isRea
     local topOffset = showSearchBar
         and (Constants.FRAME.TITLE_HEIGHT + Constants.FRAME.SEARCH_BAR_HEIGHT + chipHeight + Constants.FRAME.PADDING + 6)
         or (Constants.FRAME.TITLE_HEIGHT + Constants.FRAME.PADDING + 2)
+    local dynFooterHeight = BankFooter:GetHeight()
     local bottomOffset = showFooter
-        and (Constants.FRAME.FOOTER_HEIGHT + Constants.FRAME.PADDING)
+        and (dynFooterHeight + Constants.FRAME.PADDING)
         or Constants.FRAME.PADDING
     local chromeHeight = topOffset + bottomOffset
 
@@ -1548,7 +1557,8 @@ function BankFrame:RefreshSingleViewWithTabs(bank, settings, hasSearch, isReadOn
     local showFilterChips = settings.showFilterChips
     local chipHeight = showFilterChips and (Constants.FRAME.CHIP_STRIP_HEIGHT + 1) or 0
     local topOffset = Constants.FRAME.TITLE_HEIGHT + Constants.FRAME.SEARCH_BAR_HEIGHT + chipHeight + Constants.FRAME.PADDING + 6
-    local bottomOffset = Constants.FRAME.FOOTER_HEIGHT + Constants.FRAME.PADDING
+    local dynFooterHeight = BankFooter:GetHeight()
+    local bottomOffset = dynFooterHeight + Constants.FRAME.PADDING
     local chromeHeight = topOffset + bottomOffset
     local frameHeightNeeded = containerHeight + chromeHeight
 
@@ -1695,16 +1705,16 @@ function BankFrame:RefreshCategoryView(bank, bagsToShow, settings, hasSearch, is
     local topOffset = showSearchBar
         and (Constants.FRAME.TITLE_HEIGHT + Constants.FRAME.SEARCH_BAR_HEIGHT + chipHeight + Constants.FRAME.PADDING + 6)
         or (Constants.FRAME.TITLE_HEIGHT + Constants.FRAME.PADDING + 2)
-    -- Footer is at PADDING-2 from bottom with height FOOTER_HEIGHT
-    -- Add extra padding (10) above footer for clearance
+    -- Dynamic footer height for responsive layout
+    local dynFooterHeight = BankFooter:GetHeight()
     local bottomOffset = showFooter
-        and (Constants.FRAME.FOOTER_HEIGHT + Constants.FRAME.PADDING)
+        and (dynFooterHeight + Constants.FRAME.PADDING)
         or Constants.FRAME.PADDING
     local chromeHeight = topOffset + bottomOffset
 
     -- Derive actual content height using LayoutEngine's chrome calculation (different from scroll positioning)
     local layoutSearchBarHeight = showSearchBar and (Constants.FRAME.SEARCH_BAR_HEIGHT + chipHeight + 4) or 0
-    local layoutFooterHeight = showFooter and (Constants.FRAME.FOOTER_HEIGHT + 6) or Constants.FRAME.PADDING
+    local layoutFooterHeight = showFooter and (dynFooterHeight + 6) or Constants.FRAME.PADDING
     local layoutChrome = Constants.FRAME.TITLE_HEIGHT + layoutSearchBarHeight + layoutFooterHeight + Constants.FRAME.PADDING + 4
     local contentHeight = frameHeight - layoutChrome
 
@@ -2589,6 +2599,9 @@ local function OnSettingChanged(event, key, value)
     elseif resizeSettings[key] then
         UpdateFrameAppearance()
         BankFrame:Refresh()
+    elseif key == "hoverBagline" then
+        -- Refresh footer bag slot mode (expanded vs collapsed)
+        UpdateFrameAppearance()
     elseif key == "groupIdenticalItems" then
         -- Force full release when toggling item grouping to prevent visual artifacts
         -- Item structure changes fundamentally (grouped vs individual) but keys stay same

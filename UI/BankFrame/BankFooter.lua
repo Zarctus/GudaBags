@@ -732,6 +732,147 @@ function BankFooter:Init(parent)
         table.insert(bagSlotButtons, button)
     end
 
+    -- Collapsed mode: single bank icon with flyout (like BagSlots)
+    local collapsedBankBtn = CreateFrame("Button", "GudaBankCollapsedBtn", frame, "BackdropTemplate")
+    collapsedBankBtn:SetSize(Constants.BAG_SLOT_SIZE, Constants.BAG_SLOT_SIZE)
+    collapsedBankBtn:SetBackdrop({
+        bgFile = "Interface\\Buttons\\WHITE8x8",
+        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+        edgeSize = 8,
+        insets = {left = 2, right = 2, top = 2, bottom = 2},
+    })
+    collapsedBankBtn:SetBackdropColor(0.15, 0.15, 0.15, 0.9)
+    collapsedBankBtn:SetBackdropBorderColor(0.4, 0.4, 0.4, 0.7)
+    local collapsedIcon = collapsedBankBtn:CreateTexture(nil, "ARTWORK")
+    collapsedIcon:SetSize(Constants.BAG_SLOT_SIZE - 2, Constants.BAG_SLOT_SIZE - 2)
+    collapsedIcon:SetPoint("CENTER")
+    collapsedIcon:SetTexture("Interface\\AddOns\\GudaBags\\Assets\\bags.png")
+    collapsedBankBtn.icon = collapsedIcon
+    local collapsedHighlight = collapsedBankBtn:CreateTexture(nil, "HIGHLIGHT")
+    collapsedHighlight:SetAllPoints()
+    collapsedHighlight:SetTexture("Interface\\Buttons\\ButtonHilight-Square")
+    collapsedHighlight:SetBlendMode("ADD")
+    collapsedBankBtn:SetPoint("LEFT", frame, "LEFT", 0, 0)
+    collapsedBankBtn:Hide()
+    frame.collapsedBankBtn = collapsedBankBtn
+
+    -- Bank bag flyout (vertical, like BagSlots flyout)
+    local bankFlyout = CreateFrame("Frame", "GudaBankBagFlyout", collapsedBankBtn, "BackdropTemplate")
+    local flyoutBagSize = Constants.FLYOUT_BAG_SIZE
+    bankFlyout:SetSize(flyoutBagSize + 4, flyoutBagSize * (Constants.BANK_BAG_COUNT + 1) + 4)
+    bankFlyout:SetPoint("BOTTOMRIGHT", collapsedBankBtn, "BOTTOMLEFT", -5, -9)
+    bankFlyout:SetFrameStrata("DIALOG")
+    bankFlyout:SetFrameLevel(150)
+    bankFlyout:SetBackdrop({
+        bgFile = "Interface\\Buttons\\WHITE8x8",
+        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+        edgeSize = 8,
+        insets = {left = 2, right = 2, top = 2, bottom = 2},
+    })
+    bankFlyout:SetBackdropColor(0.1, 0.1, 0.1, 0.95)
+    bankFlyout:SetBackdropBorderColor(0.3, 0.3, 0.3, 0.9)
+    bankFlyout:EnableMouse(true)
+    bankFlyout:Hide()
+    frame.bankFlyout = bankFlyout
+
+    -- Flyout bag slots (main bank + bank bags)
+    frame.flyoutSlots = {}
+    for i = 0, Constants.BANK_BAG_COUNT do
+        local flySlot = CreateFrame("Button", nil, bankFlyout, "BackdropTemplate")
+        flySlot:SetSize(flyoutBagSize, flyoutBagSize)
+        flySlot:SetBackdrop({
+            bgFile = "Interface\\Buttons\\WHITE8x8",
+            edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+            edgeSize = 8,
+            insets = {left = 2, right = 2, top = 2, bottom = 2},
+        })
+        flySlot:SetBackdropColor(0.15, 0.15, 0.15, 0.9)
+        flySlot:SetBackdropBorderColor(0.4, 0.4, 0.4, 0.7)
+        local flyIcon = flySlot:CreateTexture(nil, "ARTWORK")
+        flyIcon:SetSize(flyoutBagSize - 4, flyoutBagSize - 4)
+        flyIcon:SetPoint("CENTER")
+        flySlot.icon = flyIcon
+        local flyHighlight = flySlot:CreateTexture(nil, "HIGHLIGHT")
+        flyHighlight:SetAllPoints()
+        flyHighlight:SetTexture("Interface\\Buttons\\ButtonHilight-Square")
+        flyHighlight:SetBlendMode("ADD")
+
+        -- Position bottom-to-top
+        flySlot:SetPoint("BOTTOM", bankFlyout, "BOTTOM", 0, 2 + i * flyoutBagSize)
+
+        if i == 0 then
+            flySlot.bagID = -1
+            flyIcon:SetTexture("Interface\\Buttons\\Button-Backpack-Up")
+        else
+            flySlot.bagID = i + 4
+            flyIcon:SetTexture("Interface\\PaperDoll\\UI-PaperDoll-Slot-Bag")
+        end
+
+        flySlot:SetScript("OnEnter", function(self)
+            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+            if self.bagID == -1 then
+                GameTooltip:SetText(ns.L["TOOLTIP_BANK"] or "Bank")
+            else
+                GameTooltip:SetText(string.format("Bank Bag %d", self.bagID - 4))
+            end
+            GameTooltip:Show()
+
+            local ItemButton = ns:GetModule("ItemButton")
+            if ItemButton and mainBankFrame and mainBankFrame.container then
+                ItemButton:HighlightBagSlots(self.bagID, mainBankFrame.container)
+            end
+        end)
+        flySlot:SetScript("OnLeave", function(self)
+            GameTooltip:Hide()
+            local ItemButton = ns:GetModule("ItemButton")
+            if ItemButton and mainBankFrame and mainBankFrame.container then
+                local SearchBar = ns:GetModule("SearchBar")
+                local hasSearch = SearchBar and SearchBar:HasActiveFilters(mainBankFrame)
+                if hasSearch then
+                    for btn in ItemButton:GetActiveButtons() do
+                        if btn.owner == mainBankFrame.container then
+                            if btn.itemData and btn.itemData.itemID then
+                                ItemButton:SetSearchState(btn, SearchBar:ItemMatchesFilters(mainBankFrame, btn.itemData))
+                            else
+                                ItemButton:SetSearchState(btn, false)
+                            end
+                        end
+                    end
+                else
+                    ItemButton:ResetAllAlpha(mainBankFrame.container)
+                end
+            end
+        end)
+
+        frame.flyoutSlots[i] = flySlot
+    end
+
+    -- Toggle flyout on click
+    local bankFlyoutExpanded = false
+    collapsedBankBtn:SetScript("OnClick", function(self, button)
+        if button == "LeftButton" then
+            bankFlyoutExpanded = not bankFlyoutExpanded
+            if bankFlyoutExpanded then
+                -- Update flyout icons
+                for idx, slot in pairs(frame.flyoutSlots) do
+                    if idx > 0 then
+                        local invSlot = BankButtonIDToInvSlotID and BankButtonIDToInvSlotID(idx) or nil
+                        if invSlot then
+                            local textureName = GetInventoryItemTexture("player", invSlot)
+                            slot.icon:SetTexture(textureName or "Interface\\PaperDoll\\UI-PaperDoll-Slot-Bag")
+                        end
+                    end
+                end
+                bankFlyout:Show()
+                self:SetBackdropBorderColor(1, 0.82, 0, 1)
+            else
+                bankFlyout:Hide()
+                self:SetBackdropBorderColor(0.4, 0.4, 0.4, 0.7)
+            end
+        end
+    end)
+    frame.bankFlyoutExpanded = false
+
     -- Slot counter after bag containers (with tooltip frame for hover)
     local slotInfoFrame = CreateFrame("Frame", nil, frame)
     slotInfoFrame:SetPoint("LEFT", bagSlotButtons[#bagSlotButtons], "RIGHT", 8, 0)
@@ -828,6 +969,42 @@ function BankFooter:Init(parent)
     return frame
 end
 
+-- Helper: apply bag slot mode (expanded or collapsed) based on hoverBagline setting
+local function ApplyBagSlotMode(alpha)
+    alpha = alpha or 1
+    local Database = ns:GetModule("Database")
+    local showAllBags = Database and Database:GetSetting("hoverBagline") or false
+
+    if showAllBags then
+        -- Expanded: show all inline bag slots
+        for _, button in ipairs(bagSlotButtons) do
+            button:Show()
+            button:SetAlpha(alpha)
+        end
+        if frame.collapsedBankBtn then frame.collapsedBankBtn:Hide() end
+        if frame.bankFlyout then frame.bankFlyout:Hide() end
+
+        if frame.slotInfoFrame then
+            frame.slotInfoFrame:ClearAllPoints()
+            frame.slotInfoFrame:SetPoint("LEFT", bagSlotButtons[#bagSlotButtons], "RIGHT", 8, 0)
+        end
+    else
+        -- Collapsed: single icon with flyout
+        for _, button in ipairs(bagSlotButtons) do
+            button:Hide()
+        end
+        if frame.collapsedBankBtn then
+            frame.collapsedBankBtn:Show()
+            frame.collapsedBankBtn:SetAlpha(alpha)
+        end
+
+        if frame.slotInfoFrame then
+            frame.slotInfoFrame:ClearAllPoints()
+            frame.slotInfoFrame:SetPoint("LEFT", frame.collapsedBankBtn, "RIGHT", 8, 0)
+        end
+    end
+end
+
 function BankFooter:Show()
     if not frame then return end
     frame:Show()
@@ -845,11 +1022,7 @@ function BankFooter:Show()
     else
         -- Hide retail tabs when showing live bank on Classic
         self:HideRetailTabs()
-
-        for _, button in ipairs(bagSlotButtons) do
-            button:Show()
-            button:SetAlpha(1)
-        end
+        ApplyBagSlotMode(1)
     end
 
     Money:Show()
@@ -873,10 +1046,7 @@ function BankFooter:ShowLive(bankType)
         self:UpdateRetailActionButtons(true, currentBankType)
     else
         self:HideRetailTabs()
-        for _, button in ipairs(bagSlotButtons) do
-            button:Show()
-            button:SetAlpha(1)
-        end
+        ApplyBagSlotMode(1)
     end
 
     Money:Show()
@@ -1024,13 +1194,9 @@ function BankFooter:ShowCached(characterFullName)
         ns:Debug("  Calling ShowRetailTabs (cached, bank not open)")
         self:ShowRetailTabs(characterFullName, false)
     else
-        -- Show bag slots for Classic (disable interactions)
+        -- Show bag slots for Classic (dimmed for cached view)
         self:HideRetailTabs()
-        for _, button in ipairs(bagSlotButtons) do
-            button:Show()
-            button:SetAlpha(0.7)
-        end
-        -- Update bag slot visuals with cached textures
+        ApplyBagSlotMode(0.7)
         self:Update()
     end
 
@@ -1239,6 +1405,81 @@ function BankFooter:SetInteractive(enabled)
         else
             button:Disable()
             button:SetAlpha(0.5)
+        end
+    end
+end
+
+function BankFooter:GetHeight()
+    if frame and frame.currentHeight then
+        return frame.currentHeight
+    end
+    return Constants.FRAME.FOOTER_HEIGHT
+end
+
+function BankFooter:SetNarrowMode(isNarrow)
+    if not frame then return end
+    if frame.isNarrowMode == isNarrow then return end
+    frame.isNarrowMode = isNarrow
+
+    if isNarrow then
+        -- 2-row layout: Bag slots on row 1, Money on row 2 left-aligned
+        frame:SetHeight(44)
+        frame.currentHeight = 44
+
+        -- Bag slots stay on top row
+        if frame.mainBankButton then
+            frame.mainBankButton:ClearAllPoints()
+            frame.mainBankButton:SetPoint("TOPLEFT", frame, "TOPLEFT", 0, 0)
+        end
+
+        -- Money on bottom row, left-aligned with 4px gap
+        if frame.moneyFrame then
+            frame.moneyFrame:ClearAllPoints()
+            frame.moneyFrame:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 1, 0)
+        end
+        -- Smaller money font
+        if frame.moneyFrame and frame.moneyFrame.frameName then
+            local coinButtons = {"GoldButton", "SilverButton", "CopperButton"}
+            for _, btnName in ipairs(coinButtons) do
+                local coinBtn = _G[frame.moneyFrame.frameName .. btnName]
+                if coinBtn then
+                    local text = coinBtn:GetFontString()
+                    if text then
+                        local fontName, _, fontFlags = text:GetFont()
+                        text:SetFont(fontName, 12, fontFlags)
+                    end
+                end
+            end
+        end
+    else
+        -- Single-row layout (default)
+        frame:SetHeight(Constants.FRAME.FOOTER_HEIGHT)
+        frame.currentHeight = Constants.FRAME.FOOTER_HEIGHT
+
+        -- Bag slots left
+        if frame.mainBankButton then
+            frame.mainBankButton:ClearAllPoints()
+            frame.mainBankButton:SetPoint("LEFT", frame, "LEFT", 0, 0)
+        end
+
+        -- Money right
+        if frame.moneyFrame then
+            frame.moneyFrame:ClearAllPoints()
+            frame.moneyFrame:SetPoint("RIGHT", frame, "RIGHT", 14, 0)
+        end
+        -- Restore money font
+        if frame.moneyFrame and frame.moneyFrame.frameName then
+            local coinButtons = {"GoldButton", "SilverButton", "CopperButton"}
+            for _, btnName in ipairs(coinButtons) do
+                local coinBtn = _G[frame.moneyFrame.frameName .. btnName]
+                if coinBtn then
+                    local text = coinBtn:GetFontString()
+                    if text then
+                        local fontName, _, fontFlags = text:GetFont()
+                        text:SetFont(fontName, 14, fontFlags)
+                    end
+                end
+            end
         end
     end
 end

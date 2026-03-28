@@ -56,6 +56,11 @@ local function IsInteractionWindowOpen()
         return true
     end
 
+    -- Item Socketing UI
+    if ItemSocketingFrame and ItemSocketingFrame:IsShown() then
+        return true
+    end
+
     return false
 end
 

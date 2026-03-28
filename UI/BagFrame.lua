@@ -1542,7 +1542,10 @@ ns.OnBagsUpdated = function(dirtyBags)
             ns:Debug("OnBagsUpdated refreshing, viewType:", viewType)
             -- Use incremental update if layout is cached (for both single and category view)
             -- This preserves ghost slots when items are removed
-            if layoutCached then
+            -- Exception: when groupIdenticalItems is active, incremental updates can't
+            -- handle regrouping (count changes in grouped stacks) — force full refresh
+            local groupItems = Database:GetSetting("groupIdenticalItems")
+            if layoutCached and not (viewType == "category" and groupItems) then
                 BagFrame:IncrementalUpdate(dirtyBags)
             else
                 BagFrame:Refresh()
@@ -1990,6 +1993,14 @@ local function OnInteractionOpen()
     -- Always suppress Blizzard's OpenAllBags to prevent double-open
     suppressAutoOpen = true
     C_Timer.After(0, function() suppressAutoOpen = false end)
+
+    -- Deferred refresh to unstack grouped items — interaction frame needs a frame to be fully shown
+    -- so IsInteractionWindowOpen() can detect it
+    C_Timer.After(0.05, function()
+        if frame and frame:IsShown() then
+            BagFrame:Refresh()
+        end
+    end)
 end
 
 local function OnInteractionClose()
@@ -2000,6 +2011,13 @@ local function OnInteractionClose()
     -- Always suppress Blizzard's CloseAllBags to prevent unintended close
     suppressAutoClose = true
     C_Timer.After(0, function() suppressAutoClose = false end)
+
+    -- Deferred refresh to re-enable grouping after interaction window fully closes
+    C_Timer.After(0.05, function()
+        if frame and frame:IsShown() then
+            BagFrame:Refresh()
+        end
+    end)
 end
 
 local function OnBankOpen()
@@ -2054,6 +2072,18 @@ Events:Register("MERCHANT_SHOW", OnInteractionOpen, "AutoOpenBags_Vendor")
 Events:Register("MERCHANT_CLOSED", OnInteractionClose, "AutoCloseBags_Vendor")
 Events:Register("AUCTION_HOUSE_SHOW", OnInteractionOpen, "AutoOpenBags_AH")
 Events:Register("AUCTION_HOUSE_CLOSED", OnInteractionClose, "AutoCloseBags_AH")
+-- Socketing UI — load-on-demand, so hook via SOCKET_INFO_UPDATE event
+local socketFrameHooked = false
+Events:Register("SOCKET_INFO_UPDATE", function()
+    OnInteractionOpen()
+    -- Hook OnHide for close detection (only once, after frame is created)
+    if not socketFrameHooked and ItemSocketingFrame then
+        socketFrameHooked = true
+        ItemSocketingFrame:HookScript("OnHide", function()
+            OnInteractionClose()
+        end)
+    end
+end, "AutoOpenBags_Socket")
 Events:Register("BANKFRAME_OPENED", OnBankOpen, "AutoOpenBags_Bank")
 Events:Register("BANKFRAME_CLOSED", OnBankClose, "AutoCloseBags_Bank")
 

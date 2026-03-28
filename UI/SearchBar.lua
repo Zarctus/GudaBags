@@ -49,6 +49,7 @@ local TYPE_CHIPS = {
 -------------------------------------------------
 local SPECIAL_CHIPS = {
     {key = "boe", localeKey = "CHIP_SPECIAL_BOE"},
+    {key = "btw", localeKey = "CHIP_SPECIAL_BTW", tooltipKey = "CHIP_SPECIAL_BTW_TIP"},
     {key = "new", localeKey = "CHIP_SPECIAL_NEW"},
     {key = "lowlevel", localeKey = "CHIP_SPECIAL_LOWLEVEL", tooltipKey = "CHIP_SPECIAL_LOWLEVEL_TIP"},
     {key = "myprof", localeKey = "CHIP_SPECIAL_MYPROF", tooltipKey = "CHIP_SPECIAL_MYPROF_TIP"},

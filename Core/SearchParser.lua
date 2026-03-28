@@ -310,7 +310,7 @@ function SearchParser:ParseSearchInput(text)
         local handled = false
 
         -- Check standalone keywords first
-        if tokenLower == "boe" or tokenLower == "bop" or tokenLower == "quest"
+        if tokenLower == "boe" or tokenLower == "bop" or tokenLower == "btw" or tokenLower == "quest"
             or tokenLower == "new" or tokenLower == "usable" or tokenLower == "junk" then
             table.insert(result.keywords, tokenLower)
             handled = true
@@ -482,6 +482,13 @@ function SearchParser:MatchKeyword(keyword, itemData, context)
         -- Need tooltip scanner and bag/slot info
         if context and context.tooltipScanner and itemData.bagID and itemData.slot then
             return context.tooltipScanner:IsBindOnEquip(itemData.bagID, itemData.slot, itemData)
+        end
+        return false
+
+    elseif keyword == "btw" then
+        -- Need tooltip scanner and bag/slot info
+        if context and context.tooltipScanner and itemData.bagID and itemData.slot then
+            return context.tooltipScanner:IsWarbound(itemData.bagID, itemData.slot)
         end
         return false
 

@@ -1402,6 +1402,14 @@ function ItemButton:PreWarm(parent, count)
 
 end
 
+-- Check if a cooldown is just the GCD (matches global cooldown start/duration)
+local function IsGlobalCooldown(start, duration)
+    if not GetSpellCooldown then return false end
+    local gcdStart, gcdDuration = GetSpellCooldown(61304)  -- Global Cooldown spell
+    if not gcdStart or gcdStart == 0 then return false end
+    return start == gcdStart and math.abs(duration - gcdDuration) < 0.01
+end
+
 -- Cached settings for batch updates (set by SetItemBatch or refreshed on demand)
 local cachedSettings = nil
 local cachedSettingsFrame = 0  -- Frame number when cached
@@ -2171,14 +2179,6 @@ function ItemButton:UpdateLockForItem(bagID, slotID)
             return  -- Found the button, done
         end
     end
-end
-
--- Check if a cooldown is just the GCD (matches global cooldown start/duration)
-local function IsGlobalCooldown(start, duration)
-    if not GetSpellCooldown then return false end
-    local gcdStart, gcdDuration = GetSpellCooldown(61304)  -- Global Cooldown spell
-    if not gcdStart or gcdStart == 0 then return false end
-    return start == gcdStart and math.abs(duration - gcdDuration) < 0.01
 end
 
 -- Update cooldowns on all active buttons when BAG_UPDATE_COOLDOWN fires

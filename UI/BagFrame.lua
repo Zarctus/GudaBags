@@ -238,9 +238,10 @@ local function CreateBagFrame()
 
     -- Use the separate secure button container instead of creating one as child of f
     -- This keeps f unprotected so it can be shown during combat
-    secureButtonContainer:SetPoint("TOPLEFT", f, "TOPLEFT", Constants.FRAME.PADDING, -(Constants.FRAME.TITLE_HEIGHT + SearchBar:GetTotalHeight(f) + Constants.FRAME.PADDING + 6))
+    secureButtonContainer:SetPoint("TOPLEFT", f, "TOPLEFT", Constants.FRAME.PADDING, -(Header:GetHeight() + SearchBar:GetTotalHeight(f) + Constants.FRAME.PADDING + 6))
     secureButtonContainer:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -Constants.FRAME.PADDING, Constants.FRAME.FOOTER_HEIGHT + Constants.FRAME.PADDING + 6)
     f.container = secureButtonContainer
+    f.container.masqueGroup = "Bags"
 
     -- Sync secure container visibility with main frame
     f:HookScript("OnShow", function() secureButtonContainer:Show() end)
@@ -302,6 +303,9 @@ local function CreateBagFrame()
             BankFrameModule:ViewCharacter(fullName, charData)
         end
     end)
+
+    -- Note: Responsive narrow mode is handled in Refresh() which pre-calculates
+    -- expected frame width and applies narrow mode before sizing
 
     return f
 end
@@ -375,6 +379,19 @@ function BagFrame:Refresh()
     local hasSearch = SearchBar:HasActiveFilters(frame)
     -- viewType already declared at top of function
 
+    -- Pre-calculate expected frame width to determine responsive modes BEFORE sizing
+    local expectedWidth = (iconSize * columns) + (spacing * (columns - 1)) + (Constants.FRAME.PADDING * 2)
+    expectedWidth = math.max(expectedWidth, Constants.FRAME.MIN_WIDTH)
+    -- < 260: visual compact (smaller chips, smaller font, shorter placeholder)
+    -- < 220: layout reflow (footer 2-row, Types dropdown instead of chips)
+    local isCompact = expectedWidth < 260
+    local isNarrow = expectedWidth < 220
+
+    -- Apply modes to all components before calculating heights
+    Header:SetNarrowMode(isCompact)
+    SearchBar:SetNarrowMode(frame, isCompact, isNarrow)
+    Footer:SetNarrowMode(isNarrow)
+
     -- Calculate common settings
     local showSearchBar = Database:GetSetting("showSearchBar")
     local showFooterSetting = Database:GetSetting("showFooter")
@@ -394,6 +411,9 @@ function BagFrame:Refresh()
         showFooter = showFooter,
         showCategoryCount = showCategoryCount,
         splitColumns = splitColumns,
+        footerHeight = Footer:GetHeight(),
+        searchBarHeight = SearchBar:GetTotalHeight(frame),
+        headerHeight = Header:GetHeight(),
     }
 
     -- Classify bags by type
@@ -1522,7 +1542,28 @@ ns.OnBagsUpdated = function(dirtyBags)
             ns:Debug("OnBagsUpdated refreshing, viewType:", viewType)
             -- Use incremental update if layout is cached (for both single and category view)
             -- This preserves ghost slots when items are removed
-            if layoutCached then
+            -- Exception: when groupIdenticalItems is actively grouping (enabled + no interaction
+            -- window open), incremental updates can't handle regrouping — force full refresh.
+            -- When interaction window IS open, grouping is disabled, so incremental works fine
+            -- and preserves ghost slots.
+            local groupItems = Database:GetSetting("groupIdenticalItems")
+            local groupingActive = viewType == "category" and groupItems
+            if groupingActive then
+                -- Check if any interaction window suppresses grouping
+                local BankFrameModule = ns:GetModule("BankFrame")
+                local GuildBankFrameModule = ns:GetModule("GuildBankFrame")
+                if (BankFrameModule and BankFrameModule:IsShown())
+                    or (GuildBankFrameModule and GuildBankFrameModule:IsShown())
+                    or (MerchantFrame and MerchantFrame:IsShown())
+                    or (MailFrame and MailFrame:IsShown())
+                    or (TradeFrame and TradeFrame:IsShown())
+                    or (AuctionFrame and AuctionFrame:IsShown())
+                    or (AuctionHouseFrame and AuctionHouseFrame:IsShown())
+                    or (ItemSocketingFrame and ItemSocketingFrame:IsShown()) then
+                    groupingActive = false  -- Grouping suppressed, incremental is safe
+                end
+            end
+            if layoutCached and not groupingActive then
                 BagFrame:IncrementalUpdate(dirtyBags)
             else
                 BagFrame:Refresh()
@@ -1570,15 +1611,16 @@ UpdateFrameAppearance = function()
     local showSearchBar = Database:GetSetting("showSearchBar")
     local showFooter = Database:GetSetting("showFooter")
     -- Always show footer space for cached views (money display)
-    local footerHeight = (not showFooter and not isViewingCached) and Constants.FRAME.PADDING or (Constants.FRAME.FOOTER_HEIGHT + Constants.FRAME.PADDING + 6)
+    local dynamicFooterHeight = Footer:GetHeight()
+    local footerHeight = (not showFooter and not isViewingCached) and Constants.FRAME.PADDING or (dynamicFooterHeight + Constants.FRAME.PADDING + 6)
 
     frame.container:ClearAllPoints()
     if showSearchBar then
         SearchBar:Show(frame)
-        frame.container:SetPoint("TOPLEFT", frame, "TOPLEFT", Constants.FRAME.PADDING, -(Constants.FRAME.TITLE_HEIGHT + SearchBar:GetTotalHeight(frame) + Constants.FRAME.PADDING + 6))
+        frame.container:SetPoint("TOPLEFT", frame, "TOPLEFT", Constants.FRAME.PADDING, -(Header:GetHeight() + SearchBar:GetTotalHeight(frame) + Constants.FRAME.PADDING + 6))
     else
         SearchBar:Hide(frame)
-        frame.container:SetPoint("TOPLEFT", frame, "TOPLEFT", Constants.FRAME.PADDING, -(Constants.FRAME.TITLE_HEIGHT + Constants.FRAME.PADDING + 2))
+        frame.container:SetPoint("TOPLEFT", frame, "TOPLEFT", Constants.FRAME.PADDING, -(Header:GetHeight() + Constants.FRAME.PADDING + 2))
     end
     frame.container:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -Constants.FRAME.PADDING, footerHeight)
 
@@ -1600,10 +1642,13 @@ local appearanceSettings = {
     iconFontSize = true,
     trackedBarSize = true,
     trackedBarColumns = true,
+    trackedBarSpacing = true,
     questBarSize = true,
     questBarColumns = true,
+    questBarSpacing = true,
     theme = true,
     retailEmptySlots = true,
+    minimalEmptySlots = true,
 }
 
 -- Settings that need both appearance update AND resize
@@ -1966,6 +2011,14 @@ local function OnInteractionOpen()
     -- Always suppress Blizzard's OpenAllBags to prevent double-open
     suppressAutoOpen = true
     C_Timer.After(0, function() suppressAutoOpen = false end)
+
+    -- Deferred refresh to unstack grouped items — interaction frame needs a frame to be fully shown
+    -- so IsInteractionWindowOpen() can detect it
+    C_Timer.After(0.05, function()
+        if frame and frame:IsShown() then
+            BagFrame:Refresh()
+        end
+    end)
 end
 
 local function OnInteractionClose()
@@ -1976,6 +2029,13 @@ local function OnInteractionClose()
     -- Always suppress Blizzard's CloseAllBags to prevent unintended close
     suppressAutoClose = true
     C_Timer.After(0, function() suppressAutoClose = false end)
+
+    -- Deferred refresh to re-enable grouping after interaction window fully closes
+    C_Timer.After(0.05, function()
+        if frame and frame:IsShown() then
+            BagFrame:Refresh()
+        end
+    end)
 end
 
 local function OnBankOpen()
@@ -2030,6 +2090,18 @@ Events:Register("MERCHANT_SHOW", OnInteractionOpen, "AutoOpenBags_Vendor")
 Events:Register("MERCHANT_CLOSED", OnInteractionClose, "AutoCloseBags_Vendor")
 Events:Register("AUCTION_HOUSE_SHOW", OnInteractionOpen, "AutoOpenBags_AH")
 Events:Register("AUCTION_HOUSE_CLOSED", OnInteractionClose, "AutoCloseBags_AH")
+-- Socketing UI — load-on-demand, so hook via SOCKET_INFO_UPDATE event
+local socketFrameHooked = false
+Events:Register("SOCKET_INFO_UPDATE", function()
+    OnInteractionOpen()
+    -- Hook OnHide for close detection (only once, after frame is created)
+    if not socketFrameHooked and ItemSocketingFrame then
+        socketFrameHooked = true
+        ItemSocketingFrame:HookScript("OnHide", function()
+            OnInteractionClose()
+        end)
+    end
+end, "AutoOpenBags_Socket")
 Events:Register("BANKFRAME_OPENED", OnBankOpen, "AutoOpenBags_Bank")
 Events:Register("BANKFRAME_CLOSED", OnBankClose, "AutoCloseBags_Bank")
 

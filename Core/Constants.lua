@@ -169,10 +169,14 @@ Constants.FRAME = {
     FOOTER_HEIGHT = 32,
     PADDING = 8,
     BORDER_SIZE = 2,
-    MIN_WIDTH = 200,
+    MIN_WIDTH = 125,
     MAX_WIDTH = 800,
     MIN_HEIGHT = 150,
     MAX_HEIGHT = 600,
+    BANK_MIN_HEIGHT = 260,
+    BANK_MIN_HEIGHT_RETAIL = 340,
+    GUILD_BANK_MIN_WIDTH = 260,
+    GUILD_BANK_MIN_HEIGHT = 340,
 }
 
 -- Frame level hierarchy for z-ordering between bag/bank frames.
@@ -251,6 +255,7 @@ Constants.DEFAULTS = {
     autoVendorJunk = true,  -- Auto sell gray items at merchants
     autoRepair = false,  -- Auto repair all items at repair-capable merchants
     retailEmptySlots = false,  -- Use retail-style empty slot textures (Classic only)
+    minimalEmptySlots = false,  -- Show empty slots as thin border outline instead of slot icon
     gudaSort = false,  -- Use GudaBags custom sort engine instead of Blizzard's (Retail only)
 
     -- Icons
@@ -259,8 +264,10 @@ Constants.DEFAULTS = {
     iconSpacing = 3,
     questBarSize = 44,
     questBarColumns = 1,
+    questBarSpacing = 2,
     trackedBarSize = 36,
     trackedBarColumns = 3,
+    trackedBarSpacing = 3,
     grayoutJunk = true,
     whiteItemsJunk = false,  -- Treat white equippable items as junk (off by default)
     equipmentBorders = true,

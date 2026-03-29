@@ -109,14 +109,15 @@ local function UpdateFrameAppearance()
     local showFilterChips = Database:GetSetting("showFilterChips")
     local showFooter = Database:GetSetting("showFooter")
 
-    -- Update search bar visibility
-    if searchBar then
+    -- Update search bar visibility (use SearchBar module API to handle filter chips)
+    local SearchBar = ns:GetModule("SearchBar")
+    if SearchBar then
         if showSearchBar then
-            searchBar:Show()
+            SearchBar:Show(frame)
             searchBar:SetPoint("TOPLEFT", frame, "TOPLEFT", Constants.FRAME.PADDING, -(Constants.FRAME.TITLE_HEIGHT + Constants.FRAME.PADDING))
             searchBar:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -Constants.FRAME.PADDING, -(Constants.FRAME.TITLE_HEIGHT + Constants.FRAME.PADDING))
         else
-            searchBar:Hide()
+            SearchBar:Hide(frame)
         end
     end
 
@@ -125,8 +126,9 @@ local function UpdateFrameAppearance()
     local topOffset = showSearchBar
         and (Constants.FRAME.TITLE_HEIGHT + Constants.FRAME.SEARCH_BAR_HEIGHT + chipHeight + Constants.FRAME.PADDING + 6)
         or (Constants.FRAME.TITLE_HEIGHT + Constants.FRAME.PADDING + 2)
+    local footerHeight = GuildBankFooter:GetHeight()
     local bottomOffset = showFooter
-        and (Constants.FRAME.FOOTER_HEIGHT + Constants.FRAME.PADDING + 6)
+        and (footerHeight + Constants.FRAME.PADDING + 6)
         or Constants.FRAME.PADDING
 
     frame.scrollFrame:ClearAllPoints()
@@ -238,7 +240,21 @@ local function CreateSideTab(parent, index, isAllTab)
 
         local ItemButton = ns:GetModule("ItemButton")
         if ItemButton and frame and frame.container then
-            ItemButton:ResetAllAlpha(frame.container)
+            -- Re-apply search filter state instead of blindly resetting alpha
+            local hasSearch = SearchBar:HasActiveFilters(frame)
+            if hasSearch then
+                for btn in ItemButton:GetActiveButtons() do
+                    if btn.owner == frame.container then
+                        if btn.itemData and btn.itemData.itemID then
+                            ItemButton:SetSearchState(btn, SearchBar:ItemMatchesFilters(frame, btn.itemData))
+                        else
+                            ItemButton:SetSearchState(btn, false)
+                        end
+                    end
+                end
+            else
+                ItemButton:ResetAllAlpha(frame.container)
+            end
         end
     end)
 
@@ -694,7 +710,7 @@ local function CreateGuildBankFrame()
     -- Scroll frame
     local scrollFrame = CreateFrame("ScrollFrame", "GudaGuildBankScrollFrame", f, "UIPanelScrollFrameTemplate")
     scrollFrame:SetPoint("TOPLEFT", f, "TOPLEFT", Constants.FRAME.PADDING, -(Constants.FRAME.TITLE_HEIGHT + SearchBar:GetTotalHeight(f) + Constants.FRAME.PADDING + 6))
-    scrollFrame:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -Constants.FRAME.PADDING - 20, Constants.FRAME.FOOTER_HEIGHT + Constants.FRAME.PADDING + 6)
+    scrollFrame:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -Constants.FRAME.PADDING - 20, GuildBankFooter:GetHeight() + Constants.FRAME.PADDING + 6)
     f.scrollFrame = scrollFrame
 
     -- Style the scroll bar and hide initially (Refresh will show if needed)
@@ -715,6 +731,7 @@ local function CreateGuildBankFrame()
     container:SetSize(1, 1)
     scrollFrame:SetScrollChild(container)
     f.container = container
+    f.container.masqueGroup = "Guild Bank"
 
     -- Empty message
     local emptyMessage = CreateFrame("Frame", nil, f)
@@ -741,7 +758,7 @@ local function CreateGuildBankFrame()
     purchasePrompt:Hide()
 
     -- Main prompt text
-    local promptText = purchasePrompt:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    local promptText = purchasePrompt:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     promptText:SetPoint("CENTER", purchasePrompt, "CENTER", 0, 60)
     promptText:SetTextColor(1, 0.82, 0)  -- Gold
     promptText:SetText(ns.L["GUILD_BANK_PURCHASE_PROMPT"] or "Do you wish to purchase this tab?")
@@ -925,14 +942,8 @@ function GuildBankFrame:Refresh()
             frame.purchasePrompt:Show()
         end
 
-        -- Set minimum frame size for purchase prompt
-        local columns = Database:GetSetting("guildBankColumns")
-        local iconSize = Database:GetSetting("iconSize")
-        local spacing = Database:GetSetting("iconSpacing")
-        local minWidth = (iconSize * columns) + (Constants.FRAME.PADDING * 2)
-        local minHeight = (6 * iconSize) + (5 * spacing) + 80
-
-        frame:SetSize(math.max(minWidth, 300), minHeight)
+        -- Fixed size for purchase prompt (slightly wider for prompt text)
+        frame:SetSize(Constants.FRAME.GUILD_BANK_MIN_WIDTH + 150, Constants.FRAME.GUILD_BANK_MIN_HEIGHT)
         GuildBankFooter:UpdateSlotInfo(0, 0)
         return
     end
@@ -955,13 +966,7 @@ function GuildBankFrame:Refresh()
         frame.emptyMessage:Show()
         self:HideSideTabs()
 
-        local columns = Database:GetSetting("guildBankColumns")
-        local iconSize = Database:GetSetting("iconSize")
-        local spacing = Database:GetSetting("iconSpacing")
-        local minWidth = (iconSize * columns) + (Constants.FRAME.PADDING * 2)
-        local minHeight = (6 * iconSize) + (5 * spacing) + 80
-
-        frame:SetSize(math.max(minWidth, 250), minHeight)
+        frame:SetSize(Constants.FRAME.GUILD_BANK_MIN_WIDTH, Constants.FRAME.GUILD_BANK_MIN_HEIGHT)
         GuildBankFooter:UpdateSlotInfo(0, 0)
         return
     end
@@ -1044,16 +1049,16 @@ function GuildBankFrame:Refresh()
     local topOffset = showSearchBar
         and (Constants.FRAME.TITLE_HEIGHT + Constants.FRAME.SEARCH_BAR_HEIGHT + chipHeight + Constants.FRAME.PADDING + 6)
         or (Constants.FRAME.TITLE_HEIGHT + Constants.FRAME.PADDING + 2)
+    local footerHeight = GuildBankFooter:GetHeight()
     local bottomOffset = showFooter
-        and (Constants.FRAME.FOOTER_HEIGHT + Constants.FRAME.PADDING + 6)
+        and (footerHeight + Constants.FRAME.PADDING + 6)
         or Constants.FRAME.PADDING
     local chromeHeight = topOffset + bottomOffset
 
-    local frameWidth = math.max(contentWidth + (Constants.FRAME.PADDING * 2), Constants.FRAME.MIN_WIDTH)
+    local frameWidth = math.max(contentWidth + (Constants.FRAME.PADDING * 2), Constants.FRAME.GUILD_BANK_MIN_WIDTH)
     local frameHeightNeeded = actualContentHeight + chromeHeight
 
-    local minFrameHeight = (6 * iconSize) + (5 * spacing) + chromeHeight
-    local adjustedFrameHeight = math.max(frameHeightNeeded, minFrameHeight)
+    local adjustedFrameHeight = math.max(frameHeightNeeded, Constants.FRAME.GUILD_BANK_MIN_HEIGHT)
 
     local screenHeight = UIParent:GetHeight()
     local maxFrameHeight = screenHeight - 100
@@ -1251,6 +1256,9 @@ end
 
 function GuildBankFrame:Hide()
     if frame then
+        -- Clear search/chip filters on close
+        SearchBar:ClearAllFilters(frame)
+
         frame:Hide()
         ItemButton:ReleaseAll(frame.container)
         ReleaseAllCategoryHeaders()
@@ -1404,6 +1412,7 @@ local appearanceSettings = {
     showBorders = true,
     theme = true,
     retailEmptySlots = true,
+    minimalEmptySlots = true,
 }
 
 -- Handle setting changes (live update)

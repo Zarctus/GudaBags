@@ -202,10 +202,15 @@ function RetailBankScanner:CanPurchaseTab(bankType)
 end
 
 function RetailBankScanner:GetTabPurchaseCost(bankType)
-    if not C_Bank or not C_Bank.FetchNextPurchasableBankTabCost then
-        return nil
+    if not C_Bank then return nil end
+    -- Use newer API (TWW 11.1+) with fallback to older API
+    if C_Bank.FetchNextPurchasableBankTabData then
+        local tabData = C_Bank.FetchNextPurchasableBankTabData(bankType)
+        return tabData and tabData.tabCost
+    elseif C_Bank.FetchNextPurchasableBankTabCost then
+        return C_Bank.FetchNextPurchasableBankTabCost(bankType)
     end
-    return C_Bank.FetchNextPurchasableBankTabCost(bankType)
+    return nil
 end
 
 function RetailBankScanner:PurchaseTab(bankType)
@@ -797,6 +802,9 @@ if C_Bank then
         ns:Debug("Bank tab settings updated for", bankType)
         if isBankOpen then
             RetailBankScanner:CacheBankTabs(bankType)
+            if ns.OnRetailBankTabsUpdated then
+                ns.OnRetailBankTabsUpdated()
+            end
         end
     end, RetailBankScanner)
 
@@ -821,6 +829,13 @@ if C_Bank then
             local warbandLocked = C_Bank.FetchBankLockedReason(BANK_TYPE_ACCOUNT)
             if warbandLocked == nil then
                 RetailBankScanner:CacheBankTabs(BANK_TYPE_ACCOUNT)
+            end
+            -- Rescan bank to pick up new tab slots
+            RetailBankScanner:ScanAllBank()
+            RetailBankScanner:SaveToDatabase()
+            -- Notify UI to refresh (e.g., after purchasing a new tab)
+            if ns.OnRetailBankTabsUpdated then
+                ns.OnRetailBankTabsUpdated()
             end
         end
     end, RetailBankScanner)

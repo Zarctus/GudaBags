@@ -17,13 +17,16 @@ local pendingResize = false
 local pendingRefresh = false
 
 -- Constants
-local BUTTON_SPACING = 3
 local PADDING = 5
 local MAX_BUTTONS = 12  -- Maximum possible buttons (for button pool)
 local DEFAULT_FONT = "Fonts\\FRIZQT__.TTF"
 
 local function GetButtonSize()
     return Database:GetSetting("trackedBarSize") or 36
+end
+
+local function GetButtonSpacing()
+    return Database:GetSetting("trackedBarSpacing") or 3
 end
 
 local function GetMaxColumns()
@@ -81,6 +84,9 @@ local function CreateItemButton(parent, index)
     button:SetScript("OnDragStart", function() end)
     button:SetScript("OnReceiveDrag", function() end)
 
+    -- Hide template's NormalTexture (Masque-aware)
+    Utils:HideNormalTexture(button)
+
     -- Background (slot style)
     local bg = button:CreateTexture(nil, "BACKGROUND")
     bg:SetAllPoints()
@@ -113,6 +119,7 @@ local function CreateItemButton(parent, index)
     highlight:SetAllPoints()
     highlight:SetTexture("Interface\\Buttons\\ButtonHilight-Square")
     highlight:SetBlendMode("ADD")
+    button.highlight = highlight
 
     -- Quality border (same style as bag items)
     local border = Utils:CreateItemBorder(button)
@@ -229,21 +236,27 @@ local function CreateTrackedBarFrame()
     f:SetFrameStrata("MEDIUM")
     f:SetFrameLevel(Constants.FRAME_LEVELS.BASE)
 
-    f:SetBackdrop({
-        bgFile = "Interface\\Buttons\\WHITE8x8",
-        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-        edgeSize = 10,
-        insets = { left = 2, right = 2, top = 2, bottom = 2 },
-    })
-    f:SetBackdropColor(0.1, 0.1, 0.1, 0.85)
-    f:SetBackdropBorderColor(0.3, 0.3, 0.3, 0.9)
+    f:SetBackdrop(nil)
 
     -- Create item buttons (pool of maximum possible buttons)
+    local MasqueModule = ns:GetModule("Masque")
+    local masqueActive = MasqueModule and MasqueModule:IsActive()
     for i = 1, MAX_BUTTONS do
         local button = CreateItemButton(f, i)
-        button:SetPoint("LEFT", f, "LEFT", PADDING + (i - 1) * (buttonSize + BUTTON_SPACING), 0)
+        button:SetPoint("LEFT", f, "LEFT", PADDING + (i - 1) * (buttonSize + GetButtonSpacing()), 0)
         button:Hide()
         itemButtons[i] = button
+
+        -- Register with Masque if active
+        if masqueActive then
+            MasqueModule:AddButton(button, "Tracked Items", {
+                Icon = button.icon,
+                Cooldown = button.cooldown,
+                Count = button.count,
+                Highlight = button.highlight,
+                Normal = button:GetNormalTexture(),
+            })
+        end
     end
 
     f:Hide()
@@ -333,12 +346,19 @@ local function UpdateButton(button, itemID)
         end
     end
 
-    -- Border: quest items get quest color, otherwise quality color
+    -- Border: quest items get quest color, otherwise quality color (respects settings)
+    local showBorder = false
+    if itemQuality and itemQuality >= 2 then
+        showBorder = Database:GetSetting("equipmentBorders")
+    elseif itemQuality and itemQuality == 1 then
+        showBorder = Database:GetSetting("otherBorders")
+    end
+
     if isQuestItem then
         local questColor = isQuestStarter and Constants.COLORS.QUEST_STARTER or Constants.COLORS.QUEST
         button.border:SetVertexColor(questColor[1], questColor[2], questColor[3], 1)
         button.border:Show()
-    elseif itemQuality ~= nil then
+    elseif showBorder and itemQuality ~= nil then
         local color = Constants.QUALITY_COLORS[itemQuality]
         if color then
             button.border:SetVertexColor(color[1], color[2], color[3], 1)
@@ -432,8 +452,8 @@ function TrackedBar:Refresh()
                 -- Position button in grid
                 itemButtons[i]:ClearAllPoints()
                 itemButtons[i]:SetPoint("TOPLEFT", frame, "TOPLEFT",
-                    PADDING + col * (buttonSize + BUTTON_SPACING),
-                    -PADDING - row * (buttonSize + BUTTON_SPACING))
+                    PADDING + col * (buttonSize + GetButtonSpacing()),
+                    -PADDING - row * (buttonSize + GetButtonSpacing()))
             end
         else
             if not inCombat then
@@ -447,8 +467,8 @@ function TrackedBar:Refresh()
 
     if not inCombat then
         if visibleCount > 0 then
-            local width = PADDING * 2 + numCols * buttonSize + (numCols - 1) * BUTTON_SPACING
-            local height = PADDING * 2 + numRows * buttonSize + (numRows - 1) * BUTTON_SPACING
+            local width = PADDING * 2 + numCols * buttonSize + (numCols - 1) * GetButtonSpacing()
+            local height = PADDING * 2 + numRows * buttonSize + (numRows - 1) * GetButtonSpacing()
             frame:SetWidth(width)
             frame:SetHeight(height)
             frame:Show()
@@ -597,10 +617,38 @@ function TrackedBar:UpdateSize()
     end
 
     local buttonSize = GetButtonSize()
+    local questIconSize = math.max(12, math.floor(buttonSize * 0.38))
 
-    -- Resize all buttons
+    -- Resize all buttons and re-anchor child elements
     for i, button in ipairs(itemButtons) do
         button:SetSize(buttonSize, buttonSize)
+
+        -- Re-anchor icon and bg to fill resized button
+        -- (Masque may have overridden SetAllPoints with its own positioning)
+        if button.icon then
+            button.icon:ClearAllPoints()
+            button.icon:SetAllPoints(button)
+        end
+        if button.bg then
+            button.bg:ClearAllPoints()
+            button.bg:SetAllPoints(button)
+        end
+        if button.cooldown then
+            button.cooldown:ClearAllPoints()
+            button.cooldown:SetAllPoints(button.icon)
+        end
+        if button.highlight then
+            button.highlight:ClearAllPoints()
+            button.highlight:SetAllPoints(button)
+        end
+
+        -- Scale quest indicator frames proportionally
+        if button.questStarterIcon then
+            button.questStarterIcon:SetSize(questIconSize, questIconSize)
+        end
+        if button.questIcon then
+            button.questIcon:SetSize(questIconSize, questIconSize)
+        end
     end
 
     -- Refresh to update frame dimensions and reposition buttons
@@ -612,22 +660,20 @@ end
 -------------------------------------------------
 
 local function OnBagUpdate()
-    if frame and frame:IsShown() then
-        -- Skip refreshes during sort (will refresh once via BAGS_UPDATED when sort completes)
-        local SortEngine = ns:GetModule("SortEngine")
-        if SortEngine and (SortEngine:IsSorting() or SortEngine:IsRestacking()) then return end
-        TrackedBar:Refresh()
-        -- Schedule a full refresh after combat for layout/attribute updates
-        if InCombatLockdown() then
-            pendingRefresh = true
-        end
+    if not frame then return end
+    -- Skip refreshes during sort (will refresh once via BAGS_UPDATED when sort completes)
+    local SortEngine = ns:GetModule("SortEngine")
+    if SortEngine and (SortEngine:IsSorting() or SortEngine:IsRestacking()) then return end
+    TrackedBar:Refresh()
+    -- Schedule a full refresh after combat for layout/attribute updates
+    if InCombatLockdown() then
+        pendingRefresh = true
     end
 end
 
 local function OnCooldownUpdate()
-    if frame and frame:IsShown() then
-        TrackedBar:Refresh()
-    end
+    if not frame then return end
+    TrackedBar:Refresh()
 end
 
 -------------------------------------------------
@@ -637,6 +683,17 @@ end
 Events:OnPlayerLogin(function()
     TrackedBar:Init()
     TrackedBar:Show()
+end, TrackedBar)
+
+-- Handle setting changes directly (don't rely on BagFrame which may not be open)
+Events:Register("SETTING_CHANGED", function(key)
+    if key == "trackedBarSize" or key == "trackedBarSpacing" or key == "trackedBarColumns" then
+        TrackedBar:UpdateSize()
+    elseif key == "iconFontSize" then
+        TrackedBar:UpdateFontSize()
+    elseif key == "equipmentBorders" or key == "otherBorders" then
+        TrackedBar:Refresh()
+    end
 end, TrackedBar)
 
 -- Apply deferred updates after combat ends
@@ -653,5 +710,5 @@ end, TrackedBar)
 Events:Register("BAG_UPDATE", OnBagUpdate, TrackedBar)
 Events:Register("BAG_UPDATE_COOLDOWN", OnCooldownUpdate, TrackedBar)
 Events:Register("BAGS_UPDATED", function()
-    if frame and frame:IsShown() then TrackedBar:Refresh() end
+    if frame then TrackedBar:Refresh() end
 end, TrackedBar)

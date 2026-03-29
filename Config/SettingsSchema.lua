@@ -22,8 +22,11 @@ function SettingsSchema.GetGeneral()
             return opts
         end)()},
         { type = "slider", key = "bgAlpha", label = L["SETTINGS_BG_OPACITY"], min = 0, max = 100, step = 5, format = "%" },
-        { type = "checkbox", key = "retailEmptySlots", label = L["SETTINGS_RETAIL_EMPTY_SLOTS"], tooltip = L["SETTINGS_RETAIL_EMPTY_SLOTS_TIP"],
-          hidden = function() return ns.IsRetail end },
+        { type = "row", children = {
+            { type = "checkbox", key = "retailEmptySlots", label = L["SETTINGS_RETAIL_EMPTY_SLOTS"], tooltip = L["SETTINGS_RETAIL_EMPTY_SLOTS_TIP"],
+              hidden = function() return ns.IsRetail end },
+            { type = "checkbox", key = "minimalEmptySlots", label = L["SETTINGS_MINIMAL_EMPTY_SLOTS"], tooltip = L["SETTINGS_MINIMAL_EMPTY_SLOTS_TIP"] },
+        }},
 
         { type = "separator", label = L["SETTINGS_SECTION_OPTIONS"] },
         { type = "row", children = {
@@ -178,6 +181,7 @@ function SettingsSchema.GetBar()
         { type = "separator", label = L["SETTINGS_SECTION_QUEST_BAR"] },
         { type = "slider", key = "questBarSize", label = L["SETTINGS_QUEST_BAR_SIZE"], min = 22, max = 64, step = 1, format = "px" },
         { type = "slider", key = "questBarColumns", label = L["SETTINGS_QUEST_BAR_COLS"], min = 1, max = 5, step = 1 },
+        { type = "slider", key = "questBarSpacing", label = L["SETTINGS_QUEST_BAR_SPACING"], min = 0, max = 12, step = 1, format = "px" },
         { type = "row", children = {
             { type = "checkbox", key = "showQuestBar", label = L["SETTINGS_SHOW_QUEST_BAR"], tooltip = L["SETTINGS_SHOW_QUEST_BAR_TIP"] },
             { type = "checkbox", key = "hideQuestBarInBGs", label = L["SETTINGS_HIDE_QUEST_BAR_BG"], tooltip = L["SETTINGS_HIDE_QUEST_BAR_BG_TIP"] },
@@ -186,6 +190,7 @@ function SettingsSchema.GetBar()
         { type = "separator", label = L["SETTINGS_SECTION_TRACKED"] },
         { type = "slider", key = "trackedBarSize", label = L["SETTINGS_TRACKED_BAR_SIZE"], min = 22, max = 64, step = 1, format = "px" },
         { type = "slider", key = "trackedBarColumns", label = L["SETTINGS_TRACKED_BAR_COLS"], min = 2, max = 12, step = 1 },
+        { type = "slider", key = "trackedBarSpacing", label = L["SETTINGS_TRACKED_BAR_SPACING"], min = 0, max = 12, step = 1, format = "px" },
     }
 end
 

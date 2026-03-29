@@ -13,6 +13,16 @@ local GOLD_ICON = "|TInterface\\MoneyFrame\\UI-GoldIcon:10|t"
 local SILVER_ICON = "|TInterface\\MoneyFrame\\UI-SilverIcon:10|t"
 local COPPER_ICON = "|TInterface\\MoneyFrame\\UI-CopperIcon:10|t"
 
+local function FormatGoldWithCommas(n)
+    local formatted = tostring(n)
+    while true do
+        local k
+        formatted, k = string.gsub(formatted, "^(-?%d+)(%d%d%d)", "%1,%2")
+        if k == 0 then break end
+    end
+    return formatted
+end
+
 local function FormatMoney(amount)
     local gold = math.floor(amount / 10000)
     local silver = math.floor((amount % 10000) / 100)
@@ -20,7 +30,7 @@ local function FormatMoney(amount)
 
     local result = ""
     if gold > 0 then
-        result = string.format("%d %s ", gold, GOLD_ICON)
+        result = string.format("%s %s ", FormatGoldWithCommas(gold), GOLD_ICON)
     end
     if silver > 0 or gold > 0 then
         result = result .. string.format("%d %s ", silver, SILVER_ICON)
@@ -77,13 +87,19 @@ local function ShowMoneyTooltip(frame)
 
     local allRealms = Database:GetSetting("goldTrackAllRealms")
 
+    -- Get warband gold (Retail only)
+    local warbandMoney = 0
+    if ns.IsRetail and C_Bank and C_Bank.FetchDepositedMoney then
+        warbandMoney = Money:GetWarbandMoney() or 0
+    end
+
     if allRealms then
         -- Cross-realm view: group by realm with subtotals
         local chars = FilterBlacklisted(Database:GetAllCharacters(false, false))
         local totalMoney = 0
         for _, c in ipairs(chars) do totalMoney = totalMoney + c.money end
 
-        GameTooltip:AddDoubleLine(L["TOOLTIP_ACCOUNT_GOLD"], FormatMoney(totalMoney), 1, 0.82, 0, 1, 1, 1)
+        GameTooltip:AddDoubleLine(L["TOOLTIP_ACCOUNT_GOLD"], FormatMoney(totalMoney + warbandMoney), 1, 0.82, 0, 1, 1, 1)
         GameTooltip:AddLine(" ")
 
         -- Group characters by realm
@@ -114,12 +130,18 @@ local function ShowMoneyTooltip(frame)
         local totalMoney = 0
         for _, c in ipairs(chars) do totalMoney = totalMoney + c.money end
 
-        GameTooltip:AddDoubleLine(L["TOOLTIP_REALM_GOLD"], FormatMoney(totalMoney), 1, 0.82, 0, 1, 1, 1)
+        GameTooltip:AddDoubleLine(L["TOOLTIP_REALM_GOLD"], FormatMoney(totalMoney + warbandMoney), 1, 0.82, 0, 1, 1, 1)
         GameTooltip:AddLine(" ")
 
         for _, char in ipairs(chars) do
             AddCharacterLine(char)
         end
+    end
+
+    -- Warband gold line (Retail only)
+    if warbandMoney > 0 then
+        GameTooltip:AddLine(" ")
+        GameTooltip:AddDoubleLine(L["TOOLTIP_WARBAND_GOLD"] or "Warband gold:", FormatMoney(warbandMoney), 0, 0.8, 0.8, 1, 1, 1)
     end
 
     GameTooltip:AddLine(" ")
@@ -304,6 +326,21 @@ function Money:Update()
     if not moneyFrame then return end
     local money = GetMoney()
     MoneyFrame_Update(moneyFrame.frameName, money)
+end
+
+function Money:SetFontSize(size)
+    if not moneyFrame then return end
+    local coinButtons = {"GoldButton", "SilverButton", "CopperButton"}
+    for _, buttonName in ipairs(coinButtons) do
+        local coinButton = _G[moneyFrame.frameName .. buttonName]
+        if coinButton then
+            local text = coinButton:GetFontString()
+            if text then
+                local fontName, _, fontFlags = text:GetFont()
+                text:SetFont(fontName, size, fontFlags)
+            end
+        end
+    end
 end
 
 function Money:GetFrame()

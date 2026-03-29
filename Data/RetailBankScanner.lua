@@ -802,6 +802,9 @@ if C_Bank then
         ns:Debug("Bank tab settings updated for", bankType)
         if isBankOpen then
             RetailBankScanner:CacheBankTabs(bankType)
+            if ns.OnRetailBankTabsUpdated then
+                ns.OnRetailBankTabsUpdated()
+            end
         end
     end, RetailBankScanner)
 

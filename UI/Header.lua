@@ -289,6 +289,13 @@ function Header:GetFrame()
     return frame
 end
 
+function Header:GetHeight()
+    if frame then
+        return frame:GetHeight()
+    end
+    return Constants.FRAME.TITLE_HEIGHT
+end
+
 function Header:SetDragCallback(callback)
     onDragStop = callback
 end
@@ -378,4 +385,230 @@ function Header:SetBankCharacterCallback(callback)
     if BankCharacters then
         BankCharacters:SetCallback(callback)
     end
+end
+
+function Header:SetNarrowMode(isCompact)
+    local titleBar = self:GetFrame()
+    if not titleBar then return end
+    titleBar.isCompactMode = isCompact
+
+    -- Collect nav buttons (Characters, Bank, Guild Bank, Mail)
+    local navButtons = {}
+    if titleBar.charactersButton then table.insert(navButtons, titleBar.charactersButton) end
+    if titleBar.chestButton then table.insert(navButtons, titleBar.chestButton) end
+    if titleBar.guildButton then table.insert(navButtons, titleBar.guildButton) end
+    if titleBar.envelopeButton then table.insert(navButtons, titleBar.envelopeButton) end
+
+    if isCompact then
+        -- Smaller title font
+        if titleBar.title then
+            local font, _, flags = titleBar.title:GetFont()
+            if font then titleBar.title:SetFont(font, 10, flags) end
+        end
+
+        -- Hide individual nav buttons
+        for _, btn in ipairs(navButtons) do
+            btn:Hide()
+        end
+
+        -- Create hamburger menu button (once)
+        if not titleBar.menuButton then
+            local menuBtn = CreateFrame("Button", nil, titleBar)
+            menuBtn:SetSize(16, 16)
+
+            local menuIcon = menuBtn:CreateTexture(nil, "ARTWORK")
+            menuIcon:SetAllPoints()
+            menuIcon:SetTexture("Interface\\Buttons\\WHITE8x8")
+            menuIcon:SetVertexColor(0.7, 0.7, 0.7)
+            menuBtn.icon = menuIcon
+
+            -- Draw 3 horizontal lines
+            local function CreateLine(parent, yOffset)
+                local line = parent:CreateTexture(nil, "OVERLAY")
+                line:SetSize(10, 1)
+                line:SetPoint("CENTER", parent, "CENTER", 0, yOffset)
+                line:SetTexture("Interface\\Buttons\\WHITE8x8")
+                line:SetVertexColor(0.9, 0.9, 0.9)
+                return line
+            end
+            menuBtn.line1 = CreateLine(menuBtn, 4)
+            menuBtn.line2 = CreateLine(menuBtn, 0)
+            menuBtn.line3 = CreateLine(menuBtn, -4)
+            -- Hide the bg square, just show lines
+            menuIcon:SetVertexColor(0.15, 0.15, 0.15, 0.6)
+
+            menuBtn:SetScript("OnEnter", function(self)
+                self.icon:SetVertexColor(0.25, 0.25, 0.25, 0.8)
+                GameTooltip:SetOwner(self, "ANCHOR_BOTTOM")
+                GameTooltip:SetText("Navigation")
+                GameTooltip:Show()
+            end)
+            menuBtn:SetScript("OnLeave", function(self)
+                self.icon:SetVertexColor(0.15, 0.15, 0.15, 0.6)
+                GameTooltip:Hide()
+            end)
+            menuBtn:SetScript("OnClick", function(self)
+                Header:ShowNavMenu(self)
+            end)
+
+            titleBar.menuButton = menuBtn
+        end
+
+        titleBar.menuButton:ClearAllPoints()
+        titleBar.menuButton:SetPoint("LEFT", titleBar, "LEFT", 6, 0)
+        titleBar.menuButton:Show()
+
+        -- Title next to menu button
+        if titleBar.title then
+            titleBar.title:ClearAllPoints()
+            titleBar.title:SetPoint("LEFT", titleBar.menuButton, "RIGHT", 4, 0)
+        end
+    else
+        -- Restore title font
+        if titleBar.title then
+            local font, _, flags = titleBar.title:GetFont()
+            if font then titleBar.title:SetFont(font, 12, flags) end
+        end
+
+        -- Hide menu button
+        if titleBar.menuButton then
+            titleBar.menuButton:Hide()
+        end
+
+        -- Show and restore nav buttons inline
+        local lastBtn = nil
+        for _, btn in ipairs(navButtons) do
+            btn:ClearAllPoints()
+            if lastBtn then
+                btn:SetPoint("LEFT", lastBtn, "RIGHT", 4, 0)
+            else
+                btn:SetPoint("LEFT", titleBar, "LEFT", 6, 0)
+            end
+            btn:Show()
+            lastBtn = btn
+        end
+
+        -- Restore title to center
+        if titleBar.title then
+            titleBar.title:ClearAllPoints()
+            titleBar.title:SetPoint("CENTER", titleBar, "CENTER", 0, 0)
+        end
+    end
+end
+
+-- Navigation dropdown menu for compact mode
+local navMenu = nil
+
+function Header:ShowNavMenu(anchor)
+    if not navMenu then
+        navMenu = CreateFrame("Frame", "GudaBagsNavMenu", UIParent, "BackdropTemplate")
+        navMenu:SetFrameStrata("TOOLTIP")
+        navMenu:SetBackdrop({
+            bgFile = "Interface\\Buttons\\WHITE8x8",
+            edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+            edgeSize = 10,
+            insets = { left = 2, right = 2, top = 2, bottom = 2 },
+        })
+        navMenu:SetBackdropColor(0.1, 0.1, 0.1, 0.95)
+        navMenu:SetBackdropBorderColor(0.3, 0.3, 0.3, 0.9)
+        navMenu:EnableMouse(true)
+        navMenu:Hide()
+    end
+
+    if navMenu:IsShown() then
+        navMenu:Hide()
+        return
+    end
+
+    -- Build menu items from nav buttons
+    local titleBar = self:GetFrame()
+    if not titleBar then return end
+
+    local L = ns.L
+    local menuItems = {}
+    if Constants.FEATURES.CHARACTERS then
+        table.insert(menuItems, { label = L["TOOLTIP_CHARACTERS"] or "Characters", onClick = function()
+            if titleBar.charactersButton then
+                titleBar.charactersButton:Click()
+            end
+        end})
+    end
+    if Constants.FEATURES.BANK then
+        table.insert(menuItems, { label = L["TOOLTIP_BANK"] or "Bank", onClick = function()
+            if titleBar.chestButton then
+                titleBar.chestButton:Click()
+            end
+        end})
+    end
+    if Constants.FEATURES.GUILD_BANK and IsInGuild() then
+        table.insert(menuItems, { label = L["TOOLTIP_GUILD_BANK"] or "Guild Bank", onClick = function()
+            if titleBar.guildButton then
+                titleBar.guildButton:Click()
+            end
+        end})
+    end
+    if Constants.FEATURES.MAIL then
+        table.insert(menuItems, { label = L["TOOLTIP_MAIL"] or "Mail", onClick = function()
+            if titleBar.envelopeButton then
+                titleBar.envelopeButton:Click()
+            end
+        end})
+    end
+
+    -- Clear old items
+    if navMenu.items then
+        for _, item in ipairs(navMenu.items) do item:Hide() end
+    end
+    navMenu.items = navMenu.items or {}
+
+    local yOffset = -4
+    local maxWidth = 0
+    for i, def in ipairs(menuItems) do
+        local item = navMenu.items[i]
+        if not item then
+            item = CreateFrame("Button", nil, navMenu)
+            item:SetHeight(18)
+            local label = item:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+            label:SetPoint("LEFT", 6, 0)
+            item.label = label
+            local bg = item:CreateTexture(nil, "BACKGROUND")
+            bg:SetAllPoints()
+            bg:SetTexture("Interface\\Buttons\\WHITE8x8")
+            bg:SetVertexColor(0, 0, 0, 0)
+            item.bg = bg
+            item:SetScript("OnEnter", function(self)
+                self.bg:SetVertexColor(0.25, 0.25, 0.25, 0.8)
+            end)
+            item:SetScript("OnLeave", function(self)
+                self.bg:SetVertexColor(0, 0, 0, 0)
+            end)
+            navMenu.items[i] = item
+        end
+
+        item.label:SetText(def.label)
+        item.label:SetTextColor(1, 0.82, 0)
+        item:SetScript("OnClick", function()
+            navMenu:Hide()
+            def.onClick()
+        end)
+        item:SetPoint("TOPLEFT", navMenu, "TOPLEFT", 4, yOffset)
+        item:SetPoint("TOPRIGHT", navMenu, "TOPRIGHT", -4, yOffset)
+        local w = item.label:GetStringWidth() + 16
+        if w > maxWidth then maxWidth = w end
+        yOffset = yOffset - 18
+        item:Show()
+    end
+
+    navMenu:SetSize(math.max(maxWidth, 100), -yOffset + 4)
+    navMenu:ClearAllPoints()
+    navMenu:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 0, -2)
+    navMenu:Show()
+
+    navMenu:SetScript("OnUpdate", function(self)
+        if not MouseIsOver(self) and not MouseIsOver(anchor) then
+            if IsMouseButtonDown("LeftButton") or IsMouseButtonDown("RightButton") then
+                self:Hide()
+            end
+        end
+    end)
 end

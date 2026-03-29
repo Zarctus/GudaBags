@@ -128,10 +128,10 @@ function GuildBankFooter:Init(parent)
 
     -- Log button
     local logBtn = CreateFrame("Button", "GudaGuildBankLogBtn", centerBtns)
-    logBtn:SetSize(40, 18)
+    logBtn:SetSize(24, 18)
     logBtn:SetPoint("LEFT", centerBtns, "LEFT", 0, 0)
     local logText = logBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    logText:SetPoint("CENTER")
+    logText:SetPoint("LEFT")
     logText:SetText("Log")
     logText:SetTextColor(1, 0.82, 0)  -- Gold
     logBtn.text = logText
@@ -242,7 +242,73 @@ function GuildBankFooter:Init(parent)
     itemWithdrawInfo:Hide()  -- Hidden by default, shown when guild bank is open
     frame.itemWithdrawInfo = itemWithdrawInfo
 
+    -- Responsive layout based on parent width
+    local currentMode = "wide"
+
+    local function UpdateLayout()
+        if not frame or not mainGuildBankFrame then return end
+        local width = mainGuildBankFrame:GetWidth()
+        local newMode = width < 400 and "narrow" or "wide"
+        if newMode == currentMode then return end
+        currentMode = newMode
+
+        if currentMode == "narrow" then
+            -- 3-row layout
+            frame:SetHeight(60)
+            frame.currentHeight = 60
+
+            -- Row 1 (top): Deposit, Withdraw, SlotInfo
+            frame.depositBtn:ClearAllPoints()
+            frame.depositBtn:SetPoint("LEFT", frame, "LEFT", 0, 18)
+
+            -- Row 2: withdraw info
+            frame.moneyWithdrawInfo:ClearAllPoints()
+            frame.moneyWithdrawInfo:SetPoint("LEFT", frame, "LEFT", 0, 0)
+            frame.itemWithdrawInfo:ClearAllPoints()
+            frame.itemWithdrawInfo:SetPoint("RIGHT", frame, "RIGHT", 0, 0)
+
+            -- Row 3: Log | Money Log | Info left, Money right
+            frame.centerBtns:ClearAllPoints()
+            frame.centerBtns:SetPoint("LEFT", frame, "LEFT", 0, -18)
+            frame.moneyText:ClearAllPoints()
+            frame.moneyText:SetPoint("RIGHT", frame, "RIGHT", 0, -18)
+        else
+            -- 2-row layout (default)
+            frame:SetHeight(40)
+            frame.currentHeight = 40
+
+            -- Row 1: Deposit left, Money right
+            frame.depositBtn:ClearAllPoints()
+            frame.depositBtn:SetPoint("LEFT", frame, "LEFT", 0, 8)
+
+            frame.moneyText:ClearAllPoints()
+            frame.moneyText:SetPoint("RIGHT", frame, "RIGHT", 0, 8)
+
+            -- Row 2: withdraw info + center buttons
+            frame.moneyWithdrawInfo:ClearAllPoints()
+            frame.moneyWithdrawInfo:SetPoint("LEFT", frame, "LEFT", 0, -13)
+            frame.itemWithdrawInfo:ClearAllPoints()
+            frame.itemWithdrawInfo:SetPoint("RIGHT", frame, "RIGHT", 0, -13)
+            frame.centerBtns:ClearAllPoints()
+            frame.centerBtns:SetPoint("CENTER", frame, "CENTER", 0, -13)
+        end
+    end
+
+    frame.currentHeight = 40
+
+    -- Hook parent resize to update layout
+    mainGuildBankFrame:HookScript("OnSizeChanged", function(self, width)
+        UpdateLayout()
+    end)
+
     return frame
+end
+
+function GuildBankFooter:GetHeight()
+    if frame and frame.currentHeight then
+        return frame.currentHeight
+    end
+    return 40
 end
 
 function GuildBankFooter:Show()

@@ -357,6 +357,55 @@ function Footer:GetFrame()
     return frame
 end
 
+function Footer:GetHeight()
+    if frame and frame.currentHeight then
+        return frame.currentHeight
+    end
+    return Constants.FRAME.FOOTER_HEIGHT
+end
+
+function Footer:SetNarrowMode(isNarrow)
+    if not frame then return end
+    if frame.isNarrowMode == isNarrow then return end
+    frame.isNarrowMode = isNarrow
+
+    if isNarrow then
+        -- 2-row layout: Bag slots on row 1, Money on row 2 left-aligned
+        frame:SetHeight(40)
+        frame.currentHeight = 40
+
+        -- Bag slots on top row
+        if frame.bagSlotsFrame then
+            frame.bagSlotsFrame:ClearAllPoints()
+            frame.bagSlotsFrame:SetPoint("TOPLEFT", frame, "TOPLEFT", 0, -1)
+        end
+
+        -- Money on bottom row, left-aligned symmetric with bags
+        if frame.moneyFrame then
+            frame.moneyFrame:ClearAllPoints()
+            frame.moneyFrame:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 1, 0)
+        end
+        Money:SetFontSize(12)
+    else
+        -- Single-row layout (default)
+        frame:SetHeight(Constants.FRAME.FOOTER_HEIGHT)
+        frame.currentHeight = Constants.FRAME.FOOTER_HEIGHT
+
+        -- Money back to right
+        if frame.moneyFrame then
+            frame.moneyFrame:ClearAllPoints()
+            frame.moneyFrame:SetPoint("RIGHT", frame, "RIGHT", 14, 0)
+        end
+        Money:SetFontSize(14)
+
+        -- Bag slots back to left
+        if frame.bagSlotsFrame then
+            frame.bagSlotsFrame:ClearAllPoints()
+            frame.bagSlotsFrame:SetPoint("LEFT", frame, "LEFT", 0, 0)
+        end
+    end
+end
+
 function Footer:UpdateTheme()
     if BagSlots then BagSlots:UpdateTheme() end
     if Keyring then Keyring:UpdateTheme() end

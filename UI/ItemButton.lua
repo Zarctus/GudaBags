@@ -211,19 +211,40 @@ end
 
 -- Apply retail/default slot textures to a single button
 local function ApplyThemeToButton(button, slotTex)
-    if slotTex then
+    local minimalMode = Database:GetSetting("minimalEmptySlots")
+
+    if minimalMode then
+        -- Minimal mode: thin border outline, no slot icon
         button.slotBackground:Hide()
+        if button.retailSlotBg then button.retailSlotBg:Hide() end
+        if button.minimalSlot then button.minimalSlot:Show() end
+        button.highlight:Show()
+        if button.retailHighlight then button.retailHighlight:Hide() end
+    elseif slotTex then
+        -- Retail-style slot textures
+        button.slotBackground:Hide()
+        if button.minimalSlot then button.minimalSlot:Hide() end
         button.retailSlotBg:SetTexture(slotTex.background)
         button.retailSlotBg:Show()
         button.highlight:Hide()
         button.retailHighlight:SetTexture(slotTex.highlight)
         button.retailHighlight:Show()
     else
+        -- Default classic slot icon
         button.slotBackground:Show()
         if button.retailSlotBg then button.retailSlotBg:Hide() end
+        if button.minimalSlot then button.minimalSlot:Hide() end
         button.highlight:Show()
         if button.retailHighlight then button.retailHighlight:Hide() end
     end
+end
+
+-- Scale slot background extension based on icon size (default 37px → 9px extension)
+local function UpdateSlotBackgroundSize(button, size)
+    local slotExtend = math.max(1, math.floor(size * 9 / 37))
+    button.slotBackground:ClearAllPoints()
+    button.slotBackground:SetPoint("TOPLEFT", button, "TOPLEFT", -slotExtend, slotExtend)
+    button.slotBackground:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", slotExtend, -slotExtend)
 end
 
 -- Phase 1: Use Blizzard's optimized CreateObjectPool API
@@ -232,6 +253,11 @@ local buttonIndex = 0
 
 -- Full reset function for pool (called on Release)
 local function ResetButton(pool, button)
+    -- Remove from Masque before reset
+    local MasqueModule = ns:GetModule("Masque")
+    local masqueActive = MasqueModule and MasqueModule:IsActive()
+    if masqueActive then MasqueModule:RemoveButton(button) end
+
     button:SetShown(false)  -- Use SetShown to avoid taint during combat
     button.wrapper:SetShown(false)
     button.wrapper:ClearAllPoints()
@@ -250,8 +276,11 @@ local function ResetButton(pool, button)
     if button.IconOverlay then button.IconOverlay:Hide() end
     if button.NewItemTexture then button.NewItemTexture:Hide() end
     if button.BattlepayItemTexture then button.BattlepayItemTexture:Hide() end
-    local normalTex = button:GetNormalTexture()
-    if normalTex then normalTex:Hide() end
+    -- Don't hide NormalTexture when Masque is active — Masque manages it
+    if not masqueActive then
+        local normalTex = button:GetNormalTexture()
+        if normalTex then normalTex:Hide() end
+    end
 
     -- Clear visual state to prevent texture bleeding
     SetItemButtonTexture(button, nil)
@@ -279,6 +308,7 @@ local function ResetButton(pool, button)
     if button.searchGlow then button.searchGlow:Hide() end
     if button.searchDimOverlay then button.searchDimOverlay:Hide() end
     if button.newItemGlow then button.newItemGlow:Hide(); if button.newItemGlow.animGroup then button.newItemGlow.animGroup:Stop() end end
+    if button.minimalSlot then button.minimalSlot:Hide() end
     if button.cooldown then CooldownFrame_Set(button.cooldown, 0, 0, false) end
 end
 
@@ -426,16 +456,33 @@ local function CreateButton(parent)
     end)
 
     -- Hide template's built-in visual elements (we use our own)
+    -- Always hide NormalTexture to prevent template's quest handlers from showing borders
+    -- Hide template's NormalTexture — we use our own visuals
+    local MasqueModule = ns:GetModule("Masque")
+    local masqueActive = MasqueModule and MasqueModule:IsActive()
     local normalTex = button:GetNormalTexture()
     if normalTex then
-        normalTex:SetTexture(nil)
-        normalTex:Hide()
+        if masqueActive then
+            -- Keep texture object alive for Masque but hide initially — Masque will manage it
+            normalTex:Hide()
+        else
+            normalTex:SetTexture(nil)
+            normalTex:Hide()
+        end
+    end
+
+    -- Prevent template handlers (UpdateQuestItem etc.) from re-setting NormalTexture
+    -- This stops quest indicator borders from appearing on all slots
+    if masqueActive then
+        button.SetNormalTexture = function() end
     end
 
     if button.IconBorder then button.IconBorder:Hide() end
     if button.IconOverlay then button.IconOverlay:Hide() end
     if button.NormalTexture then
-        button.NormalTexture:SetTexture(nil)
+        if not masqueActive then
+            button.NormalTexture:SetTexture(nil)
+        end
         button.NormalTexture:Hide()
     end
     if button.NewItemTexture then button.NewItemTexture:Hide() end
@@ -484,6 +531,16 @@ local function CreateButton(parent)
         button.UpdateItemContextMatching = function() end
     end
 
+    -- Disable template's quest item texture (we use our own quest icons)
+    -- The template's UpdateQuestItem() shows this with quest borders/bangs on quest items
+    local questTex = button.IconQuestTexture or _G[name .. "IconQuestTexture"]
+    DisableOverlay(questTex)
+
+    -- No-op the template's quest update method to prevent it from managing quest visuals
+    if button.UpdateQuestItem then
+        button.UpdateQuestItem = function() end
+    end
+
     -- Disable any mouse blocking on the icon texture layer
     if button.icon then button.icon:SetDrawLayer("ARTWORK", 0) end
 
@@ -525,6 +582,14 @@ local function CreateButton(parent)
     retailSlotBg:Hide()
     button.retailSlotBg = retailSlotBg
 
+    -- Minimal slot (slightly lighter than bag background — hidden by default)
+    local minimalSlot = button:CreateTexture(nil, "BACKGROUND", nil, -1)
+    minimalSlot:SetAllPoints(button)
+    minimalSlot:SetTexture("Interface\\Buttons\\WHITE8x8")
+    minimalSlot:SetVertexColor(0.05, 0.05, 0.05, 0.5)
+    minimalSlot:Hide()
+    button.minimalSlot = minimalSlot
+
     -- Item icon fills button completely to match empty slot size
     local icon = button.icon or button.Icon or _G[name .. "IconTexture"]
     if icon then
@@ -538,40 +603,7 @@ local function CreateButton(parent)
     button.border = border
 
     -- Inner shadow/glow for quality colors (inset effect)
-    local shadowSize = 4
-    local innerShadow = {
-        top = button:CreateTexture(nil, "ARTWORK", nil, 1),
-        bottom = button:CreateTexture(nil, "ARTWORK", nil, 1),
-        left = button:CreateTexture(nil, "ARTWORK", nil, 1),
-        right = button:CreateTexture(nil, "ARTWORK", nil, 1),
-    }
-    -- Top edge
-    innerShadow.top:SetPoint("TOPLEFT", button, "TOPLEFT", 0, 0)
-    innerShadow.top:SetPoint("TOPRIGHT", button, "TOPRIGHT", 0, 0)
-    innerShadow.top:SetHeight(shadowSize)
-    innerShadow.top:SetTexture("Interface\\Buttons\\WHITE8x8")
-    innerShadow.top:SetGradient("VERTICAL", CreateColor(0, 0, 0, 0), CreateColor(0, 0, 0, 0.6))
-    -- Bottom edge
-    innerShadow.bottom:SetPoint("BOTTOMLEFT", button, "BOTTOMLEFT", 0, 0)
-    innerShadow.bottom:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", 0, 0)
-    innerShadow.bottom:SetHeight(shadowSize)
-    innerShadow.bottom:SetTexture("Interface\\Buttons\\WHITE8x8")
-    innerShadow.bottom:SetGradient("VERTICAL", CreateColor(0, 0, 0, 0.6), CreateColor(0, 0, 0, 0))
-    -- Left edge
-    innerShadow.left:SetPoint("TOPLEFT", button, "TOPLEFT", 0, 0)
-    innerShadow.left:SetPoint("BOTTOMLEFT", button, "BOTTOMLEFT", 0, 0)
-    innerShadow.left:SetWidth(shadowSize)
-    innerShadow.left:SetTexture("Interface\\Buttons\\WHITE8x8")
-    innerShadow.left:SetGradient("HORIZONTAL", CreateColor(0, 0, 0, 0.6), CreateColor(0, 0, 0, 0))
-    -- Right edge
-    innerShadow.right:SetPoint("TOPRIGHT", button, "TOPRIGHT", 0, 0)
-    innerShadow.right:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", 0, 0)
-    innerShadow.right:SetWidth(shadowSize)
-    innerShadow.right:SetTexture("Interface\\Buttons\\WHITE8x8")
-    innerShadow.right:SetGradient("HORIZONTAL", CreateColor(0, 0, 0, 0), CreateColor(0, 0, 0, 0.6))
-    -- Hide by default
-    for _, tex in pairs(innerShadow) do tex:Hide() end
-    button.innerShadow = innerShadow
+    button.innerShadow = Utils:CreateInnerShadow(button, 4)
 
     -- Custom highlight
     local highlight = button:CreateTexture(nil, "HIGHLIGHT")
@@ -1346,6 +1378,12 @@ function ItemButton:Acquire(parent)
     button:SetShown(true)
     button.owner = parent
 
+    -- Register with Masque if active
+    local MasqueModule = ns:GetModule("Masque")
+    if MasqueModule and MasqueModule:IsActive() then
+        MasqueModule:AddButton(button, parent.masqueGroup or "Bags")
+    end
+
     -- Apply retail slot textures immediately so first-open doesn't flash default
     ApplyThemeToButton(button, GetEffectiveSlotTextures())
 
@@ -1417,6 +1455,14 @@ function ItemButton:PreWarm(parent, count)
     -- Release all back to pool so they're available for use
     buttonPool:ReleaseAll()
 
+end
+
+-- Check if a cooldown is just the GCD (matches global cooldown start/duration)
+local function IsGlobalCooldown(start, duration)
+    if not GetSpellCooldown then return false end
+    local gcdStart, gcdDuration = GetSpellCooldown(61304)  -- Global Cooldown spell
+    if not gcdStart or gcdStart == 0 then return false end
+    return start == gcdStart and math.abs(duration - gcdDuration) < 0.01
 end
 
 -- Cached settings for batch updates (set by SetItemBatch or refreshed on demand)
@@ -1513,8 +1559,13 @@ function ItemButton:SetItem(button, itemData, size, isReadOnly)
     if button.IconOverlay then button.IconOverlay:Hide() end
     if button.NewItemTexture then button.NewItemTexture:Hide() end
     if button.BattlepayItemTexture then button.BattlepayItemTexture:Hide() end
-    local normalTex = button:GetNormalTexture()
-    if normalTex then normalTex:Hide() end
+    local MasqueModule = ns:GetModule("Masque")
+    local masqueActive = MasqueModule and MasqueModule:IsActive()
+    -- Don't hide NormalTexture when Masque is active — Masque manages it
+    if not masqueActive then
+        local normalTex = button:GetNormalTexture()
+        if normalTex then normalTex:Hide() end
+    end
 
     -- Reset visual state from previous item (lazy cleanup)
     -- These elements might not be explicitly set below
@@ -1541,6 +1592,7 @@ function ItemButton:SetItem(button, itemData, size, isReadOnly)
         button.wrapper:SetSize(size, size)
         button.currentSize = size
 
+        UpdateSlotBackgroundSize(button, size)
     end
 
     button.slotBackground:SetVertexColor(0.5, 0.5, 0.5, settings.bgAlpha)
@@ -1613,9 +1665,19 @@ function ItemButton:SetItem(button, itemData, size, isReadOnly)
             button.junkOverlay:Hide()
         end
 
+        -- Determine quest indicator status (used for both border and quest icons below)
+        local showQuestIndicator = not (itemData.quality == 0 and IsJunkItem(itemData)) and (itemData.isQuestItem or (itemData.hasDuration and itemData.itemID and GetItemSpell(itemData.itemID)))
+
         -- Quality border (quest items override with golden border)
-        local isEquipment = itemData.itemType == "Armor" or itemData.itemType == "Weapon"
-        local showBorder = isEquipment and settings.equipmentBorders or (not isEquipment and settings.otherBorders)
+        -- These are quality indicators that coexist with Masque's button chrome
+        -- equipmentBorders = uncommon (green) and above for all item types
+        -- otherBorders = white/common items only
+        local showBorder = false
+        if itemData.quality and itemData.quality >= 2 then
+            showBorder = settings.equipmentBorders
+        elseif itemData.quality and itemData.quality == 1 then
+            showBorder = settings.otherBorders
+        end
 
         -- Helper to show inner shadow with color
         local function ShowInnerShadow(color)
@@ -1634,8 +1696,6 @@ function ItemButton:SetItem(button, itemData, size, isReadOnly)
             end
         end
 
-        -- Quest items and usable duration items show border with quest color
-        local showQuestIndicator = not (itemData.quality == 0 and IsJunkItem(itemData)) and (itemData.isQuestItem or (itemData.hasDuration and itemData.itemID and GetItemSpell(itemData.itemID)))
         if showQuestIndicator then
             local questColor = itemData.isQuestStarter and Constants.COLORS.QUEST_STARTER or Constants.COLORS.QUEST
             button.border:SetVertexColor(questColor[1], questColor[2], questColor[3], 1)
@@ -1664,11 +1724,11 @@ function ItemButton:SetItem(button, itemData, size, isReadOnly)
             SetItemButtonDesaturated(button, false)
         end
 
-        -- Update cooldown (skip GCD — duration <= 1.5s — to avoid spinning every item on wand/ability use)
+        -- Update cooldown (skip GCD to avoid spinning every item on wand/ability use)
         local isOnCooldown = false
         if button.cooldown and not isReadOnly then
             local start, duration, enable = C_Container.GetContainerItemCooldown(itemData.bagID, itemData.slot)
-            if start and duration and enable and enable > 0 and duration > 2 then
+            if start and duration and enable and enable > 0 and duration > 0 and not IsGlobalCooldown(start, duration) then
                 CooldownFrame_Set(button.cooldown, start, duration, true)
                 isOnCooldown = true
             else
@@ -1925,8 +1985,14 @@ function ItemButton:SetEmpty(button, bagID, slot, size, isReadOnly, isGuildBank)
     if button.IconOverlay then button.IconOverlay:Hide() end
     if button.NewItemTexture then button.NewItemTexture:Hide() end
     if button.BattlepayItemTexture then button.BattlepayItemTexture:Hide() end
-    local normalTex = button:GetNormalTexture()
-    if normalTex then normalTex:Hide() end
+    -- Don't hide NormalTexture when Masque is active — Masque manages it
+    -- Exception: always hide on minimal empty slots (no Masque chrome on empties)
+    local MasqueModule = ns:GetModule("Masque")
+    local masqueActive = MasqueModule and MasqueModule:IsActive()
+    if not masqueActive or Database:GetSetting("minimalEmptySlots") then
+        local normalTex = button:GetNormalTexture()
+        if normalTex then normalTex:Hide() end
+    end
 
     button.itemData = {bagID = bagID, slot = slot, isGuildBank = isGuildBank or false}
     button.isReadOnly = isReadOnly or false
@@ -1954,6 +2020,8 @@ function ItemButton:SetEmpty(button, bagID, slot, size, isReadOnly, isGuildBank)
         button:SetSize(size, size)
         button.wrapper:SetSize(size, size)
         button.currentSize = size
+
+        UpdateSlotBackgroundSize(button, size)
     end
 
     button.slotBackground:SetVertexColor(0.5, 0.5, 0.5, settings.bgAlpha)
@@ -2290,7 +2358,7 @@ if Events then
                 and not button.isReadOnly and not button.isEmptySlotButton
                 and not (button.itemData.isEmptySlots) then
                 local start, duration, enable = C_Container.GetContainerItemCooldown(button.itemData.bagID, button.itemData.slot)
-                if start and duration and enable and enable > 0 and duration > 2 then
+                if start and duration and enable and enable > 0 and duration > 0 and not IsGlobalCooldown(start, duration) then
                     CooldownFrame_Set(button.cooldown, start, duration, true)
                 else
                     CooldownFrame_Set(button.cooldown, 0, 0, false)

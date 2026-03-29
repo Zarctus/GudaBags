@@ -280,6 +280,7 @@ local function CreateBankFrame()
     container:SetSize(1, 1)  -- Will be resized based on content
     scrollFrame:SetScrollChild(container)
     f.container = container
+    f.container.masqueGroup = "Bank"
 
     -- Enable container as drop zone for empty space
     container:EnableMouse(true)
@@ -311,6 +312,76 @@ local function CreateBankFrame()
     emptyMessage.hint = emptyHint
 
     f.emptyMessage = emptyMessage
+
+    -- Purchase tab prompt (shown when "+" tab is clicked)
+    if ns.IsRetail then
+        local purchasePrompt = CreateFrame("Frame", nil, f)
+        purchasePrompt:SetAllPoints(scrollFrame)
+        purchasePrompt:Hide()
+
+        -- Title (Bank or Warband Bank)
+        local promptTitle = purchasePrompt:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+        promptTitle:SetPoint("CENTER", purchasePrompt, "CENTER", 0, 80)
+        promptTitle:SetTextColor(1, 0.82, 0)
+        purchasePrompt.promptTitle = promptTitle
+
+        -- Description text
+        local promptDesc = purchasePrompt:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        promptDesc:SetPoint("TOP", promptTitle, "BOTTOM", 0, -16)
+        promptDesc:SetTextColor(0.8, 0.8, 0.8)
+        promptDesc:SetWidth(350)
+        promptDesc:SetJustifyH("CENTER")
+        purchasePrompt.promptDesc = promptDesc
+
+        -- "Do you wish to purchase this tab?"
+        local promptQuestion = purchasePrompt:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        promptQuestion:SetPoint("TOP", promptDesc, "BOTTOM", 0, -16)
+        promptQuestion:SetTextColor(0.9, 0.9, 0.9)
+        promptQuestion:SetText(ns.L["BANK_PURCHASE_PROMPT"])
+        purchasePrompt.promptQuestion = promptQuestion
+
+        -- Tabs purchased counter
+        local tabsText = purchasePrompt:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        tabsText:SetPoint("TOP", promptQuestion, "BOTTOM", 0, -12)
+        tabsText:SetTextColor(0.8, 0.8, 0.8)
+        purchasePrompt.tabsText = tabsText
+
+        -- Cost display
+        local costFrame = CreateFrame("Frame", nil, purchasePrompt)
+        costFrame:SetSize(100, 24)
+        costFrame:SetPoint("TOP", tabsText, "BOTTOM", -40, -16)
+        purchasePrompt.costFrame = costFrame
+
+        local costLabel = costFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        costLabel:SetPoint("LEFT", costFrame, "LEFT", 0, 0)
+        costLabel:SetTextColor(0.8, 0.8, 0.8)
+        costLabel:SetText(ns.L["BANK_PURCHASE_COST"])
+        purchasePrompt.costLabel = costLabel
+
+        local costValue = costFrame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        costValue:SetPoint("LEFT", costLabel, "RIGHT", 8, 0)
+        costValue:SetTextColor(1, 1, 1)
+        purchasePrompt.costValue = costValue
+
+        -- Purchase button (uses Blizzard's secure template to call protected C_Bank.PurchaseBankTab)
+        local purchaseBtn = CreateFrame("Button", "GudaBankPurchaseBtn", purchasePrompt, "UIPanelButtonTemplate,BankPanelPurchaseButtonScriptTemplate")
+        purchaseBtn:SetSize(120, 28)
+        purchaseBtn:SetPoint("LEFT", costFrame, "RIGHT", 15, 0)
+        purchaseBtn:SetText(ns.L["BANK_PURCHASE_TAB"])
+        purchaseBtn:RegisterForClicks("AnyUp")
+        purchasePrompt.purchaseBtn = purchaseBtn
+
+        purchaseBtn:SetScript("OnEnter", function(self)
+            if self.insufficientFunds then
+                GameTooltip:SetOwner(self, "ANCHOR_TOP")
+                GameTooltip:SetText(ns.L["BANK_PURCHASE_NOT_ENOUGH_GOLD"], 1, 0.3, 0.3)
+                GameTooltip:Show()
+            end
+        end)
+        purchaseBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
+
+        f.purchasePrompt = purchasePrompt
+    end
 
     f.footer = BankFooter:Init(f)
     BankFooter:SetBackCallback(function()
@@ -353,6 +424,7 @@ end
 
 local TAB_SIZE = 36
 local TAB_SPACING = 2
+local showingPurchasePrompt = false
 
 local function CreateSideTab(parent, index, isAllTab)
     local button = CreateFrame("Button", "GudaBankSideTab" .. (isAllTab and "All" or index), parent, "BackdropTemplate")
@@ -362,21 +434,21 @@ local function CreateSideTab(parent, index, isAllTab)
     button:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8x8",
         edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-        edgeSize = 8,
-        insets = {left = 2, right = 2, top = 2, bottom = 2},
+        edgeSize = 12,
+        insets = {left = 3, right = 3, top = 3, bottom = 3},
     })
-    button:SetBackdropColor(0.1, 0.1, 0.1, 0.95)
-    button:SetBackdropBorderColor(0.4, 0.4, 0.4, 0.8)
+    button:SetBackdropColor(0.15, 0.15, 0.15, 0.9)
+    button:SetBackdropBorderColor(0.4, 0.4, 0.4, 0.7)
 
     local icon = button:CreateTexture(nil, "ARTWORK")
     icon:SetSize(TAB_SIZE - 6, TAB_SIZE - 6)
     icon:SetPoint("CENTER")
-    -- Use chest icon for "All" tab, default bag icon for specific tabs (will be updated with actual icon)
     if isAllTab then
-        icon:SetTexture("Interface\\AddOns\\GudaBags\\Assets\\chest.png")
+        icon:SetTexture("Interface\\AddOns\\GudaBags\\Assets\\bags.png")
     else
-        icon:SetTexture("Interface\\Icons\\INV_Misc_Bag_10")  -- Default, will be updated by ShowSideTabs
+        icon:SetTexture("Interface\\Icons\\INV_Misc_Bag_10")
     end
+    icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)  -- Crop icon border
     button.icon = icon
 
     -- Tab number text (for non-All tabs)
@@ -392,13 +464,6 @@ local function CreateSideTab(parent, index, isAllTab)
     highlight:SetAllPoints()
     highlight:SetTexture("Interface\\Buttons\\ButtonHilight-Square")
     highlight:SetBlendMode("ADD")
-
-    -- Selection indicator
-    local selected = button:CreateTexture(nil, "OVERLAY")
-    selected:SetAllPoints()
-    selected:SetColorTexture(1, 0.82, 0, 0.3)
-    selected:Hide()
-    button.selected = selected
 
     button:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_LEFT")
@@ -452,6 +517,10 @@ local function CreateSideTab(parent, index, isAllTab)
                 end
             end
         end
+        -- Right-click hint for non-All tabs when bank is open
+        if self.tabIndex > 0 and RetailBankScanner and RetailBankScanner:IsBankOpen() then
+            GameTooltip:AddLine(ns.L["GUILD_BANK_RIGHT_CLICK_EDIT"] or "Right-click to edit", 0.5, 0.5, 0.5)
+        end
         GameTooltip:Show()
 
         -- Skip hover highlighting if a specific tab is already selected (not "All")
@@ -488,11 +557,28 @@ local function CreateSideTab(parent, index, isAllTab)
         end
     end)
 
-    button:SetScript("OnClick", function(self)
+    button:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+    button:SetScript("OnClick", function(self, mouseButton)
+        -- Reset purchase prompt state when clicking on regular tabs
+        showingPurchasePrompt = false
+
         if RetailBankScanner then
+            -- Right-click on purchased tab: toggle Blizzard tab settings (icon/name/deposit)
+            if mouseButton == "RightButton" and self.tabIndex > 0 then
+                ns:Debug("Right-click on tab", self.tabIndex, "containerID:", self.containerID, "bankOpen:", RetailBankScanner:IsBankOpen())
+                if self.containerID and RetailBankScanner:IsBankOpen() then
+                    if frame.tabSettingsMenu and frame.tabSettingsMenu:IsShown() and frame.tabSettingsMenu.currentContainerID == self.containerID then
+                        frame.tabSettingsMenu:Hide()
+                    else
+                        BankFrame:OpenTabSettings(self.containerID, self.tabIndex)
+                    end
+                end
+                return
+            end
+
             local currentTab = RetailBankScanner:GetSelectedTab()
             if currentTab == self.tabIndex then
-                -- Clicking same tab - do nothing or show all
+                -- Clicking same tab - show all
                 if self.tabIndex ~= 0 then
                     RetailBankScanner:SetSelectedTab(0)
                 end
@@ -500,6 +586,7 @@ local function CreateSideTab(parent, index, isAllTab)
                 RetailBankScanner:SetSelectedTab(self.tabIndex)
             end
             BankFrame:UpdateSideTabSelection()
+            BankFrame:Refresh()
         end
     end)
 
@@ -508,6 +595,150 @@ end
 
 -- Tab icons
 local TAB_ICON_DEFAULT = "Interface\\Icons\\INV_Misc_Bag_10"  -- Default fallback icon
+
+-- Purchase tab button for buying new bank/warband tabs
+local function CreatePurchaseTab(parent, bankTypeEnum)
+    local button = CreateFrame("Button", "GudaBankPurchaseTab", parent, "BackdropTemplate")
+    button:SetSize(TAB_SIZE, TAB_SIZE)
+    button.isPurchaseTab = true
+
+    button:SetBackdrop({
+        bgFile = "Interface\\Buttons\\WHITE8x8",
+        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+        edgeSize = 12,
+        insets = {left = 3, right = 3, top = 3, bottom = 3},
+    })
+    button:SetBackdropColor(0.15, 0.15, 0.15, 0.9)
+    button:SetBackdropBorderColor(0.4, 0.4, 0.4, 0.7)
+
+    local icon = button:CreateTexture(nil, "ARTWORK")
+    icon:SetSize(TAB_SIZE - 8, TAB_SIZE - 8)
+    icon:SetPoint("CENTER")
+    icon:SetTexture("Interface\\AddOns\\GudaBags\\Assets\\plus.png")
+    button.icon = icon
+
+    local highlight = button:CreateTexture(nil, "HIGHLIGHT")
+    highlight:SetAllPoints()
+    highlight:SetTexture("Interface\\Buttons\\ButtonHilight-Square")
+    highlight:SetBlendMode("ADD")
+
+    button:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_LEFT")
+        GameTooltip:SetText(ns.L["TOOLTIP_PURCHASE_TAB"] or "Purchase New Tab")
+        GameTooltip:Show()
+    end)
+    button:SetScript("OnLeave", function()
+        GameTooltip:Hide()
+    end)
+
+    button:SetScript("OnClick", function(self)
+        showingPurchasePrompt = true
+        if RetailBankScanner then
+            RetailBankScanner:SetSelectedTab(0)
+        end
+        BankFrame:UpdateSideTabSelection()
+        BankFrame:ShowPurchasePrompt(self.bankTypeEnum)
+    end)
+
+    return button
+end
+
+-- Show purchase prompt page (replaces bank content with purchase UI)
+function BankFrame:ShowPurchasePrompt(bankTypeEnum)
+    if not frame or not frame.purchasePrompt then return end
+
+    -- Hide normal content
+    frame.container:Hide()
+    frame.emptyMessage:Hide()
+    frame.scrollFrame:EnableMouseWheel(false)
+
+    local prompt = frame.purchasePrompt
+    local isWarband = bankTypeEnum == (Enum and Enum.BankType and Enum.BankType.Account)
+
+    -- Set title and description based on bank type
+    if isWarband then
+        prompt.promptTitle:SetText(ns.L["BANK_TITLE_WARBAND"])
+        prompt.promptDesc:SetText(ns.L["BANK_DESC_WARBAND"])
+    else
+        prompt.promptTitle:SetText(ns.L["BANK_TITLE_CHARACTER"])
+        prompt.promptDesc:SetText(ns.L["BANK_DESC_CHARACTER"])
+    end
+
+    -- Update tabs purchased counter
+    local scanner = ns:GetModule("RetailBankScanner")
+    if prompt.tabsText then
+        local numPurchased = scanner and scanner:GetNumPurchasedTabs(bankTypeEnum) or 0
+        local maxTabs = isWarband
+            and #(Constants.WARBAND_BANK_TAB_IDS or {})
+            or #(Constants.CHARACTER_BANK_TAB_IDS or {})
+        if maxTabs == 0 then maxTabs = isWarband and 5 or 6 end
+        prompt.tabsText:SetText(string.format(ns.L["BANK_TABS_PURCHASED"], numPurchased, maxTabs))
+    end
+
+    -- Get cost (use newer FetchNextPurchasableBankTabData API with fallback)
+    local cost
+    if C_Bank and C_Bank.FetchNextPurchasableBankTabData then
+        local tabData = C_Bank.FetchNextPurchasableBankTabData(bankTypeEnum)
+        cost = tabData and tabData.tabCost
+    elseif scanner then
+        cost = scanner:GetTabPurchaseCost(bankTypeEnum)
+    end
+    local GOLD_ICON = "|TInterface\\MoneyFrame\\UI-GoldIcon:12|t"
+
+    -- Set the bank type attribute for the secure purchase button template
+    prompt.purchaseBtn:SetAttribute("overrideBankType", bankTypeEnum)
+
+    if cost and cost > 0 then
+        local gold = math.floor(cost / 10000)
+        prompt.costValue:SetText(string.format("%s %s", gold, GOLD_ICON))
+        prompt.costFrame:Show()
+        prompt.purchaseBtn:ClearAllPoints()
+        prompt.purchaseBtn:SetPoint("LEFT", prompt.costFrame, "RIGHT", 20, 0)
+
+        local playerMoney = GetMoney and GetMoney() or 0
+        prompt.purchaseBtn.insufficientFunds = playerMoney < cost
+
+        if playerMoney < cost then
+            prompt.costValue:SetTextColor(1, 0.3, 0.3)
+            prompt.purchaseBtn:Disable()
+        else
+            prompt.costValue:SetTextColor(1, 1, 1)
+            prompt.purchaseBtn:Enable()
+        end
+
+        prompt.purchaseBtn:Show()
+    else
+        -- Cost not available yet or API returned nil — still show button
+        prompt.costFrame:Hide()
+        prompt.purchaseBtn:ClearAllPoints()
+        prompt.purchaseBtn:SetPoint("TOP", prompt.tabsText or prompt.promptQuestion, "BOTTOM", 0, -20)
+        prompt.purchaseBtn.insufficientFunds = false
+        prompt.purchaseBtn:Enable()
+        prompt.purchaseBtn:Show()
+    end
+
+    -- Select the purchase tab visually
+    prompt:Show()
+
+    -- Set frame to minimum size for purchase prompt
+    frame:SetSize(math.max(frame:GetWidth(), 380), math.max(frame:GetHeight(), (ns.IsRetail and Constants.FRAME.BANK_MIN_HEIGHT_RETAIL or Constants.FRAME.BANK_MIN_HEIGHT)))
+end
+
+-- Hide purchase prompt and restore normal content
+function BankFrame:HidePurchasePrompt()
+    showingPurchasePrompt = false
+    if not frame then return end
+    if frame.purchasePrompt then
+        frame.purchasePrompt:Hide()
+    end
+    if frame.purchaseTab then
+        frame.purchaseTab:SetBackdropBorderColor(0.4, 0.4, 0.4, 0.7)
+    end
+    -- Restore scroll frame state
+    if frame.scrollFrame then
+        frame.scrollFrame:EnableMouseWheel(true)
+    end
+end
 
 function BankFrame:ShowSideTabs(characterFullName, bankType)
     if not frame or not frame.sideTabBar then return end
@@ -645,7 +876,46 @@ function BankFrame:ShowSideTabs(characterFullName, bankType)
 
     ns:Debug("  Final tabs count:", #tabs)
 
-    -- Default single tab if nothing found
+    local bankTypeEnum = isWarband
+        and (Enum and Enum.BankType and Enum.BankType.Account)
+        or (Enum and Enum.BankType and Enum.BankType.Character)
+    local canPurchaseMore = bankTypeEnum
+        and C_Bank and C_Bank.CanPurchaseBankTab and C_Bank.CanPurchaseBankTab(bankTypeEnum)
+        and not (C_Bank.HasMaxBankTabs and C_Bank.HasMaxBankTabs(bankTypeEnum))
+
+    -- No purchased tabs: show only purchase tab and auto-show purchase prompt
+    if (not tabs or #tabs == 0) and RetailBankScanner and RetailBankScanner:IsBankOpen() and canPurchaseMore then
+        -- Hide "All" tab and any existing side tabs
+        if frame.sideTabs[0] then frame.sideTabs[0]:Hide() end
+        for i = 1, #frame.sideTabs do
+            if frame.sideTabs[i] then frame.sideTabs[i]:Hide() end
+        end
+
+        -- Show only the purchase tab
+        if frame.purchaseTab and frame.purchaseTab.bankTypeEnum ~= bankTypeEnum then
+            frame.purchaseTab:Hide()
+            frame.purchaseTab = nil
+        end
+        if not frame.purchaseTab then
+            frame.purchaseTab = CreatePurchaseTab(frame.sideTabBar, bankTypeEnum)
+        end
+        frame.purchaseTab.bankTypeEnum = bankTypeEnum
+        frame.purchaseTab:SetAttribute("overrideBankType", bankTypeEnum)
+        frame.purchaseTab:ClearAllPoints()
+        frame.purchaseTab:SetPoint("TOP", frame.sideTabBar, "TOP", 0, 0)
+        frame.purchaseTab:Show()
+
+        frame.sideTabBar:SetSize(TAB_SIZE, TAB_SIZE + TAB_SPACING)
+        frame.sideTabBar:Show()
+
+        -- Auto-show purchase prompt
+        showingPurchasePrompt = true
+        self:UpdateSideTabSelection()
+        self:ShowPurchasePrompt(bankTypeEnum)
+        return
+    end
+
+    -- Default single tab if nothing found (offline/cached view)
     if not tabs or #tabs == 0 then
         tabs = {{
             index = 1,
@@ -654,9 +924,8 @@ function BankFrame:ShowSideTabs(characterFullName, bankType)
         }}
     end
 
-    -- Hide side tabs if only 1 character bank tab (for warband, always show since we have at least "All" + tab)
-    -- For character bank with 6 tabs, we show them; for warband with 1 tab, we still show "All" + that tab
-    if #tabs <= 1 and not isWarband then
+    -- Hide side tabs if only 1 character bank tab AND no more can be purchased
+    if #tabs <= 1 and not isWarband and not canPurchaseMore then
         frame.sideTabBar:Hide()
         return
     end
@@ -680,8 +949,10 @@ function BankFrame:ShowSideTabs(characterFullName, bankType)
         local button = frame.sideTabs[i]
         button.tabIndex = i
         button.tabName = tabData.name
+        button.containerID = tabData.containerID
         if tabData.icon then
             button.icon:SetTexture(tabData.icon)
+            button.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
         end
 
         button:ClearAllPoints()
@@ -698,8 +969,31 @@ function BankFrame:ShowSideTabs(characterFullName, bankType)
         end
     end
 
+    -- Add "+" purchase tab if bank is open and more tabs can be purchased
+    local tabCount = #tabs + 1  -- +1 for "All" tab
+    if RetailBankScanner and RetailBankScanner:IsBankOpen() and canPurchaseMore then
+        -- Recreate if bank type changed (secure template needs correct type at creation)
+        if frame.purchaseTab and frame.purchaseTab.bankTypeEnum ~= bankTypeEnum then
+            frame.purchaseTab:Hide()
+            frame.purchaseTab = nil
+        end
+        if not frame.purchaseTab then
+            frame.purchaseTab = CreatePurchaseTab(frame.sideTabBar, bankTypeEnum)
+        end
+        frame.purchaseTab.bankTypeEnum = bankTypeEnum
+        if frame.purchaseTab.SetAttribute then
+            frame.purchaseTab:SetAttribute("overrideBankType", bankTypeEnum)
+        end
+        frame.purchaseTab:ClearAllPoints()
+        frame.purchaseTab:SetPoint("TOP", prevButton, "BOTTOM", 0, -TAB_SPACING)
+        frame.purchaseTab:Show()
+        tabCount = tabCount + 1
+    else
+        if frame.purchaseTab then frame.purchaseTab:Hide() end
+    end
+
     -- Resize tab bar
-    local totalHeight = (TAB_SIZE + TAB_SPACING) * (#tabs + 1)
+    local totalHeight = (TAB_SIZE + TAB_SPACING) * tabCount
     frame.sideTabBar:SetSize(TAB_SIZE, totalHeight)
 
     -- Reset selection to "All"
@@ -714,6 +1008,7 @@ end
 function BankFrame:HideSideTabs()
     if frame and frame.sideTabBar then
         frame.sideTabBar:Hide()
+        if frame.purchaseTab then frame.purchaseTab:Hide() end
     end
 end
 
@@ -724,13 +1019,100 @@ function BankFrame:UpdateSideTabSelection()
 
     for i, button in pairs(frame.sideTabs) do
         if button and button:IsShown() then
-            if i == selectedTab then
-                button.selected:Show()
+            if i == selectedTab and not showingPurchasePrompt then
                 button:SetBackdropBorderColor(1, 0.82, 0, 1)
             else
-                button.selected:Hide()
-                button:SetBackdropBorderColor(0.4, 0.4, 0.4, 0.8)
+                button:SetBackdropBorderColor(0.4, 0.4, 0.4, 0.7)
             end
+        end
+    end
+
+    -- Update purchase tab selection
+    if frame.purchaseTab and frame.purchaseTab:IsShown() then
+        if showingPurchasePrompt then
+            frame.purchaseTab:SetBackdropBorderColor(0.3, 0.8, 0.3, 1)
+        else
+            frame.purchaseTab:SetBackdropBorderColor(0.4, 0.4, 0.4, 0.7)
+        end
+    end
+end
+
+-- Open Blizzard's tab settings popup (icon/name/deposit flags) for a bank tab
+function BankFrame:OpenTabSettings(containerID, tabIndex)
+    if not frame then return end
+
+    ns:Debug("OpenTabSettings - containerID:", containerID, "tabIndex:", tabIndex)
+
+    -- Create the settings menu frame once (BankPanelTabSettingsMenuTemplate is an XML template)
+    if not frame.tabSettingsMenu then
+        local ok, menu = pcall(CreateFrame, "Frame", "GudaBankTabSettingsMenu", UIParent, "BankPanelTabSettingsMenuTemplate")
+        if not ok or not menu then
+            ns:Debug("OpenTabSettings - BankPanelTabSettingsMenuTemplate not available")
+            return
+        end
+        menu:SetClampedToScreen(true)
+        menu:SetFrameStrata("DIALOG")
+        menu:Hide()
+        frame.tabSettingsMenu = menu
+    end
+
+    local menu = frame.tabSettingsMenu
+    local bankType = (BankFooter and BankFooter:GetCurrentBankType()) or "character"
+    local isWarband = bankType == "warband"
+    local bankTypeEnum = isWarband and Enum.BankType.Account or Enum.BankType.Character
+
+    ns:Debug("OpenTabSettings - bankType:", bankType, "bankTypeEnum:", tostring(bankTypeEnum))
+
+    -- Get tab info from scanner
+    local scanner = ns:GetModule("RetailBankScanner")
+    local cachedTabs = scanner and scanner:GetCachedBankTabs(bankTypeEnum)
+    local tabInfo
+    if cachedTabs then
+        for _, t in ipairs(cachedTabs) do
+            if t.containerID == containerID or t.index == tabIndex then
+                tabInfo = t
+                break
+            end
+        end
+    end
+
+    ns:Debug("OpenTabSettings - tabInfo found:", tabInfo ~= nil, "icon:", tabInfo and tabInfo.icon or "nil")
+
+    -- Provide GetBankPanel/GetBankFrame so the template can read tab data
+    local function makeBankPanel()
+        return {
+            GetTabData = function(tabID)
+                return {
+                    ID = containerID,
+                    icon = tabInfo and tabInfo.icon or TAB_ICON_DEFAULT,
+                    name = tabInfo and tabInfo.name or string.format("Tab %d", tabIndex),
+                    depositFlags = tabInfo and tabInfo.depositFlags or 0,
+                    bankType = bankTypeEnum,
+                }
+            end
+        }
+    end
+    menu.GetBankPanel = makeBankPanel
+    menu.GetBankFrame = makeBankPanel
+
+    -- Track which tab is being edited for toggle support
+    menu.currentContainerID = containerID
+
+    -- Position next to the bank frame
+    menu:ClearAllPoints()
+    menu:SetPoint("LEFT", frame, "RIGHT", 30, 0)
+
+    ns:Debug("OpenTabSettings - calling OnOpenTabSettingsRequested, menu methods:", menu.OnOpenTabSettingsRequested ~= nil, menu.OnNewBankTabSelected ~= nil)
+
+    if menu:IsShown() then
+        if menu.OnNewBankTabSelected then
+            menu:OnNewBankTabSelected(containerID)
+        end
+    else
+        if menu.OnOpenTabSettingsRequested then
+            menu:OnOpenTabSettingsRequested(containerID)
+        else
+            ns:Debug("OpenTabSettings - OnOpenTabSettingsRequested not available on menu")
         end
     end
 end
@@ -988,6 +1370,21 @@ end
 function BankFrame:Refresh()
     if not frame then return end
 
+    -- If purchase prompt is active, don't rebuild bank content
+    if showingPurchasePrompt then
+        return
+    end
+
+    -- Hide purchase prompt if it was left visible (cleanup on return to normal view)
+    if frame.purchasePrompt and frame.purchasePrompt:IsShown() then
+        frame.purchasePrompt:Hide()
+    end
+    -- Ensure container and scroll are in normal state
+    frame.container:Show()
+    if frame.scrollFrame then
+        frame.scrollFrame:EnableMouseWheel(true)
+    end
+
     ItemButton:ReleaseAll(frame.container)
     ReleaseAllCategoryHeaders()
     itemButtons = {}
@@ -1079,7 +1476,7 @@ function BankFrame:Refresh()
         local iconSize = Database:GetSetting("iconSize")
         local spacing = Database:GetSetting("iconSpacing")
         local minWidth = (iconSize * columns) + (Constants.FRAME.PADDING * 2)
-        local minHeight = (6 * iconSize) + (5 * spacing) + 80
+        local minHeight = math.max((6 * iconSize) + (5 * spacing) + 80, (ns.IsRetail and Constants.FRAME.BANK_MIN_HEIGHT_RETAIL or Constants.FRAME.BANK_MIN_HEIGHT))
 
         frame:SetSize(math.max(minWidth, 250), minHeight)
         BankFooter:UpdateSlotInfo(0, 0)
@@ -1094,6 +1491,15 @@ function BankFrame:Refresh()
     local columns = Database:GetSetting("bankColumns")
     local hasSearch = SearchBar:HasActiveFilters(frame)
     local viewType = Database:GetSetting("bankViewType") or "single"
+
+    -- Pre-calculate expected frame width for responsive modes
+    local expectedWidth = (iconSize * columns) + (spacing * (columns - 1)) + (Constants.FRAME.PADDING * 2)
+    expectedWidth = math.max(expectedWidth, Constants.FRAME.MIN_WIDTH)
+    local isCompact = expectedWidth < 260
+    local isNarrow = expectedWidth < 220
+
+    SearchBar:SetNarrowMode(frame, isCompact, isNarrow)
+    BankFooter:SetNarrowMode(isNarrow)
 
     -- Use appropriate bag IDs for classification
     local bagIDsToUse = isWarbandView and Constants.WARBAND_BANK_TAB_IDS or Constants.BANK_BAG_IDS
@@ -1228,11 +1634,10 @@ function BankFrame:RefreshSingleView(bank, bagsToShow, settings, hasSearch, isRe
     local topOffset = showSearchBar
         and (Constants.FRAME.TITLE_HEIGHT + Constants.FRAME.SEARCH_BAR_HEIGHT + chipHeight + Constants.FRAME.PADDING + 6)
         or (Constants.FRAME.TITLE_HEIGHT + Constants.FRAME.PADDING + 2)
-    -- Bottom offset: same as scroll frame SetPoint BOTTOMRIGHT
-    -- Footer is at PADDING-2 from bottom with height FOOTER_HEIGHT, so top is at (PADDING-2)+FOOTER_HEIGHT
-    -- Add extra padding (10) above footer for clearance
+    -- Bottom offset: dynamic footer height for responsive layout
+    local dynFooterHeight = BankFooter:GetHeight()
     local bottomOffset = showFooter
-        and (Constants.FRAME.FOOTER_HEIGHT + Constants.FRAME.PADDING)
+        and (dynFooterHeight + Constants.FRAME.PADDING)
         or Constants.FRAME.PADDING
     local chromeHeight = topOffset + bottomOffset
 
@@ -1240,8 +1645,8 @@ function BankFrame:RefreshSingleView(bank, bagsToShow, settings, hasSearch, isRe
     local frameWidth = math.max(contentWidth + (Constants.FRAME.PADDING * 2), Constants.FRAME.MIN_WIDTH)
     local frameHeightNeeded = actualContentHeight + chromeHeight
 
-    -- Apply minimum height (2 rows of icons + spacing + chrome)
-    local minFrameHeight = (2 * iconSize) + (1 * spacing) + chromeHeight
+    -- Apply minimum height (2 rows of icons + spacing + chrome, min 340)
+    local minFrameHeight = math.max((2 * iconSize) + (1 * spacing) + chromeHeight, (ns.IsRetail and Constants.FRAME.BANK_MIN_HEIGHT_RETAIL or Constants.FRAME.BANK_MIN_HEIGHT))
     local adjustedFrameHeight = math.max(frameHeightNeeded, minFrameHeight)
 
     -- Check screen limits
@@ -1348,8 +1753,9 @@ function BankFrame:RefreshSplitView(bank, bagsToShow, settings, hasSearch, isRea
     local topOffset = showSearchBar
         and (Constants.FRAME.TITLE_HEIGHT + Constants.FRAME.SEARCH_BAR_HEIGHT + chipHeight + Constants.FRAME.PADDING + 6)
         or (Constants.FRAME.TITLE_HEIGHT + Constants.FRAME.PADDING + 2)
+    local dynFooterHeight = BankFooter:GetHeight()
     local bottomOffset = showFooter
-        and (Constants.FRAME.FOOTER_HEIGHT + Constants.FRAME.PADDING)
+        and (dynFooterHeight + Constants.FRAME.PADDING)
         or Constants.FRAME.PADDING
     local chromeHeight = topOffset + bottomOffset
 
@@ -1548,12 +1954,13 @@ function BankFrame:RefreshSingleViewWithTabs(bank, settings, hasSearch, isReadOn
     local showFilterChips = settings.showFilterChips
     local chipHeight = showFilterChips and (Constants.FRAME.CHIP_STRIP_HEIGHT + 1) or 0
     local topOffset = Constants.FRAME.TITLE_HEIGHT + Constants.FRAME.SEARCH_BAR_HEIGHT + chipHeight + Constants.FRAME.PADDING + 6
-    local bottomOffset = Constants.FRAME.FOOTER_HEIGHT + Constants.FRAME.PADDING
+    local dynFooterHeight = BankFooter:GetHeight()
+    local bottomOffset = dynFooterHeight + Constants.FRAME.PADDING
     local chromeHeight = topOffset + bottomOffset
     local frameHeightNeeded = containerHeight + chromeHeight
 
-    -- Apply minimum height (2 rows of icons + spacing + chrome)
-    local minFrameHeight = (2 * iconSize) + (1 * spacing) + chromeHeight
+    -- Apply minimum height (2 rows of icons + spacing + chrome, min 340)
+    local minFrameHeight = math.max((2 * iconSize) + (1 * spacing) + chromeHeight, (ns.IsRetail and Constants.FRAME.BANK_MIN_HEIGHT_RETAIL or Constants.FRAME.BANK_MIN_HEIGHT))
     local adjustedFrameHeight = math.max(frameHeightNeeded, minFrameHeight)
 
     -- Check screen limits
@@ -1695,24 +2102,24 @@ function BankFrame:RefreshCategoryView(bank, bagsToShow, settings, hasSearch, is
     local topOffset = showSearchBar
         and (Constants.FRAME.TITLE_HEIGHT + Constants.FRAME.SEARCH_BAR_HEIGHT + chipHeight + Constants.FRAME.PADDING + 6)
         or (Constants.FRAME.TITLE_HEIGHT + Constants.FRAME.PADDING + 2)
-    -- Footer is at PADDING-2 from bottom with height FOOTER_HEIGHT
-    -- Add extra padding (10) above footer for clearance
+    -- Dynamic footer height for responsive layout
+    local dynFooterHeight = BankFooter:GetHeight()
     local bottomOffset = showFooter
-        and (Constants.FRAME.FOOTER_HEIGHT + Constants.FRAME.PADDING)
+        and (dynFooterHeight + Constants.FRAME.PADDING)
         or Constants.FRAME.PADDING
     local chromeHeight = topOffset + bottomOffset
 
     -- Derive actual content height using LayoutEngine's chrome calculation (different from scroll positioning)
     local layoutSearchBarHeight = showSearchBar and (Constants.FRAME.SEARCH_BAR_HEIGHT + chipHeight + 4) or 0
-    local layoutFooterHeight = showFooter and (Constants.FRAME.FOOTER_HEIGHT + 6) or Constants.FRAME.PADDING
+    local layoutFooterHeight = showFooter and (dynFooterHeight + 6) or Constants.FRAME.PADDING
     local layoutChrome = Constants.FRAME.TITLE_HEIGHT + layoutSearchBarHeight + layoutFooterHeight + Constants.FRAME.PADDING + 4
     local contentHeight = frameHeight - layoutChrome
 
     -- Recalculate frame height using our scroll frame chrome (may differ from LayoutEngine)
     local correctFrameHeight = contentHeight + chromeHeight
 
-    -- Apply minimum frame height (2 rows of icons + chrome)
-    local minFrameHeight = (2 * iconSize) + chromeHeight
+    -- Apply minimum frame height (2 rows of icons + chrome, min 340)
+    local minFrameHeight = math.max((2 * iconSize) + chromeHeight, (ns.IsRetail and Constants.FRAME.BANK_MIN_HEIGHT_RETAIL or Constants.FRAME.BANK_MIN_HEIGHT))
     local adjustedFrameHeight = math.max(correctFrameHeight, minFrameHeight)
 
     -- Check screen limits
@@ -2678,6 +3085,7 @@ local appearanceSettings = {
     bgColorG = true,
     bgColorB = true,
     borderOpacity = true,
+    minimalEmptySlots = true,
 }
 
 local resizeSettings = {
@@ -2701,6 +3109,9 @@ local function OnSettingChanged(event, key, value)
     elseif resizeSettings[key] then
         UpdateFrameAppearance()
         BankFrame:Refresh()
+    elseif key == "hoverBagline" then
+        -- Refresh footer bag slot mode (expanded vs collapsed)
+        UpdateFrameAppearance()
     elseif key == "groupIdenticalItems" then
         -- Force full release when toggling item grouping to prevent visual artifacts
         -- Item structure changes fundamentally (grouped vs individual) but keys stay same
@@ -2846,6 +3257,7 @@ if not ns.IsRetail then
             BankScanner:ScanAllBank()
             layoutCached = false
             BankFrame:Refresh()
+            BankFooter:RefreshFlyoutSlots()
         end
     end, BankFrame)
 end
@@ -2869,9 +3281,25 @@ ns.OnRetailBankTabChanged = function(tabIndex)
     end
 end
 
+-- Callback for when bank tabs are purchased/changed
+ns.OnRetailBankTabsUpdated = function()
+    if frame and frame:IsShown() then
+        BankFrame:HidePurchasePrompt()
+        local bankType = BankFooter:GetCurrentBankType() or "character"
+        BankFrame:ShowSideTabs(nil, bankType)
+        BankFrame:Refresh()
+    end
+end
+
 -- Callback for when bank type changes (Character Bank vs Warband Bank)
 ns.OnBankTypeChanged = function(bankType)
     if frame and frame:IsShown() then
+        -- Hide purchase prompt if it was showing
+        if showingPurchasePrompt then
+            BankFrame:HidePurchasePrompt()
+            frame.container:Show()
+        end
+
         ns:Debug("Bank type changed to:", bankType)
 
         -- Sync Blizzard BankPanel.bankType so the original GetActiveBankType()

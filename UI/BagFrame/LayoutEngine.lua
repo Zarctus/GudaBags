@@ -57,6 +57,11 @@ local function IsInteractionWindowOpen()
         return true
     end
 
+    -- Item Socketing UI
+    if ItemSocketingFrame and ItemSocketingFrame:IsShown() then
+        return true
+    end
+
     return false
 end
 
@@ -340,13 +345,13 @@ function LayoutEngine:CalculateFrameSize(allSlots, settings)
     local contentWidth = (iconSize * columns) + (spacing * (columns - 1))
     local contentHeight = (iconSize * totalRows) + (spacing * (totalRows - 1)) + (Constants.SECTION_SPACING * sectionCount)
 
-    local chipHeight = (showSearchBar and showFilterChips) and (Constants.FRAME.CHIP_STRIP_HEIGHT + 1) or 0
-    local searchBarHeight = showSearchBar and (Constants.FRAME.SEARCH_BAR_HEIGHT + chipHeight + 4) or 0
-    local footerHeight = showFooter and (Constants.FRAME.FOOTER_HEIGHT + 6) or Constants.FRAME.PADDING
+    local searchBarHeight = showSearchBar and ((settings.searchBarHeight or (Constants.FRAME.SEARCH_BAR_HEIGHT + ((showFilterChips and Constants.FRAME.CHIP_STRIP_HEIGHT + 1) or 0))) + 4) or 0
+    local dynFooterHeight = settings.footerHeight or Constants.FRAME.FOOTER_HEIGHT
+    local footerHeight = showFooter and (dynFooterHeight + Constants.FRAME.PADDING + 3) or Constants.FRAME.PADDING
 
     local frameWidth = math.max(contentWidth + (Constants.FRAME.PADDING * 2), Constants.FRAME.MIN_WIDTH)
     local frameHeight = math.max(
-        contentHeight + Constants.FRAME.TITLE_HEIGHT + searchBarHeight + footerHeight + Constants.FRAME.PADDING + 4,
+        contentHeight + (settings.headerHeight or Constants.FRAME.TITLE_HEIGHT) + searchBarHeight + footerHeight + Constants.FRAME.PADDING + 4,
         Constants.FRAME.MIN_HEIGHT
     )
 
@@ -1208,13 +1213,13 @@ function LayoutEngine:CalculateCategoryFrameSize(sections, settings)
     local contentHeight = currentY + rowMaxHeight
     if contentHeight < iconSize then contentHeight = iconSize end
 
-    local chipHeight = (showSearchBar and showFilterChips) and (Constants.FRAME.CHIP_STRIP_HEIGHT + 1) or 0
-    local searchBarHeight = showSearchBar and (Constants.FRAME.SEARCH_BAR_HEIGHT + chipHeight + 4) or 0
-    local footerHeight = showFooter and (Constants.FRAME.FOOTER_HEIGHT + 6) or Constants.FRAME.PADDING
+    local searchBarHeight = showSearchBar and ((settings.searchBarHeight or (Constants.FRAME.SEARCH_BAR_HEIGHT + ((showFilterChips and Constants.FRAME.CHIP_STRIP_HEIGHT + 1) or 0))) + 4) or 0
+    local dynFooterHeight = settings.footerHeight or Constants.FRAME.FOOTER_HEIGHT
+    local footerHeight = showFooter and (dynFooterHeight + Constants.FRAME.PADDING + 3) or Constants.FRAME.PADDING
 
     local frameWidth = math.max(totalWidth + (Constants.FRAME.PADDING * 2), Constants.FRAME.MIN_WIDTH)
     local frameHeight = math.max(
-        contentHeight + Constants.FRAME.TITLE_HEIGHT + searchBarHeight + footerHeight + Constants.FRAME.PADDING + 4,
+        contentHeight + (settings.headerHeight or Constants.FRAME.TITLE_HEIGHT) + searchBarHeight + footerHeight + Constants.FRAME.PADDING + 4,
         Constants.FRAME.MIN_HEIGHT
     )
 
@@ -1597,13 +1602,13 @@ function LayoutEngine:CalculateSplitFrameSize(layout, settings)
     local showFilterChips = settings.showFilterChips
     local showFooter = settings.showFooter
 
-    local chipHeight = (showSearchBar and showFilterChips) and (Constants.FRAME.CHIP_STRIP_HEIGHT + 1) or 0
-    local searchBarHeight = showSearchBar and (Constants.FRAME.SEARCH_BAR_HEIGHT + chipHeight + 4) or 0
-    local footerHeight = showFooter and (Constants.FRAME.FOOTER_HEIGHT + 6) or Constants.FRAME.PADDING
+    local searchBarHeight = showSearchBar and ((settings.searchBarHeight or (Constants.FRAME.SEARCH_BAR_HEIGHT + ((showFilterChips and Constants.FRAME.CHIP_STRIP_HEIGHT + 1) or 0))) + 4) or 0
+    local dynFooterHeight = settings.footerHeight or Constants.FRAME.FOOTER_HEIGHT
+    local footerHeight = showFooter and (dynFooterHeight + Constants.FRAME.PADDING + 3) or Constants.FRAME.PADDING
 
     local frameWidth = math.max(layout.contentWidth + (Constants.FRAME.PADDING * 2), Constants.FRAME.MIN_WIDTH)
     local frameHeight = math.max(
-        layout.contentHeight + Constants.FRAME.TITLE_HEIGHT + searchBarHeight + footerHeight + Constants.FRAME.PADDING + 4,
+        layout.contentHeight + (settings.headerHeight or Constants.FRAME.TITLE_HEIGHT) + searchBarHeight + footerHeight + Constants.FRAME.PADDING + 4,
         Constants.FRAME.MIN_HEIGHT
     )
 

@@ -23,7 +23,6 @@ local pendingRefresh = false
 local initialized = false
 
 -- Constants
-local BUTTON_SPACING = 2
 local PADDING = 0
 local MAX_FLYOUT_ITEMS = 8
 local MAX_GRID_ITEMS = 40  -- Max items in grid layout (5 columns * 8 rows)
@@ -52,6 +51,10 @@ end
 
 local function GetColumns()
     return Database:GetSetting("questBarColumns") or 1
+end
+
+local function GetButtonSpacing()
+    return Database:GetSetting("questBarSpacing") or 2
 end
 
 -------------------------------------------------
@@ -164,6 +167,11 @@ local function CreateItemButton(parent, name, isMain)
     button:SetScript("OnDragStart", function() end)
     button:SetScript("OnReceiveDrag", function() end)
 
+    -- Hide template's NormalTexture (Masque-aware)
+    Utils:HideNormalTexture(button)
+    local MasqueModule = ns:GetModule("Masque")
+    local masqueActive = MasqueModule and MasqueModule:IsActive()
+
     -- Background
     local bg = button:CreateTexture(nil, "BACKGROUND")
     bg:SetAllPoints()
@@ -196,46 +204,14 @@ local function CreateItemButton(parent, name, isMain)
     highlight:SetAllPoints()
     highlight:SetTexture("Interface\\Buttons\\ButtonHilight-Square")
     highlight:SetBlendMode("ADD")
+    button.highlight = highlight
 
     -- Quality border
     local border = Utils:CreateItemBorder(button)
     button.border = border
 
     -- Inner shadow/glow for quest colors (inset effect with more spread)
-    local shadowSize = 8
-    local innerShadow = {
-        top = button:CreateTexture(nil, "ARTWORK", nil, 1),
-        bottom = button:CreateTexture(nil, "ARTWORK", nil, 1),
-        left = button:CreateTexture(nil, "ARTWORK", nil, 1),
-        right = button:CreateTexture(nil, "ARTWORK", nil, 1),
-    }
-    -- Top edge
-    innerShadow.top:SetPoint("TOPLEFT", button, "TOPLEFT", 0, 0)
-    innerShadow.top:SetPoint("TOPRIGHT", button, "TOPRIGHT", 0, 0)
-    innerShadow.top:SetHeight(shadowSize)
-    innerShadow.top:SetTexture("Interface\\Buttons\\WHITE8x8")
-    innerShadow.top:SetGradient("VERTICAL", CreateColor(0, 0, 0, 0), CreateColor(0, 0, 0, 0.6))
-    -- Bottom edge
-    innerShadow.bottom:SetPoint("BOTTOMLEFT", button, "BOTTOMLEFT", 0, 0)
-    innerShadow.bottom:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", 0, 0)
-    innerShadow.bottom:SetHeight(shadowSize)
-    innerShadow.bottom:SetTexture("Interface\\Buttons\\WHITE8x8")
-    innerShadow.bottom:SetGradient("VERTICAL", CreateColor(0, 0, 0, 0.6), CreateColor(0, 0, 0, 0))
-    -- Left edge
-    innerShadow.left:SetPoint("TOPLEFT", button, "TOPLEFT", 0, 0)
-    innerShadow.left:SetPoint("BOTTOMLEFT", button, "BOTTOMLEFT", 0, 0)
-    innerShadow.left:SetWidth(shadowSize)
-    innerShadow.left:SetTexture("Interface\\Buttons\\WHITE8x8")
-    innerShadow.left:SetGradient("HORIZONTAL", CreateColor(0, 0, 0, 0.6), CreateColor(0, 0, 0, 0))
-    -- Right edge
-    innerShadow.right:SetPoint("TOPRIGHT", button, "TOPRIGHT", 0, 0)
-    innerShadow.right:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", 0, 0)
-    innerShadow.right:SetWidth(shadowSize)
-    innerShadow.right:SetTexture("Interface\\Buttons\\WHITE8x8")
-    innerShadow.right:SetGradient("HORIZONTAL", CreateColor(0, 0, 0, 0), CreateColor(0, 0, 0, 0.6))
-    -- Hide by default
-    for _, tex in pairs(innerShadow) do tex:Hide() end
-    button.innerShadow = innerShadow
+    button.innerShadow = Utils:CreateInnerShadow(button, 8)
 
     -- Tooltip
     button:SetScript("OnEnter", function(self)
@@ -300,6 +276,17 @@ local function CreateItemButton(parent, name, isMain)
         end)
     end
 
+    -- Register with Masque if active (reuse masqueActive from above)
+    if masqueActive then
+        MasqueModule:AddButton(button, "Quest Items", {
+            Icon = button.icon,
+            Cooldown = button.cooldown,
+            Normal = button:GetNormalTexture(),
+            Count = button.count,
+            Highlight = button.highlight,
+        })
+    end
+
     return button
 end
 
@@ -313,19 +300,12 @@ local function CreateFlyout(parent)
     f:SetFrameStrata("DIALOG")
     f:SetFrameLevel(100)
 
-    f:SetBackdrop({
-        bgFile = "Interface\\Buttons\\WHITE8x8",
-        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-        edgeSize = 10,
-        insets = { left = 2, right = 2, top = 2, bottom = 2 },
-    })
-    f:SetBackdropColor(0.1, 0.1, 0.1, 0.95)
-    f:SetBackdropBorderColor(0.6, 0.5, 0.0, 1)
+    f:SetBackdrop(nil)
 
     -- Create flyout buttons (vertical stack, top to bottom)
     for i = 1, MAX_FLYOUT_ITEMS do
         local button = CreateItemButton(f, "GudaQuestBarFlyoutItem" .. i, false)
-        button:SetPoint("TOP", f, "TOP", 0, -PADDING - (i - 1) * (buttonSize + BUTTON_SPACING))
+        button:SetPoint("TOP", f, "TOP", 0, -PADDING - (i - 1) * (buttonSize + GetButtonSpacing()))
         button:Hide()
         button.flyoutIndex = i
 
@@ -438,14 +418,7 @@ local function CreateQuestBarFrame()
     f:SetFrameStrata("MEDIUM")
     f:SetFrameLevel(Constants.FRAME_LEVELS.BASE)
 
-    f:SetBackdrop({
-        bgFile = "Interface\\Buttons\\WHITE8x8",
-        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-        edgeSize = 10,
-        insets = { left = 2, right = 2, top = 2, bottom = 2 },
-    })
-    f:SetBackdropColor(0.1, 0.1, 0.1, 0.85)
-    f:SetBackdropBorderColor(0.6, 0.5, 0.0, 0.9)
+    f:SetBackdrop(nil)
 
     -- Create main button (used in flyout mode / columns=1)
     mainButton = CreateItemButton(f, "GudaQuestBarMainButton", true)
@@ -538,6 +511,7 @@ local function UpdateButton(button, itemData)
     end
 
     -- Sunny yellow-gold color for border and inner shadow
+    -- Quality borders coexist with Masque's button chrome
     local sunnyR, sunnyG, sunnyB = 1.0, 0.85, 0.2
     button.border:SetVertexColor(sunnyR, sunnyG, sunnyB, 1)
     button.border:Show()
@@ -634,7 +608,7 @@ function QuestBar:ShowFlyout()
             UpdateButton(flyoutButtons[i], otherItem.data)
             flyoutButtons[i]:SetSize(buttonSize, buttonSize)
             flyoutButtons[i]:ClearAllPoints()
-            flyoutButtons[i]:SetPoint("TOP", flyout, "TOP", 0, -PADDING - (i - 1) * (buttonSize + BUTTON_SPACING))
+            flyoutButtons[i]:SetPoint("TOP", flyout, "TOP", 0, -PADDING - (i - 1) * (buttonSize + GetButtonSpacing()))
         else
             flyoutButtons[i]:Hide()
             flyoutButtons[i].itemIndex = nil
@@ -642,7 +616,7 @@ function QuestBar:ShowFlyout()
     end
 
     if visibleCount > 0 then
-        local height = PADDING * 2 + visibleCount * buttonSize + (visibleCount - 1) * BUTTON_SPACING
+        local height = PADDING * 2 + visibleCount * buttonSize + (visibleCount - 1) * GetButtonSpacing()
         local width = buttonSize + PADDING * 2
         flyout:SetSize(width, height)
         ShowFlyoutFrame()
@@ -781,14 +755,14 @@ function QuestBar:Refresh()
                         UpdateButton(flyoutButtons[i], otherItem.data)
                         flyoutButtons[i]:SetSize(buttonSize, buttonSize)
                         flyoutButtons[i]:ClearAllPoints()
-                        flyoutButtons[i]:SetPoint("TOP", flyout, "TOP", 0, -PADDING - (i - 1) * (buttonSize + BUTTON_SPACING))
+                        flyoutButtons[i]:SetPoint("TOP", flyout, "TOP", 0, -PADDING - (i - 1) * (buttonSize + GetButtonSpacing()))
                     else
                         flyoutButtons[i]:Hide()
                         flyoutButtons[i].itemIndex = nil
                     end
                 end
                 if visibleCount > 0 then
-                    local height = PADDING * 2 + visibleCount * buttonSize + (visibleCount - 1) * BUTTON_SPACING
+                    local height = PADDING * 2 + visibleCount * buttonSize + (visibleCount - 1) * GetButtonSpacing()
                     local width = buttonSize + PADDING * 2
                     flyout:SetSize(width, height)
                 end
@@ -801,13 +775,13 @@ function QuestBar:Refresh()
 
             local visibleCount = math.min(#questItems, columns)
             local effectiveColumns = math.min(columns, visibleCount)
-            local frameWidth = PADDING * 2 + effectiveColumns * buttonSize + (effectiveColumns - 1) * BUTTON_SPACING
+            local frameWidth = PADDING * 2 + effectiveColumns * buttonSize + (effectiveColumns - 1) * GetButtonSpacing()
             local frameHeight = PADDING * 2 + buttonSize
             frame:SetSize(frameWidth, frameHeight)
 
             for i = 1, MAX_GRID_ITEMS do
                 if i <= visibleCount then
-                    local x = PADDING + (i - 1) * (buttonSize + BUTTON_SPACING)
+                    local x = PADDING + (i - 1) * (buttonSize + GetButtonSpacing())
                     local y = -PADDING
 
                     gridButtons[i]:SetSize(buttonSize, buttonSize)
@@ -833,14 +807,14 @@ function QuestBar:Refresh()
                         UpdateButton(flyoutButtons[i], item.data)
                         flyoutButtons[i]:SetSize(buttonSize, buttonSize)
                         flyoutButtons[i]:ClearAllPoints()
-                        flyoutButtons[i]:SetPoint("TOP", flyout, "TOP", 0, -PADDING - (i - 1) * (buttonSize + BUTTON_SPACING))
+                        flyoutButtons[i]:SetPoint("TOP", flyout, "TOP", 0, -PADDING - (i - 1) * (buttonSize + GetButtonSpacing()))
                     else
                         flyoutButtons[i]:Hide()
                         flyoutButtons[i].itemIndex = nil
                     end
                 end
                 if flyoutCount > 0 then
-                    local height = PADDING * 2 + flyoutCount * buttonSize + (flyoutCount - 1) * BUTTON_SPACING
+                    local height = PADDING * 2 + flyoutCount * buttonSize + (flyoutCount - 1) * GetButtonSpacing()
                     local width = buttonSize + PADDING * 2
                     flyout:SetSize(width, height)
                 end
@@ -908,15 +882,55 @@ function QuestBar:UpdateSize()
     end
 
     local buttonSize = GetButtonSize()
+    local shadowSize = math.max(4, math.floor(buttonSize * 0.18))
+
+    -- Helper to resize inner shadow on a button
+    local function ResizeInnerShadow(button)
+        if not button.innerShadow then return end
+        button.innerShadow.top:SetHeight(shadowSize)
+        button.innerShadow.bottom:SetHeight(shadowSize)
+        button.innerShadow.left:SetWidth(shadowSize)
+        button.innerShadow.right:SetWidth(shadowSize)
+    end
+
+    -- Helper to re-anchor child elements to fill resized button
+    local function ReanchorChildren(button)
+        if button.icon then
+            button.icon:ClearAllPoints()
+            button.icon:SetAllPoints(button)
+        end
+        if button.bg then
+            button.bg:ClearAllPoints()
+            button.bg:SetAllPoints(button)
+        end
+        if button.cooldown then
+            button.cooldown:ClearAllPoints()
+            button.cooldown:SetAllPoints(button.icon)
+        end
+        if button.highlight then
+            button.highlight:ClearAllPoints()
+            button.highlight:SetAllPoints(button)
+        end
+    end
 
     if mainButton then
         mainButton:SetSize(buttonSize, buttonSize)
+        ReanchorChildren(mainButton)
+        ResizeInnerShadow(mainButton)
+    end
+
+    for i, button in ipairs(gridButtons) do
+        button:SetSize(buttonSize, buttonSize)
+        ReanchorChildren(button)
+        ResizeInnerShadow(button)
     end
 
     for i, button in ipairs(flyoutButtons) do
         button:SetSize(buttonSize, buttonSize)
+        ReanchorChildren(button)
+        ResizeInnerShadow(button)
         button:ClearAllPoints()
-        button:SetPoint("TOP", flyout, "TOP", 0, -PADDING - (i - 1) * (buttonSize + BUTTON_SPACING))
+        button:SetPoint("TOP", flyout, "TOP", 0, -PADDING - (i - 1) * (buttonSize + GetButtonSpacing()))
     end
 
     self:Refresh()
@@ -939,19 +953,16 @@ end
 -------------------------------------------------
 
 local function OnBagUpdate()
-    -- Only refresh if enabled AND shown (avoid work when disabled)
-    if frame and frame:IsShown() then
-        -- Skip refreshes during sort (will refresh once via BAGS_UPDATED when sort completes)
-        local SortEngine = ns:GetModule("SortEngine")
-        if SortEngine and (SortEngine:IsSorting() or SortEngine:IsRestacking()) then return end
-        QuestBar:Refresh()
-    end
+    if not frame then return end
+    -- Skip refreshes during sort (will refresh once via BAGS_UPDATED when sort completes)
+    local SortEngine = ns:GetModule("SortEngine")
+    if SortEngine and (SortEngine:IsSorting() or SortEngine:IsRestacking()) then return end
+    QuestBar:Refresh()
 end
 
 local function OnCooldownUpdate()
-    if frame and frame:IsShown() then
-        QuestBar:Refresh()
-    end
+    if not frame then return end
+    QuestBar:Refresh()
 end
 
 local function OnQuestLogUpdate()
@@ -969,6 +980,15 @@ Events:OnPlayerLogin(function()
     QuestBar:Show()
 end, QuestBar)
 
+-- Handle setting changes directly (don't rely on BagFrame which may not be open)
+Events:Register("SETTING_CHANGED", function(key)
+    if key == "questBarSize" or key == "questBarColumns" or key == "questBarSpacing" then
+        QuestBar:UpdateSize()
+    elseif key == "iconFontSize" then
+        QuestBar:UpdateFontSize()
+    end
+end, QuestBar)
+
 -- Refresh after combat ends if we deferred during lockdown
 Events:Register("PLAYER_REGEN_ENABLED", function()
     if pendingRefresh then
@@ -980,7 +1000,7 @@ end, QuestBar)
 Events:Register("BAG_UPDATE", OnBagUpdate, QuestBar)
 Events:Register("BAG_UPDATE_COOLDOWN", OnCooldownUpdate, QuestBar)
 Events:Register("BAGS_UPDATED", function()
-    if frame and frame:IsShown() then QuestBar:Refresh() end
+    if frame then QuestBar:Refresh() end
 end, QuestBar)
 Events:Register("QUEST_LOG_UPDATE", OnQuestLogUpdate, QuestBar)
 Events:Register("QUEST_ACCEPTED", OnQuestLogUpdate, QuestBar)

@@ -1596,11 +1596,11 @@ function ItemButton:SetItem(button, itemData, size, isReadOnly)
             SetItemButtonDesaturated(button, false)
         end
 
-        -- Update cooldown
+        -- Update cooldown (skip GCD to avoid spinning every item on wand/ability use)
         local isOnCooldown = false
         if button.cooldown and not isReadOnly then
             local start, duration, enable = C_Container.GetContainerItemCooldown(itemData.bagID, itemData.slot)
-            if start and duration and enable and enable > 0 and duration > 0 then
+            if start and duration and enable and enable > 0 and duration > 0 and not IsGlobalCooldown(start, duration) then
                 CooldownFrame_Set(button.cooldown, start, duration, true)
                 isOnCooldown = true
             else
@@ -2173,6 +2173,14 @@ function ItemButton:UpdateLockForItem(bagID, slotID)
     end
 end
 
+-- Check if a cooldown is just the GCD (matches global cooldown start/duration)
+local function IsGlobalCooldown(start, duration)
+    if not GetSpellCooldown then return false end
+    local gcdStart, gcdDuration = GetSpellCooldown(61304)  -- Global Cooldown spell
+    if not gcdStart or gcdStart == 0 then return false end
+    return start == gcdStart and math.abs(duration - gcdDuration) < 0.01
+end
+
 -- Update cooldowns on all active buttons when BAG_UPDATE_COOLDOWN fires
 -- Without this, cooldowns (e.g. Hearthstone) only update during full bag refresh
 local Events = ns:GetModule("Events")
@@ -2184,7 +2192,7 @@ if Events then
                 and not button.isReadOnly and not button.isEmptySlotButton
                 and not (button.itemData.isEmptySlots) then
                 local start, duration, enable = C_Container.GetContainerItemCooldown(button.itemData.bagID, button.itemData.slot)
-                if start and duration and enable and enable > 0 and duration > 0 then
+                if start and duration and enable and enable > 0 and duration > 0 and not IsGlobalCooldown(start, duration) then
                     CooldownFrame_Set(button.cooldown, start, duration, true)
                 else
                     CooldownFrame_Set(button.cooldown, 0, 0, false)

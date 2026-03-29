@@ -867,6 +867,9 @@ end
 -- Sort items within a category section
 -- For merged groups, items are sorted by category order first to maintain category grouping
 function LayoutEngine:SortCategoryItems(items, isMergedGroup)
+    local Database = ns:GetModule("Database")
+    local sortPriority = Database:GetSetting("sortPriority") or "default"
+
     table.sort(items, function(a, b)
         -- For merged groups, sort by category order first
         if isMergedGroup then
@@ -879,32 +882,35 @@ function LayoutEngine:SortCategoryItems(items, isMergedGroup)
 
         local aData = a.itemData
         local bData = b.itemData
-
-        -- Quality (descending)
         local aQuality = aData.quality or 0
         local bQuality = bData.quality or 0
-        if aQuality ~= bQuality then
-            return aQuality > bQuality
-        end
-
-        -- Get sort keys (classID, subClassID)
         local aKey = GetCategorySortKey(aData)
         local bKey = GetCategorySortKey(bData)
+        local aLevel = aKey and aKey.itemLevel or 0
+        local bLevel = bKey and bKey.itemLevel or 0
+
+        if sortPriority == "ilvl" then
+            -- Item level first (higher first)
+            if aLevel ~= bLevel then return aLevel > bLevel end
+            if aQuality ~= bQuality then return aQuality > bQuality end
+        elseif sortPriority == "quality" then
+            -- Quality first (higher first), then item level
+            if aQuality ~= bQuality then return aQuality > bQuality end
+            if aLevel ~= bLevel then return aLevel > bLevel end
+        else
+            -- Default: quality first, then class/subclass, then ilvl
+            if aQuality ~= bQuality then return aQuality > bQuality end
+        end
 
         if aKey and bKey then
-            -- Class ID (groups items by major category)
             if aKey.classID ~= bKey.classID then
                 return aKey.classID < bKey.classID
             end
-
-            -- SubClass ID (groups similar items together - all marks of honor have same subClassID)
             if aKey.subClassID ~= bKey.subClassID then
                 return aKey.subClassID < bKey.subClassID
             end
-
-            -- Item level (higher first, like bag view)
-            if aKey.itemLevel ~= bKey.itemLevel then
-                return aKey.itemLevel > bKey.itemLevel
+            if sortPriority == "default" then
+                if aLevel ~= bLevel then return aLevel > bLevel end
             end
         end
 
@@ -922,14 +928,14 @@ function LayoutEngine:SortCategoryItems(items, isMergedGroup)
             return aSubType < bSubType
         end
 
-        -- Item ID (groups related items together - items added at same time have consecutive IDs)
+        -- Item ID
         local aID = aData.itemID or 0
         local bID = bData.itemID or 0
         if aID ~= bID then
             return aID < bID
         end
 
-        -- Name (alphabetical, for items with same ID which shouldn't happen)
+        -- Name
         local aName = aData.name or ""
         local bName = bData.name or ""
         if aName ~= bName then

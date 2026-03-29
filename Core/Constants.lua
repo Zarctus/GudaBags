@@ -123,6 +123,7 @@ Constants.QUEST_INDICATOR_IGNORE = {
 -- These items are usable quest-related items that should appear in the quest bar
 Constants.CUSTOM_QUEST_ITEMS = {
     [24287] = true,  -- Extinguishing Mixture
+    [24501] = true,  -- Gordawg's Boulder
     [28038] = true,  -- Seaforium PU-36 Explosive Nether Modulator
     [28132] = true,  -- Area 52 Special
     [25465] = true,  -- Stormcrow Amulet

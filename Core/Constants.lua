@@ -122,19 +122,38 @@ Constants.QUEST_INDICATOR_IGNORE = {
 -- Custom quest items to show in Quest Bar even without "Quest Item" tooltip text
 -- These items are usable quest-related items that should appear in the quest bar
 Constants.CUSTOM_QUEST_ITEMS = {
+    -- Hellfire Peninsula
+    [23361] = true,  -- Cleansing Vial
     [24287] = true,  -- Extinguishing Mixture
+    [28110] = true,  -- Fat Gnome and Little Elf
+    [28131] = true,  -- Reaver Buster Launcher
+    -- Bloodmyst Isle
+    [24278] = true,  -- Flare Gun
+    -- Nagrand
     [24501] = true,  -- Gordawg's Boulder
+    [27808] = true,  -- Jump-a-tron 4000 Key
+    -- Terokkar Forest
+    [24355] = true,  -- Ironvine Seeds
+    [25465] = true,  -- Stormcrow Amulet
+    -- Zangarmarsh / Nagrand
+    [25552] = true,  -- Warmaul Ogre Banner
+    [25555] = true,  -- Kil'sorrow Banner
+    [25658] = true,  -- Damp Woolen Blanket
+    -- Shadowmoon Valley
+    [31108] = true,  -- Kor'kron Flare Gun (Horde)
+    [31310] = true,  -- Wildhammer Flare Gun (Alliance)
+    -- Blade's Edge Mountains
+    [30652] = true,  -- Dertrok's Second Wand
+    [31495] = true,  -- Grishnath Orb
+    [31517] = true,  -- Dire Pinfeather
+    [31518] = true,  -- Exorcism Feather
+    [32578] = true,  -- Charged Crystal Focus (Ogri'la)
+    -- Netherstorm
     [28038] = true,  -- Seaforium PU-36 Explosive Nether Modulator
     [28132] = true,  -- Area 52 Special
-    [25465] = true,  -- Stormcrow Amulet
-    [24355] = true,  -- Ironvine Seeds
-    [25658] = true,  -- Damp Woolen Blanket
-    [25555] = true,  -- Kil'sorrow Banner
-    [25552] = true,  -- Warmaul Ogre Banner
-    [31310] = true,  -- Wildhammer Flare Gun (Shadowmoon Valley, Alliance)
-    [31108] = true,  -- Kor'kron Flare Gun (Shadowmoon Valley, Horde)
-    [30652] = true,  -- Dertrok's Second Wand (Blade's Edge Mountains)
+    -- Dungeons
     [25853] = true,  -- Pack of Incendiary Bombs (Old Hillsbrad Foothills)
+    [32449] = true,  -- Essence-Infused Moonstone (Sethekk Halls)
 }
 
 Constants.QUALITY_COLORS = {
@@ -280,6 +299,7 @@ Constants.DEFAULTS = {
     reverseStackSort = false,
     sortRightToLeft = false,
     smoothSort = false,  -- Spread sort moves across frames to avoid stuttering
+    sortPriority = "default",  -- "default", "ilvl", "quality"
 
     -- Bag frame position
     framePoint = nil,

@@ -40,6 +40,11 @@ function SettingsSchema.GetGeneral()
         }},
 
         { type = "separator", label = L["SETTINGS_SECTION_SORT"] },
+        { type = "select", key = "sortPriority", label = L["SETTINGS_SORT_PRIORITY"], tooltip = L["SETTINGS_SORT_PRIORITY_TIP"], options = {
+            { value = "default", label = L["SETTINGS_SORT_DEFAULT"] },
+            { value = "ilvl", label = L["SETTINGS_SORT_ILVL"] },
+            { value = "quality", label = L["SETTINGS_SORT_QUALITY"] },
+        }},
         { type = "row", children = {
             { type = "checkbox", key = "gudaSort", label = L["SETTINGS_GUDA_SORT"], tooltip = L["SETTINGS_GUDA_SORT_TIP"],
               hidden = function() local Expansion = ns:GetModule("Expansion") return not (Expansion and Expansion.IsRetail) end },

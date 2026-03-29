@@ -40,15 +40,17 @@ function SettingsSchema.GetGeneral()
         }},
 
         { type = "separator", label = L["SETTINGS_SECTION_SORT"] },
-        { type = "select", key = "sortPriority", label = L["SETTINGS_SORT_PRIORITY"], tooltip = L["SETTINGS_SORT_PRIORITY_TIP"], options = {
-            { value = "default", label = L["SETTINGS_SORT_DEFAULT"] },
-            { value = "ilvl", label = L["SETTINGS_SORT_ILVL"] },
-            { value = "quality", label = L["SETTINGS_SORT_QUALITY"] },
+        { type = "row", children = {
+            { type = "select", key = "sortPriority", label = L["SETTINGS_SORT_PRIORITY"], tooltip = L["SETTINGS_SORT_PRIORITY_TIP"], options = {
+                { value = "default", label = L["SETTINGS_SORT_DEFAULT"] },
+                { value = "ilvl", label = L["SETTINGS_SORT_ILVL"] },
+                { value = "quality", label = L["SETTINGS_SORT_QUALITY"] },
+            }},
+            { type = "checkbox", key = "reverseStackSort", label = L["SETTINGS_REVERSE_STACK"], tooltip = L["SETTINGS_REVERSE_STACK_TIP"] },
         }},
         { type = "row", children = {
             { type = "checkbox", key = "gudaSort", label = L["SETTINGS_GUDA_SORT"], tooltip = L["SETTINGS_GUDA_SORT_TIP"],
               hidden = function() local Expansion = ns:GetModule("Expansion") return not (Expansion and Expansion.IsRetail) end },
-            { type = "checkbox", key = "reverseStackSort", label = L["SETTINGS_REVERSE_STACK"], tooltip = L["SETTINGS_REVERSE_STACK_TIP"] },
         }},
         { type = "row", children = {
             { type = "checkbox", key = "sortRightToLeft", label = L["SETTINGS_SORT_RTL"], tooltip = L["SETTINGS_SORT_RTL_TIP"],

@@ -90,7 +90,9 @@
         "ITEM_BIND_TO_BNETACCOUNT",
         "ITEM_ACCOUNTBOUND",
         "OKAY",
-        "ToggleDropDownMenu"
+        "ToggleDropDownMenu",
+        "ItemSocketingFrame",
+        "MouseIsOver"
     ],
     "Lua.type.weakUnionCheck": true
 }

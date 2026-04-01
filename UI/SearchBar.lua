@@ -706,7 +706,7 @@ local function CreateChipStrip(searchBar, parent)
     -- Type chips
     searchBar.typeChips = {}
     for _, chipDef in ipairs(TYPE_CHIPS) do
-        local chip = CreateTypeChip(chipStrip, chipDef, searchBar)
+        local chip = CreateFilterChip(chipStrip, chipDef, searchBar, "types", {0.7, 0.55, 0.0, 0.6})
         chip:SetPoint("LEFT", chipStrip, "LEFT", xOffset, 0)
         xOffset = xOffset + chip:GetWidth() + spacing
         searchBar.typeChips[#searchBar.typeChips + 1] = chip

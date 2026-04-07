@@ -92,7 +92,11 @@
         "OKAY",
         "ToggleDropDownMenu",
         "ItemSocketingFrame",
-        "MouseIsOver"
+        "MouseIsOver",
+        "ContainerFrameCombinedBags",
+        "ContainerFrameSettingsManager",
+        "BagItemAutoSortButton",
+        "NUM_CONTAINER_FRAMES"
     ],
     "Lua.type.weakUnionCheck": true
 }

@@ -489,25 +489,29 @@ local function CreateButton(parent)
     if button.BattlepayItemTexture then button.BattlepayItemTexture:Hide() end
 
     -- Hide retail-specific template elements (Midnight/TWW)
-    -- These overlays block mouse input - reparent them to remove completely
+    -- These overlays block mouse input - disable them but keep in hierarchy
+    -- IMPORTANT: Do NOT use SetParent(nil) - the template's OnClick handler
+    -- may reference these overlays and error out if they're missing,
+    -- which silently breaks UseContainerItem (right-click to use items).
     local function DisableOverlay(overlay)
         if not overlay then return end
         overlay:Hide()
         overlay:SetAlpha(0)
         overlay:ClearAllPoints()
-        -- Reparent to remove from button hierarchy entirely
-        if overlay.SetParent then
-            overlay:SetParent(nil)
-        end
+        overlay:SetPoint("CENTER", UIParent, "CENTER", 10000, 10000)  -- Move offscreen instead of reparenting
+        if overlay.SetSize then overlay:SetSize(1, 1) end
         if overlay.EnableMouse then overlay:EnableMouse(false) end
         if overlay.SetHitRectInsets then overlay:SetHitRectInsets(1000, 1000, 1000, 1000) end
-        if overlay.SetScript then
-            overlay:SetScript("OnShow", function(self) self:Hide() end)
-            overlay:SetScript("OnEnter", nil)
-            overlay:SetScript("OnLeave", nil)
-            overlay:SetScript("OnMouseDown", nil)
-            overlay:SetScript("OnMouseUp", nil)
+        -- Only set scripts on Frame-type objects (not Texture/FontString)
+        if overlay.SetScript and overlay.HasScript then
+            if overlay:HasScript("OnShow") then overlay:SetScript("OnShow", function(self) self:Hide() end) end
+            if overlay:HasScript("OnEnter") then overlay:SetScript("OnEnter", nil) end
+            if overlay:HasScript("OnLeave") then overlay:SetScript("OnLeave", nil) end
+            if overlay:HasScript("OnMouseDown") then overlay:SetScript("OnMouseDown", nil) end
+            if overlay:HasScript("OnMouseUp") then overlay:SetScript("OnMouseUp", nil) end
+            if overlay:HasScript("OnClick") then overlay:SetScript("OnClick", nil) end
         end
+        overlay._gudaDisabled = true  -- Mark as disabled for re-check
     end
 
     -- Batch disable all template overlays from a pre-defined list
@@ -535,6 +539,29 @@ local function CreateButton(parent)
     -- The template's UpdateQuestItem() shows this with quest borders/bangs on quest items
     local questTex = button.IconQuestTexture or _G[name .. "IconQuestTexture"]
     DisableOverlay(questTex)
+
+    -- Re-suppress any children the template creates AFTER initial setup.
+    -- Template mixin lifecycle methods can spawn new overlays at any time.
+    -- This function is called before each SetItem/SetEmpty to catch them.
+    button._suppressNewChildren = function(self)
+        for _, child in pairs({self:GetChildren()}) do
+            -- Skip our own frames (cooldown, quest icons, glow, etc.)
+            if child ~= self.cooldown and child ~= self.border
+               and child ~= self.questStarterIcon and child ~= self.questIcon
+               and child ~= self.newItemGlow and child ~= self.searchGlow
+               and child ~= self.searchDimOverlay and child ~= self.userLockFrame
+               and child ~= self.spellOverlay and child ~= self.merchantOverlay
+               and not child._gudaOwned then
+                if child.EnableMouse and not child._gudaDisabled then
+                    child:EnableMouse(false)
+                    if child.SetHitRectInsets then
+                        child:SetHitRectInsets(1000, 1000, 1000, 1000)
+                    end
+                    child._gudaDisabled = true
+                end
+            end
+        end
+    end
 
     -- No-op the template's quest update method to prevent it from managing quest visuals
     if button.UpdateQuestItem then
@@ -1223,23 +1250,26 @@ local function CreateButton(parent)
     -- Prevent swapping via click within the same container (bag or bank)
     -- Only allow cross-container swaps (bag↔bank)
     -- Also update pseudo-item slots to use current empty slot
-    -- NOTE: On Retail, skip these operations to avoid tainting the secure click handler
+    -- On Retail, intercept right-clicks for bank operations only.
+    -- Normal item use (equip, consume, etc.) is handled by the template's native handler.
+    -- The DisableOverlay fix (keeping overlays in hierarchy instead of SetParent(nil))
+    -- ensures the native handler works reliably for normal right-clicks.
     button:HookScript("PreClick", function(self, mouseButton)
         -- Suppress spurious "Item isn't ready yet" errors on retail
         SuppressItemErrors()
 
-        -- Intercept all right-click bank operations on Retail.
+        -- On Retail, intercept right-click BANK operations only.
         -- The Blizzard template's UseContainerItem doesn't know the correct bankType
-        -- because GudaBags hides the default BankFrame. Handle all deposit/withdraw explicitly.
+        -- because GudaBags hides the default BankFrame. Handle deposit/withdraw explicitly.
         if ns.IsRetail and mouseButton == "RightButton" and not IsModifiedClick() then
             local RetailBankScanner = ns:GetModule("RetailBankScanner")
             local BankFooter = ns:GetModule("BankFrame.BankFooter")
             if RetailBankScanner and RetailBankScanner:IsBankOpen()
                and self.itemData and self.itemData.itemID
-               and not self.itemData.isGuildBank and not self.isReadOnly then
+               and not self.itemData.isGuildBank and not self.isReadOnly
+               and self.itemData.bagID ~= nil and self.itemData.slot then
                 local currentBankType = BankFooter and BankFooter:GetCurrentBankType() or "character"
                 local bankTypeEnum = nil
-                -- Determine if item is in a player bag (deposit) or in the bank (withdraw)
                 local isBagItem = false
                 for _, id in ipairs(Constants.BAG_IDS) do
                     if self.itemData.bagID == id then
@@ -1248,10 +1278,8 @@ local function CreateButton(parent)
                     end
                 end
                 if isBagItem then
-                    -- Deposit: use the bank type currently shown in GudaBags
                     bankTypeEnum = (currentBankType == "warband") and Enum.BankType.Account or Enum.BankType.Character
                 else
-                    -- Withdraw: infer bankType from the item's container ID
                     for _, id in ipairs(Constants.WARBAND_BANK_TAB_IDS or {}) do
                         if self.itemData.bagID == id then
                             bankTypeEnum = Enum.BankType.Account
@@ -1263,7 +1291,11 @@ local function CreateButton(parent)
                     end
                 end
                 if bankTypeEnum then
-                    self._bankIntercept = { bagID = self.itemData.bagID, slot = self.itemData.slot, bankType = bankTypeEnum }
+                    self._bankIntercept = {
+                        bagID = self.itemData.bagID,
+                        slot = self.itemData.slot,
+                        bankType = bankTypeEnum,
+                    }
                     -- Zero the IDs to block the secure template's UseContainerItem.
                     -- PostClick will then call UseContainerItem with the correct bankType.
                     pcall(function()
@@ -1274,7 +1306,7 @@ local function CreateButton(parent)
             end
         end
 
-        -- On Retail, don't do anything that could taint the secure click path
+        -- On Retail, don't do anything else that could taint the secure click path
         -- Protection is handled via spell guard (OnUpdate) and merchant overlays
         if ns.IsRetail then return end
 
@@ -1296,7 +1328,7 @@ local function CreateButton(parent)
     end)
 
     -- PostClick: perform the bank deposit/withdraw with the correct bankType.
-    -- Uses HookScript so the template's own PostClick still runs (HookScript, not SetScript).
+    -- Uses HookScript so the template's own PostClick still runs.
     -- Runs after the secure template's (now no-op) OnClick, still within hardware-event context.
     button:HookScript("PostClick", function(self, mouseButton)
         if self._bankIntercept then
@@ -1459,10 +1491,18 @@ end
 
 -- Check if a cooldown is just the GCD (matches global cooldown start/duration)
 local function IsGlobalCooldown(start, duration)
-    if not GetSpellCooldown then return false end
-    local gcdStart, gcdDuration = GetSpellCooldown(61304)  -- Global Cooldown spell
-    if not gcdStart or gcdStart == 0 then return false end
-    return start == gcdStart and math.abs(duration - gcdDuration) < 0.01
+    -- 12.0.0+: GetSpellCooldown is removed, use C_Spell.GetSpellCooldown
+    local gcdInfo
+    if C_Spell and C_Spell.GetSpellCooldown then
+        gcdInfo = C_Spell.GetSpellCooldown(61304)  -- Global Cooldown spell
+    elseif GetSpellCooldown then
+        local gcdStart, gcdDuration = GetSpellCooldown(61304)
+        if gcdStart then
+            gcdInfo = { startTime = gcdStart, duration = gcdDuration }
+        end
+    end
+    if not gcdInfo or not gcdInfo.startTime or gcdInfo.startTime == 0 then return false end
+    return start == gcdInfo.startTime and math.abs(duration - gcdInfo.duration) < 0.01
 end
 
 -- Cached settings for batch updates (set by SetItemBatch or refreshed on demand)
@@ -1554,6 +1594,11 @@ local function EnsureNewItemGlow(button)
 end
 
 function ItemButton:SetItem(button, itemData, size, isReadOnly)
+    -- Re-suppress any new child frames the template may have created
+    if button._suppressNewChildren then
+        button:_suppressNewChildren()
+    end
+
     -- Hide Blizzard template's built-in textures (they may re-show from events)
     if button.IconBorder then button.IconBorder:Hide() end
     if button.IconOverlay then button.IconOverlay:Hide() end
@@ -1666,7 +1711,7 @@ function ItemButton:SetItem(button, itemData, size, isReadOnly)
         end
 
         -- Determine quest indicator status (used for both border and quest icons below)
-        local showQuestIndicator = not (itemData.quality == 0 and IsJunkItem(itemData)) and (itemData.isQuestItem or (itemData.hasDuration and itemData.itemID and GetItemSpell(itemData.itemID)))
+        local showQuestIndicator = not (itemData.quality == 0 and IsJunkItem(itemData)) and (itemData.isQuestItem or (itemData.hasDuration and itemData.itemID and (C_Item.GetItemSpell or GetItemSpell)(itemData.itemID)))
 
         -- Quality border (quest items override with golden border)
         -- These are quality indicators that coexist with Masque's button chrome
@@ -1980,6 +2025,11 @@ function ItemButton:UpdateFavoriteStar(button)
 end
 
 function ItemButton:SetEmpty(button, bagID, slot, size, isReadOnly, isGuildBank)
+    -- Re-suppress any new child frames the template may have created
+    if button._suppressNewChildren then
+        button:_suppressNewChildren()
+    end
+
     -- Hide Blizzard template's built-in textures (they may re-show from events)
     if button.IconBorder then button.IconBorder:Hide() end
     if button.IconOverlay then button.IconOverlay:Hide() end

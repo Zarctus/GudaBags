@@ -63,7 +63,7 @@ end
 
 local function IsUsableItem(itemID)
     if not itemID then return false end
-    local spellName = GetItemSpell(itemID)
+    local spellName = (C_Item.GetItemSpell or GetItemSpell)(itemID)
     return spellName ~= nil
 end
 

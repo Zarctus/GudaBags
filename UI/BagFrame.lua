@@ -2213,7 +2213,14 @@ Events:OnPlayerLogin(function()
     end
     ItemButton:PreWarm(frame.container, 200)
 
-    -- Override default bag functions to use GudaBags
+    -- Register GudaBags frame for ESC-to-close and proper frame management
+    tinsert(UISpecialFrames, "GudaBagsBagFrame")
+
+    -------------------------------------------------
+    -- CRITICAL: Override default bag functions FIRST
+    -- This must happen before any frame-hiding code to guarantee
+    -- bag overrides are active even if something below errors.
+    -------------------------------------------------
     ToggleBackpack = function()
         BagFrame:Toggle()
     end
@@ -2249,4 +2256,85 @@ Events:OnPlayerLogin(function()
     ToggleAllBags = function()
         BagFrame:Toggle()
     end
+
+    -------------------------------------------------
+    -- Disable Blizzard default bag frames
+    -- All frame-hiding code is wrapped in pcall so a failure
+    -- here never breaks the global overrides above.
+    -------------------------------------------------
+    pcall(function()
+        local blizzBagHider = CreateFrame("Frame")
+        blizzBagHider:Hide()
+
+        -- Helper: Completely disable a Blizzard container frame
+        local function KillBagFrame(cf)
+            if not cf or cf._gudaKilled then return end
+            cf._gudaKilled = true
+            cf:UnregisterAllEvents()
+            cf:SetParent(blizzBagHider)
+            cf:Hide()
+            -- Hook OnShow to re-hide if anything tries to show it later
+            pcall(function() cf:HookScript("OnShow", cf.Hide) end)
+        end
+
+        -- Kill existing individual container frames
+        local numFrames = NUM_CONTAINER_FRAMES or 13
+        for i = 1, numFrames do
+            KillBagFrame(_G["ContainerFrame" .. i])
+        end
+
+        -- Kill combined bags frame (TWW 11.0+ / Midnight 12.0+)
+        if ContainerFrameCombinedBags then
+            KillBagFrame(ContainerFrameCombinedBags)
+        end
+
+        -- Neutralize ContainerFrameSettingsManager (TWW+)
+        if ContainerFrameSettingsManager then
+            pcall(function()
+                ContainerFrameSettingsManager:UnregisterAllEvents()
+                ContainerFrameSettingsManager:SetParent(blizzBagHider)
+            end)
+        end
+
+        -- Noop FrameXML positioning/generation functions
+        if UpdateContainerFrameAnchors then
+            UpdateContainerFrameAnchors = function() end
+        end
+
+        -- Kill BagItemAutoSortButton
+        if BagItemAutoSortButton then
+            BagItemAutoSortButton:SetParent(blizzBagHider)
+        end
+
+        -- Periodic sweep to catch lazily-created Blizzard frames
+        -- ContainerFrameCombinedBags and ContainerFrame* may not exist at login
+        local function SweepBlizzardBags()
+            if ContainerFrameCombinedBags and not ContainerFrameCombinedBags._gudaKilled then
+                KillBagFrame(ContainerFrameCombinedBags)
+            end
+            for i = 1, numFrames do
+                local cf = _G["ContainerFrame" .. i]
+                if cf and not cf._gudaKilled then
+                    KillBagFrame(cf)
+                end
+            end
+        end
+
+        C_Timer.After(0.5, SweepBlizzardBags)
+        C_Timer.After(2, SweepBlizzardBags)
+        C_Timer.After(5, SweepBlizzardBags)
+
+        -- Also sweep on BAG_UPDATE (safe event that always exists)
+        local sweepCount = 0
+        local sweepFrame = CreateFrame("Frame")
+        sweepFrame:RegisterEvent("BAG_UPDATE")
+        sweepFrame:SetScript("OnEvent", function(self)
+            SweepBlizzardBags()
+            sweepCount = sweepCount + 1
+            if sweepCount > 5 then
+                self:UnregisterAllEvents()
+                self:SetScript("OnEvent", nil)
+            end
+        end)
+    end)
 end, BagFrame)

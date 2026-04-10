@@ -77,16 +77,15 @@ local function PositionButton()
     local footer = _G["GudaBagsFooter"]
     if not footer or not footer.slotInfoFrame then return end
 
-    local slotInfo = footer.slotInfoFrame
-    local right = slotInfo:GetRight()
-    local _, centerY = slotInfo:GetCenter()
-    if not right or not centerY then return end
+    -- Use the slotInfo text's right edge, not the fixed-width frame
+    local slotInfo = footer.slotInfo or footer.slotInfoFrame
+    local baseRight = slotInfo:GetRight()
+    local _, centerY = footer.slotInfoFrame:GetCenter()
+    if not baseRight or not centerY then return end
 
     local halfSize = Constants.BAG_SLOT_SIZE / 2
-    -- On Retail there's no keyring button, so shift 1 button left to fill the gap
-    local offset = ns.IsRetail and -(Constants.BAG_SLOT_SIZE) or 0
     button:ClearAllPoints()
-    button:SetPoint("CENTER", UIParent, "BOTTOMLEFT", right + halfSize + 1 + offset, centerY)
+    button:SetPoint("CENTER", UIParent, "BOTTOMLEFT", baseRight + halfSize + 4, centerY)
 end
 
 -- Show/hide the button — only called from our own OnUpdate context

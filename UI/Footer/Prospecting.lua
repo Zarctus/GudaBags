@@ -1,13 +1,10 @@
 local addonName, ns = ...
 
--- Standalone Pick Lock footer button for Rogues.
+-- Standalone Prospecting footer button for Jewelcrafters.
 -- FULLY DECOUPLED from Footer.lua and BagFrame.lua to avoid taint.
 -- Same architecture as Disenchant.lua — see that file for design rationale.
 
-local _, playerClass = UnitClass("player")
-if playerClass ~= "ROGUE" then return end
-
-local PICK_LOCK_SPELL_ID = 1804
+local PROSPECTING_SPELL_ID = 31252
 
 local Constants = ns.Constants
 local L = ns.L
@@ -22,7 +19,7 @@ local elapsed = 0
 local function CreateButton()
     local Theme = ns:GetModule("Theme")
 
-    button = CreateFrame("Button", "GudaBagsLockpickButton", UIParent, "SecureActionButtonTemplate,BackdropTemplate")
+    button = CreateFrame("Button", "GudaBagsProspectingButton", UIParent, "SecureActionButtonTemplate,BackdropTemplate")
     button:SetSize(Constants.BAG_SLOT_SIZE, Constants.BAG_SLOT_SIZE)
     button:SetFrameStrata("DIALOG")
     button:SetFrameLevel(10)
@@ -30,8 +27,8 @@ local function CreateButton()
     button:RegisterForClicks("AnyDown")
 
     button:SetAttribute("type", "macro")
-    local spellName = C_Spell.GetSpellName(PICK_LOCK_SPELL_ID)
-    button:SetAttribute("macrotext", "/cast " .. (spellName or "Pick Lock"))
+    local spellName = C_Spell.GetSpellName(PROSPECTING_SPELL_ID)
+    button:SetAttribute("macrotext", "/cast " .. (spellName or "Prospecting"))
 
     button:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8x8",
@@ -47,7 +44,7 @@ local function CreateButton()
     local icon = button:CreateTexture(nil, "ARTWORK")
     icon:SetSize(Constants.BAG_SLOT_SIZE - 2, Constants.BAG_SLOT_SIZE - 2)
     icon:SetPoint("CENTER")
-    icon:SetTexture("Interface\\Icons\\INV_Misc_Key_03")
+    icon:SetTexture("Interface\\Icons\\INV_Misc_Gem_BloodGem_01")
     button.icon = icon
 
     local highlight = button:CreateTexture(nil, "HIGHLIGHT")
@@ -57,8 +54,8 @@ local function CreateButton()
 
     button:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_TOP")
-        GameTooltip:SetText(L["FOOTER_PICKLOCK"] or "Pick Lock")
-        GameTooltip:AddLine(L["FOOTER_PICKLOCK_TOOLTIP"] or "Click to cast Pick Lock", 0.7, 0.7, 0.7)
+        GameTooltip:SetText(L["FOOTER_PROSPECTING"] or "Prospecting")
+        GameTooltip:AddLine(L["FOOTER_PROSPECTING_TOOLTIP"] or "Click to cast Prospecting", 0.7, 0.7, 0.7)
         GameTooltip:Show()
     end)
 
@@ -82,11 +79,13 @@ local function PositionButton()
 
     local halfSize = Constants.BAG_SLOT_SIZE / 2
 
-    -- Chain after disenchant if visible
-    local deButton = _G["GudaBagsDisenchantButton"]
-    if deButton and deButton:IsShown() then
-        local r = deButton:GetRight()
-        if r then baseRight = r end
+    -- Chain after the rightmost visible preceding button
+    local buttons = { _G["GudaBagsLockpickButton"], _G["GudaBagsDisenchantButton"] }
+    for _, btn in ipairs(buttons) do
+        if btn and btn:IsShown() then
+            local r = btn:GetRight()
+            if r then baseRight = r; break end
+        end
     end
 
     button:ClearAllPoints()
@@ -133,7 +132,7 @@ end
 eventFrame:RegisterEvent("PLAYER_LOGIN")
 eventFrame:SetScript("OnEvent", function(self, event)
     if event == "PLAYER_LOGIN" then
-        if not IsSpellKnown(PICK_LOCK_SPELL_ID) then
+        if not IsSpellKnown(PROSPECTING_SPELL_ID) then
             self:UnregisterAllEvents()
             return
         end

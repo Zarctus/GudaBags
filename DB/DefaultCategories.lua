@@ -456,9 +456,17 @@ if not Expansion.IsRetail then
 end
 
 -- Class Items category only enabled by default for Hunters and Warlocks
+-- Quiver category only enabled by default for Hunters
+-- Soul Bag category only enabled by default for Warlocks
 local _, playerClass = UnitClass("player")
 if playerClass ~= "HUNTER" and playerClass ~= "WARLOCK" then
     DefaultCategories.DEFINITIONS["Class Items"].enabled = false
+end
+if playerClass ~= "HUNTER" and DefaultCategories.DEFINITIONS["Quiver"] then
+    DefaultCategories.DEFINITIONS["Quiver"].enabled = false
+end
+if playerClass ~= "WARLOCK" then
+    DefaultCategories.DEFINITIONS["Soul Bag"].enabled = false
 end
 
 -- Order matching original Guda addon

@@ -264,6 +264,7 @@ local function ResetButton(pool, button)
     button.itemData = nil
     button.owner = nil
     button.isEmptySlotButton = nil
+    button.isDropTargetButton = nil
     button.categoryId = nil
     button.iconSize = nil
     button.layoutX = nil
@@ -776,8 +777,8 @@ local function CreateButton(parent)
             self.lastShiftState = IsShiftKeyDown()
 
             -- Call Blizzard's handler for sell cursor, inspect cursor, etc.
-            -- Skip for pseudo-items (Empty/Soul) which don't have real bag slots
-            if self.itemData and self.itemData.bagID and not self.isEmptySlotButton and not self.itemData.isEmptySlots then
+            -- Skip for pseudo-items (Empty/Soul/DropTarget) which don't have real bag slots
+            if self.itemData and self.itemData.bagID and not self.isEmptySlotButton and not self.isDropTargetButton and not self.itemData.isEmptySlots then
                 -- ContainerFrameItemButton_OnEnter may not exist on retail
                 if ContainerFrameItemButton_OnEnter then
                     ContainerFrameItemButton_OnEnter(self)
@@ -786,7 +787,13 @@ local function CreateButton(parent)
 
             -- Show our custom tooltip (overrides Blizzard's if needed)
             -- Don't show tooltip for Empty/Soul pseudo-item buttons
-            if not self.isEmptySlotButton and not (self.itemData and self.itemData.isEmptySlots) then
+            -- For drop-target buttons, show a hint tooltip
+            if self.isDropTargetButton then
+                local L = ns.L
+                GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+                GameTooltip:SetText(L["DROP_HERE_TO_ASSIGN"], 1, 1, 1)
+                GameTooltip:Show()
+            elseif not self.isEmptySlotButton and not (self.itemData and self.itemData.isEmptySlots) then
                 Tooltip:ShowForItem(self)
             end
 
@@ -867,7 +874,7 @@ local function CreateButton(parent)
             if self.lastShiftState ~= shiftDown then
                 self.lastShiftState = shiftDown
                 -- Refresh tooltip when shift state changes (for stack price vs single price)
-                if self.itemData and not self.isEmptySlotButton and not self.itemData.isEmptySlots then
+                if self.itemData and not self.isEmptySlotButton and not self.isDropTargetButton and not self.itemData.isEmptySlots then
                     Tooltip:ShowForItem(self)
                 end
             end
@@ -1254,6 +1261,19 @@ local function CreateButton(parent)
             return  -- Don't check same-category for pseudo-items
         end
 
+        -- For drop-target buttons, assign item to category on click
+        if self.isDropTargetButton and mouseButton == "LeftButton" then
+            local infoType, itemID = GetCursorInfo()
+            if infoType == "item" and itemID then
+                ClearCursor()
+                local CategoryManager = ns:GetModule("CategoryManager")
+                if CategoryManager then
+                    CategoryManager:AssignItemToCategory(itemID, self.categoryId)
+                end
+            end
+            return
+        end
+
         if mouseButton == "LeftButton" and ShouldBlockSwap(self) then
             ClearCursor()
         end
@@ -1284,6 +1304,19 @@ local function CreateButton(parent)
                 if newBagID and newSlotID then
                     -- Place item in the current first empty slot
                     C_Container.PickupContainerItem(newBagID, newSlotID)
+                end
+            end
+            return
+        end
+
+        -- For drop-target buttons, assign item to category
+        if self.isDropTargetButton then
+            local infoType, itemID = GetCursorInfo()
+            if infoType == "item" and itemID then
+                ClearCursor()
+                local CategoryManager = ns:GetModule("CategoryManager")
+                if CategoryManager then
+                    CategoryManager:AssignItemToCategory(itemID, self.categoryId)
                 end
             end
             return
@@ -1512,6 +1545,33 @@ function ItemButton:SetItem(button, itemData, size, isReadOnly)
         -- itemData now contains real bagID/slot of first empty slot
         button.wrapper:SetID(itemData.bagID)
         button:SetID(itemData.slot)
+
+        return
+    end
+
+    -- Special handling for empty category drop-target pseudo-items
+    if itemData and itemData.isDropTarget then
+        SetItemButtonTexture(button, itemData.texture)
+        SetItemButtonCount(button, 0)
+
+        -- Green-tinted slot background to indicate drop target
+        button.slotBackground:SetVertexColor(0.4, 0.8, 0.4, 0.7)
+        SetItemButtonDesaturated(button, true)
+
+        -- Hide all overlays
+        button.border:Hide()
+        if button.innerShadow then
+            for _, tex in pairs(button.innerShadow) do tex:Hide() end
+        end
+        button.unusableOverlay:Hide()
+        button.junkOverlay:Hide()
+        button.lockOverlay:Hide()
+        if button.itemLevelText then button.itemLevelText:Hide() end
+        if button.cooldown then CooldownFrame_Set(button.cooldown, 0, 0, false) end
+
+        button.isDropTargetButton = true
+        button.wrapper:SetID(0)
+        button:SetID(0)
 
         return
     end
@@ -2189,7 +2249,7 @@ if Events then
         if not buttonPool then return end
         for button in buttonPool:EnumerateActive() do
             if button.cooldown and button.itemData and button.itemData.bagID and button.itemData.slot
-                and not button.isReadOnly and not button.isEmptySlotButton
+                and not button.isReadOnly and not button.isEmptySlotButton and not button.isDropTargetButton
                 and not (button.itemData.isEmptySlots) then
                 local start, duration, enable = C_Container.GetContainerItemCooldown(button.itemData.bagID, button.itemData.slot)
                 if start and duration and enable and enable > 0 and duration > 0 and not IsGlobalCooldown(start, duration) then

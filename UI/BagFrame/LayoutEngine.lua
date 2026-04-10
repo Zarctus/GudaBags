@@ -596,7 +596,8 @@ end
 -- firstEmptySlot: {bagID, slot} of first empty slot for click handling
 -- soulEmptyCount: number of soul bag empty slots
 -- firstSoulEmptySlot: {bagID, slot} of first soul bag empty slot
-function LayoutEngine:BuildCategorySections(items, isViewingCached, emptyCount, firstEmptySlot, soulEmptyCount, firstSoulEmptySlot, forceSoulVisible)
+-- showEmptyDropTargets: when true, append drop-target sections for empty enabled categories
+function LayoutEngine:BuildCategorySections(items, isViewingCached, emptyCount, firstEmptySlot, soulEmptyCount, firstSoulEmptySlot, forceSoulVisible, showEmptyDropTargets)
     local CategoryManager = ns:GetModule("CategoryManager")
     if not CategoryManager then
         return {{ categoryId = "All", categoryName = "All Items", categoryIcon = nil, items = items }}
@@ -828,6 +829,67 @@ function LayoutEngine:BuildCategorySections(items, isViewingCached, emptyCount, 
         local isSoulCategory = section.categoryId == "Soul" and #section.items > 0
         if #section.items > 0 or isCustomCategory or isEmptyCategory or isSoulCategory then
             table.insert(nonEmptySections, section)
+        end
+    end
+
+    -- Append drop-target sections for empty categories when dragging an item
+    if showEmptyDropTargets then
+        -- Build set of categoryIds that already have items
+        local populatedCategories = {}
+        for _, section in ipairs(nonEmptySections) do
+            if #section.items > 0 then
+                populatedCategories[section.categoryId] = true
+            end
+            -- For merged groups, mark all member categories as populated
+            if section.isGroup and section.group and #section.items > 0 then
+                for _, catId in ipairs(order) do
+                    local catDef = categories.definitions[catId]
+                    if catDef and catDef.group == section.group then
+                        populatedCategories[catId] = true
+                    end
+                end
+            end
+        end
+
+        local L = ns.L
+        for _, categoryId in ipairs(order) do
+            local def = categories.definitions[categoryId]
+            if def and def.enabled
+                and not populatedCategories[categoryId]
+                and not def.hideControls
+                and not def.isFallback
+                and not def.isEquipSet
+                and categoryId ~= "Recent"
+                and categoryId ~= "Home"
+                and categoryId ~= "Empty"
+                and categoryId ~= "Soul"
+                and categoryId ~= "Keyring"
+                and categoryId ~= "Soul Bag" then
+
+                local displayName = def.isBuiltIn
+                    and ns.DefaultCategories:GetLocalizedName(categoryId, def.name)
+                    or def.name
+
+                local dropTargetSection = {
+                    categoryId = categoryId,
+                    categoryName = displayName,
+                    categoryIcon = def.icon,
+                    items = {{
+                        bagID = 0, slot = 0,
+                        itemData = {
+                            bagID = 0, slot = 0,
+                            isDropTarget = true,
+                            categoryId = categoryId,
+                            texture = def.icon or "Interface\\AddOns\\GudaBags\\Assets\\plus.png",
+                            count = 0,
+                            name = displayName,
+                        },
+                    }},
+                    hideControls = true,
+                    isDropTarget = true,
+                }
+                table.insert(nonEmptySections, dropTargetSection)
+            end
         end
     end
 

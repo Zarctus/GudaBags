@@ -45,8 +45,12 @@ local categoryViewItems = {} -- Array of {itemKey, bagID, slot, categoryId, coun
 local lastCategoryLayout = nil -- Previous categoryViewItems for comparison
 local lastButtonByCategory = {} -- Key: categoryId -> last item button (for drop indicator anchor)
 local lastTotalItemCount = 0 -- Track item count to detect Empty/Soul category changes
-local pseudoItemButtons = {} -- Track Empty/Soul pseudo-item buttons for proper release
-                             -- Keys are "Empty:<categoryId>" or "Soul:<categoryId>" to avoid overwrites in merged groups
+local pseudoItemButtons = {} -- Track Empty/Soul/DropTarget pseudo-item buttons for proper release
+                             -- Keys are "Empty:<categoryId>", "Soul:<categoryId>", or "DropTarget:<categoryId>"
+
+-- Drag state tracking for showing empty category drop targets
+local isDraggingItem = false
+local dragCheckTicker = nil
 
 -- Helper to find a pseudo-item button by type (Empty or Soul)
 local function FindPseudoItemButton(pseudoType)
@@ -697,7 +701,8 @@ function BagFrame:RefreshCategoryView(bags, bagsToShow, settings, hasSearch, isV
     itemButtons = {}
 
     -- Build category sections (include empty slot count for "Empty" and "Soul" categories)
-    local sections = LayoutEngine:BuildCategorySections(items, isViewingCached, emptyCount, firstEmptySlot, soulEmptyCount, firstSoulEmptySlot)
+    -- When dragging an item, also show empty categories as drop targets
+    local sections = LayoutEngine:BuildCategorySections(items, isViewingCached, emptyCount, firstEmptySlot, soulEmptyCount, firstSoulEmptySlot, nil, isDraggingItem)
 
     -- Calculate frame size
     local frameWidth, frameHeight = LayoutEngine:CalculateCategoryFrameSize(sections, settings)
@@ -876,7 +881,10 @@ function BagFrame:RefreshCategoryView(bags, bagsToShow, settings, hasSearch, isV
         -- But DO track it separately for proper release
         -- Use a unique key combining pseudo-item type and categoryId to avoid overwrites
         -- when multiple pseudo-items (Empty, Soul) are in the same merged group
-        if itemData.isEmptySlots then
+        if itemData.isDropTarget then
+            local pseudoKey = "DropTarget:" .. itemInfo.categoryId
+            pseudoItemButtons[pseudoKey] = button
+        elseif itemData.isEmptySlots then
             local pseudoKey = (itemData.isSoulSlots and "Soul:" or "Empty:") .. itemInfo.categoryId
             pseudoItemButtons[pseudoKey] = button
         else
@@ -1034,6 +1042,12 @@ function BagFrame:Hide()
         itemButtons = {}
         layoutCached = false
         lastLayoutSettings = nil
+        -- Cancel drag state tracking
+        isDraggingItem = false
+        if dragCheckTicker then
+            dragCheckTicker:Cancel()
+            dragCheckTicker = nil
+        end
     end
 end
 
@@ -1890,6 +1904,31 @@ Events:Register("ITEM_LOCK_CHANGED", function(event, bagID, slotID)
     if viewingCharacter then return end
     if frame and frame:IsShown() and bagID and slotID then
         ItemButton:UpdateLockForItem(bagID, slotID)
+    end
+
+    -- Detect drag start for showing empty category drop targets
+    if frame and frame:IsShown() and not viewingCharacter and not isDraggingItem then
+        local viewType = Database:GetSetting("bagViewType") or "single"
+        if viewType == "category" then
+            local cursorType = GetCursorInfo()
+            if cursorType == "item" then
+                isDraggingItem = true
+                BagFrame:Refresh()
+                -- Poll for cursor clear (item dropped/cancelled)
+                dragCheckTicker = C_Timer.NewTicker(0.1, function()
+                    if not CursorHasItem() then
+                        isDraggingItem = false
+                        if dragCheckTicker then
+                            dragCheckTicker:Cancel()
+                            dragCheckTicker = nil
+                        end
+                        if frame and frame:IsShown() then
+                            BagFrame:Refresh()
+                        end
+                    end
+                end)
+            end
+        end
     end
 end, BagFrame)
 

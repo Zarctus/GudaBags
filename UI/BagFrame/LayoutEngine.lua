@@ -851,7 +851,6 @@ function LayoutEngine:BuildCategorySections(items, isViewingCached, emptyCount, 
             end
         end
 
-        local L = ns.L
         for _, categoryId in ipairs(order) do
             local def = categories.definitions[categoryId]
             if def and def.enabled

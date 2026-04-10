@@ -265,6 +265,7 @@ local function ResetButton(pool, button)
     button.owner = nil
     button.isEmptySlotButton = nil
     button.isDropTargetButton = nil
+    button._masqueApplied = nil
     button.categoryId = nil
     button.iconSize = nil
     button.layoutX = nil
@@ -306,6 +307,10 @@ local function ResetButton(pool, button)
     if button.pinIcon then button.pinIcon:Hide() end
     if button.pinIconShadow then button.pinIconShadow:Hide() end
     if button.searchGlow then button.searchGlow:Hide() end
+    if button.dropTargetGlow then
+        button.dropTargetGlow.animGroup:Stop()
+        button.dropTargetGlow:Hide()
+    end
     if button.minimalSlot then button.minimalSlot:Hide() end
     if button.cooldown then CooldownFrame_Set(button.cooldown, 0, 0, false) end
 end
@@ -1356,11 +1361,8 @@ function ItemButton:Acquire(parent)
     button:SetShown(true)
     button.owner = parent
 
-    -- Register with Masque if active
-    local MasqueModule = ns:GetModule("Masque")
-    if MasqueModule and MasqueModule:IsActive() then
-        MasqueModule:AddButton(button, parent.masqueGroup or "Bags")
-    end
+    -- Note: Masque registration is deferred to SetItem/SetEmpty so it runs AFTER button sizing.
+    -- Registering here (before sizing) causes Masque to override icon anchors at the wrong size.
 
     -- Apply retail slot textures immediately so first-open doesn't flash default
     ApplyThemeToButton(button, GetEffectiveSlotTextures())
@@ -1472,6 +1474,63 @@ function ItemButton:InvalidateSettingsCache()
     cachedSettings = nil
 end
 
+-- Drop target: create a pulsing green glow border lazily on first use
+local function EnsureDropTargetGlow(button)
+    if button.dropTargetGlow then return button.dropTargetGlow end
+
+    -- Parent to wrapper so button:SetAlpha() doesn't dim the glow
+    local glow = CreateFrame("Frame", nil, button.wrapper)
+    glow:SetPoint("TOPLEFT", button, "TOPLEFT", -5, 5)
+    glow:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", 5, -5)
+    glow:SetFrameLevel(button:GetFrameLevel() + Constants.FRAME_LEVELS.BORDER + 1)
+
+    local border = CreateFrame("Frame", nil, glow, "BackdropTemplate")
+    border:SetAllPoints(glow)
+    border:SetBackdrop({
+        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+        edgeSize = 14,
+        insets = { left = 3, right = 3, top = 3, bottom = 3 },
+    })
+    border:SetBackdropBorderColor(0.3, 0.9, 0.3, 0.8)
+
+    local animGroup = glow:CreateAnimationGroup()
+    local fadeOut = animGroup:CreateAnimation("Alpha")
+    fadeOut:SetFromAlpha(1)
+    fadeOut:SetToAlpha(0.2)
+    fadeOut:SetDuration(0.6)
+    fadeOut:SetOrder(1)
+    fadeOut:SetSmoothing("IN_OUT")
+    local fadeIn = animGroup:CreateAnimation("Alpha")
+    fadeIn:SetFromAlpha(0.2)
+    fadeIn:SetToAlpha(1)
+    fadeIn:SetDuration(0.6)
+    fadeIn:SetOrder(2)
+    fadeIn:SetSmoothing("IN_OUT")
+    animGroup:SetLooping("REPEAT")
+    glow.animGroup = animGroup
+    glow:Hide()
+    button.dropTargetGlow = glow
+    return glow
+end
+
+-- Register button with Masque after sizing is complete, then reapply icon anchoring
+-- Masque overrides icon anchors as part of skinning, so we must re-anchor after registration
+local function ApplyMasqueAfterSizing(button)
+    if button._masqueApplied then return end
+    local MasqueModule = ns:GetModule("Masque")
+    if not MasqueModule or not MasqueModule:IsActive() or not button.owner then return end
+
+    MasqueModule:AddButton(button, button.owner.masqueGroup or "Bags")
+    button._masqueApplied = true
+
+    -- Reapply icon anchoring after Masque (Masque may override SetAllPoints)
+    local icon = button.icon or button.Icon
+    if icon then
+        icon:ClearAllPoints()
+        icon:SetAllPoints(button)
+    end
+end
+
 function ItemButton:SetItem(button, itemData, size, isReadOnly)
     -- Hide Blizzard template's built-in textures (they may re-show from events)
     if button.IconBorder then button.IconBorder:Hide() end
@@ -1488,6 +1547,7 @@ function ItemButton:SetItem(button, itemData, size, isReadOnly)
 
     -- Reset visual state from previous item (lazy cleanup)
     -- These elements might not be explicitly set below
+    button:SetAlpha(1)
     if button.trackedIcon then button.trackedIcon:Hide() end
     if button.trackedIconShadow then button.trackedIconShadow:Hide() end
     if button.equipSetIcon then button.equipSetIcon:Hide() end
@@ -1513,6 +1573,9 @@ function ItemButton:SetItem(button, itemData, size, isReadOnly)
 
         UpdateSlotBackgroundSize(button, size)
     end
+
+    -- Register with Masque after sizing (deferred from Acquire to avoid icon anchor issues)
+    ApplyMasqueAfterSizing(button)
 
     button.slotBackground:SetVertexColor(0.5, 0.5, 0.5, settings.bgAlpha)
 
@@ -1554,7 +1617,8 @@ function ItemButton:SetItem(button, itemData, size, isReadOnly)
         SetItemButtonTexture(button, itemData.texture)
         SetItemButtonCount(button, 0)
 
-        -- Green-tinted slot background to indicate drop target
+        -- Slightly dimmed icon with green-tinted slot background
+        button:SetAlpha(0.5)
         button.slotBackground:SetVertexColor(0.4, 0.8, 0.4, 0.7)
         SetItemButtonDesaturated(button, true)
 
@@ -1568,6 +1632,11 @@ function ItemButton:SetItem(button, itemData, size, isReadOnly)
         button.lockOverlay:Hide()
         if button.itemLevelText then button.itemLevelText:Hide() end
         if button.cooldown then CooldownFrame_Set(button.cooldown, 0, 0, false) end
+
+        -- Animated glow border
+        local glow = EnsureDropTargetGlow(button)
+        glow:Show()
+        glow.animGroup:Play()
 
         button.isDropTargetButton = true
         button.wrapper:SetID(0)
@@ -1952,6 +2021,9 @@ function ItemButton:SetEmpty(button, bagID, slot, size, isReadOnly, isGuildBank)
 
         UpdateSlotBackgroundSize(button, size)
     end
+
+    -- Register with Masque after sizing (deferred from Acquire to avoid icon anchor issues)
+    ApplyMasqueAfterSizing(button)
 
     button.slotBackground:SetVertexColor(0.5, 0.5, 0.5, settings.bgAlpha)
 

@@ -84,8 +84,10 @@ local function PositionButton()
     if not right or not centerY then return end
 
     local halfSize = Constants.BAG_SLOT_SIZE / 2
+    -- On Retail there's no keyring button, so shift 1 button left to fill the gap
+    local offset = ns.IsRetail and -(Constants.BAG_SLOT_SIZE) or 0
     button:ClearAllPoints()
-    button:SetPoint("CENTER", UIParent, "BOTTOMLEFT", right + halfSize + 1, centerY)
+    button:SetPoint("CENTER", UIParent, "BOTTOMLEFT", right + halfSize + 1 + offset, centerY)
 end
 
 -- Show/hide the button — only called from our own OnUpdate context

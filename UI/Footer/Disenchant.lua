@@ -46,10 +46,9 @@ local function CreateButton()
     button:SetBackdropBorderColor(fbBorder[1], fbBorder[2], fbBorder[3], fbBorder[4])
 
     local icon = button:CreateTexture(nil, "ARTWORK")
-    icon:SetSize(18, 18)
+    icon:SetSize(Constants.BAG_SLOT_SIZE - 2, Constants.BAG_SLOT_SIZE - 2)
     icon:SetPoint("CENTER")
     icon:SetTexture("Interface\\Icons\\Spell_Holy_RemoveCurse")
-    icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
     button.icon = icon
 
     local highlight = button:CreateTexture(nil, "HIGHLIGHT")

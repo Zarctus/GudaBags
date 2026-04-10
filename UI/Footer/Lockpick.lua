@@ -1,12 +1,13 @@
 local addonName, ns = ...
 
--- Standalone Disenchant footer button for Enchanters.
+-- Standalone Pick Lock footer button for Rogues.
 -- FULLY DECOUPLED from Footer.lua and BagFrame.lua to avoid taint.
--- This module manages its own lifecycle via a throttled OnUpdate that polls
--- GudaBagsBagFrame:IsShown() (read-only, no hooks on the bag frame).
--- Footer.lua never references this module.
+-- Same architecture as Disenchant.lua — see that file for design rationale.
 
-local DISENCHANT_SPELL_ID = 13262
+local _, playerClass = UnitClass("player")
+if playerClass ~= "ROGUE" then return end
+
+local PICK_LOCK_SPELL_ID = 1804
 
 local Constants = ns.Constants
 local L = ns.L
@@ -14,25 +15,23 @@ local L = ns.L
 local button = nil
 local eventFrame = CreateFrame("Frame")
 local isButtonShown = false
-local pendingVisible = nil  -- true/false when deferred during combat
-local POLL_INTERVAL = 0.1   -- check bag frame visibility 10x/sec
+local pendingVisible = nil
+local POLL_INTERVAL = 0.1
 local elapsed = 0
 
--- Create the secure button (called once on PLAYER_LOGIN)
 local function CreateButton()
     local Theme = ns:GetModule("Theme")
 
-    button = CreateFrame("Button", "GudaBagsDisenchantButton", UIParent, "SecureActionButtonTemplate,BackdropTemplate")
+    button = CreateFrame("Button", "GudaBagsLockpickButton", UIParent, "SecureActionButtonTemplate,BackdropTemplate")
     button:SetSize(Constants.BAG_SLOT_SIZE, Constants.BAG_SLOT_SIZE)
     button:SetFrameStrata("DIALOG")
     button:SetFrameLevel(10)
     button:EnableMouse(true)
     button:RegisterForClicks("AnyDown")
 
-    -- All secure attributes set ONCE — never again
     button:SetAttribute("type", "macro")
-    local spellName = C_Spell.GetSpellName(DISENCHANT_SPELL_ID)
-    button:SetAttribute("macrotext", "/cast " .. (spellName or "Disenchant"))
+    local spellName = C_Spell.GetSpellName(PICK_LOCK_SPELL_ID)
+    button:SetAttribute("macrotext", "/cast " .. (spellName or "Pick Lock"))
 
     button:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8x8",
@@ -48,7 +47,7 @@ local function CreateButton()
     local icon = button:CreateTexture(nil, "ARTWORK")
     icon:SetSize(Constants.BAG_SLOT_SIZE - 2, Constants.BAG_SLOT_SIZE - 2)
     icon:SetPoint("CENTER")
-    icon:SetTexture("Interface\\Icons\\Spell_Holy_RemoveCurse")
+    icon:SetTexture("Interface\\Icons\\INV_Misc_Key_03")
     button.icon = icon
 
     local highlight = button:CreateTexture(nil, "HIGHLIGHT")
@@ -58,8 +57,8 @@ local function CreateButton()
 
     button:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_TOP")
-        GameTooltip:SetText(L["FOOTER_DISENCHANT"] or "Disenchant")
-        GameTooltip:AddLine(L["FOOTER_DISENCHANT_TOOLTIP"] or "Click to cast Disenchant", 0.7, 0.7, 0.7)
+        GameTooltip:SetText(L["FOOTER_PICKLOCK"] or "Pick Lock")
+        GameTooltip:AddLine(L["FOOTER_PICKLOCK_TOOLTIP"] or "Click to cast Pick Lock", 0.7, 0.7, 0.7)
         GameTooltip:Show()
     end)
 
@@ -70,8 +69,7 @@ local function CreateButton()
     button:Hide()
 end
 
--- Position button using absolute coords relative to UIParent.
--- NEVER anchor to bag frame elements — that makes the bag frame protected during combat.
+-- Position after the disenchant button if visible, otherwise after slotInfo
 local function PositionButton()
     if not button then return end
     local footer = _G["GudaBagsFooter"]
@@ -83,13 +81,22 @@ local function PositionButton()
     if not right or not centerY then return end
 
     local halfSize = Constants.BAG_SLOT_SIZE / 2
-    -- On Retail there's no keyring button, so shift 1 button left to fill the gap
     local offset = ns.IsRetail and -(Constants.BAG_SLOT_SIZE) or 0
+
+    -- If disenchant button is visible, position after it
+    local deButton = _G["GudaBagsDisenchantButton"]
+    if deButton and deButton:IsShown() then
+        local deRight = deButton:GetRight()
+        if deRight then
+            right = deRight
+            offset = 0  -- already accounted for by disenchant position
+        end
+    end
+
     button:ClearAllPoints()
     button:SetPoint("CENTER", UIParent, "BOTTOMLEFT", right + halfSize + 1 + offset, centerY)
 end
 
--- Show/hide the button — only called from our own OnUpdate context
 local function ShowButton()
     if InCombatLockdown() then
         if not isButtonShown then pendingVisible = true end
@@ -112,8 +119,6 @@ local function HideButton()
     isButtonShown = false
 end
 
--- Throttled OnUpdate: polls bag frame visibility in our OWN execution context.
--- No hooks on the bag frame = no taint propagation.
 local function OnUpdate(self, dt)
     elapsed = elapsed + dt
     if elapsed < POLL_INTERVAL then return end
@@ -129,22 +134,16 @@ local function OnUpdate(self, dt)
     end
 end
 
--- Event handling
 eventFrame:RegisterEvent("PLAYER_LOGIN")
 eventFrame:SetScript("OnEvent", function(self, event)
     if event == "PLAYER_LOGIN" then
-        -- Only create for enchanters
-        if not IsSpellKnown(DISENCHANT_SPELL_ID) then
+        if not IsSpellKnown(PICK_LOCK_SPELL_ID) then
             self:UnregisterAllEvents()
             return
         end
 
         CreateButton()
-
-        -- Start polling bag frame visibility
         self:SetScript("OnUpdate", OnUpdate)
-
-        -- Handle combat end for deferred show/hide
         self:RegisterEvent("PLAYER_REGEN_ENABLED")
 
     elseif event == "PLAYER_REGEN_ENABLED" then

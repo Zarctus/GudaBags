@@ -95,6 +95,7 @@ UI\Footer\Money.lua
 UI\Footer\Currency.lua
 UI\Footer.lua
 UI\Footer\Disenchant.lua
+UI\Footer\Lockpick.lua
 UI\SearchBar.lua
 UI\Header.lua
 UI\SettingsPopup.lua

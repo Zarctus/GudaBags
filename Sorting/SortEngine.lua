@@ -613,16 +613,37 @@ end
 --===========================================================================
 
 local currentReverseStackSort = false
+local currentSortPriority = "default"
 
 local function SortComparator(a, b)
     if a.priority ~= b.priority then return a.priority < b.priority end
-    if a.sortedClassID ~= b.sortedClassID then return a.sortedClassID < b.sortedClassID end
-    if a.isEquippable and b.isEquippable then
-        if a.sortedEquipSlot ~= b.sortedEquipSlot then return a.sortedEquipSlot < b.sortedEquipSlot end
+
+    if currentSortPriority == "ilvl" then
+        if a.invertedItemLevel ~= b.invertedItemLevel then return a.invertedItemLevel < b.invertedItemLevel end
+        if a.invertedQuality ~= b.invertedQuality then return a.invertedQuality < b.invertedQuality end
+        if a.sortedClassID ~= b.sortedClassID then return a.sortedClassID < b.sortedClassID end
+        if a.isEquippable and b.isEquippable then
+            if a.sortedEquipSlot ~= b.sortedEquipSlot then return a.sortedEquipSlot < b.sortedEquipSlot end
+        end
+        if a.sortedSubClassID ~= b.sortedSubClassID then return a.sortedSubClassID < b.sortedSubClassID end
+    elseif currentSortPriority == "quality" then
+        if a.invertedQuality ~= b.invertedQuality then return a.invertedQuality < b.invertedQuality end
+        if a.invertedItemLevel ~= b.invertedItemLevel then return a.invertedItemLevel < b.invertedItemLevel end
+        if a.sortedClassID ~= b.sortedClassID then return a.sortedClassID < b.sortedClassID end
+        if a.isEquippable and b.isEquippable then
+            if a.sortedEquipSlot ~= b.sortedEquipSlot then return a.sortedEquipSlot < b.sortedEquipSlot end
+        end
+        if a.sortedSubClassID ~= b.sortedSubClassID then return a.sortedSubClassID < b.sortedSubClassID end
+    else
+        if a.sortedClassID ~= b.sortedClassID then return a.sortedClassID < b.sortedClassID end
+        if a.isEquippable and b.isEquippable then
+            if a.sortedEquipSlot ~= b.sortedEquipSlot then return a.sortedEquipSlot < b.sortedEquipSlot end
+        end
+        if a.sortedSubClassID ~= b.sortedSubClassID then return a.sortedSubClassID < b.sortedSubClassID end
+        if a.invertedItemLevel ~= b.invertedItemLevel then return a.invertedItemLevel < b.invertedItemLevel end
+        if a.invertedQuality ~= b.invertedQuality then return a.invertedQuality < b.invertedQuality end
     end
-    if a.sortedSubClassID ~= b.sortedSubClassID then return a.sortedSubClassID < b.sortedSubClassID end
-    if a.invertedItemLevel ~= b.invertedItemLevel then return a.invertedItemLevel < b.invertedItemLevel end
-    if a.invertedQuality ~= b.invertedQuality then return a.invertedQuality < b.invertedQuality end
+
     if a.itemName ~= b.itemName then return a.itemName < b.itemName end
     if a.invertedItemID ~= b.invertedItemID then return a.invertedItemID < b.invertedItemID end
     if a.invertedCount ~= b.invertedCount then
@@ -634,6 +655,7 @@ end
 
 local function SortItems(items)
     currentReverseStackSort = Database:GetSetting("reverseStackSort")
+    currentSortPriority = Database:GetSetting("sortPriority") or "default"
     table_sort(items, SortComparator)
     return items
 end

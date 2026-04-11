@@ -598,7 +598,8 @@ end
 -- firstEmptySlot: {bagID, slot} of first empty slot for click handling
 -- soulEmptyCount: number of soul bag empty slots
 -- firstSoulEmptySlot: {bagID, slot} of first soul bag empty slot
-function LayoutEngine:BuildCategorySections(items, isViewingCached, emptyCount, firstEmptySlot, soulEmptyCount, firstSoulEmptySlot, forceSoulVisible)
+-- showEmptyDropTargets: when true, append drop-target sections for empty enabled categories
+function LayoutEngine:BuildCategorySections(items, isViewingCached, emptyCount, firstEmptySlot, soulEmptyCount, firstSoulEmptySlot, forceSoulVisible, showEmptyDropTargets)
     local CategoryManager = ns:GetModule("CategoryManager")
     if not CategoryManager then
         return {{ categoryId = "All", categoryName = "All Items", categoryIcon = nil, items = items }}
@@ -834,6 +835,66 @@ function LayoutEngine:BuildCategorySections(items, isViewingCached, emptyCount, 
         end
     end
 
+    -- Append drop-target sections for empty categories when dragging an item
+    if showEmptyDropTargets then
+        -- Build set of categoryIds that already have items
+        local populatedCategories = {}
+        for _, section in ipairs(nonEmptySections) do
+            if #section.items > 0 then
+                populatedCategories[section.categoryId] = true
+            end
+            -- For merged groups, mark all member categories as populated
+            if section.isGroup and section.group and #section.items > 0 then
+                for _, catId in ipairs(order) do
+                    local catDef = categories.definitions[catId]
+                    if catDef and catDef.group == section.group then
+                        populatedCategories[catId] = true
+                    end
+                end
+            end
+        end
+
+        for _, categoryId in ipairs(order) do
+            local def = categories.definitions[categoryId]
+            if def and def.enabled
+                and not populatedCategories[categoryId]
+                and not def.hideControls
+                and not def.isFallback
+                and not def.isEquipSet
+                and categoryId ~= "Recent"
+                and categoryId ~= "Home"
+                and categoryId ~= "Empty"
+                and categoryId ~= "Soul"
+                and categoryId ~= "Keyring"
+                and categoryId ~= "Soul Bag" then
+
+                local displayName = def.isBuiltIn
+                    and ns.DefaultCategories:GetLocalizedName(categoryId, def.name)
+                    or def.name
+
+                local dropTargetSection = {
+                    categoryId = categoryId,
+                    categoryName = displayName,
+                    categoryIcon = def.icon,
+                    items = {{
+                        bagID = 0, slot = 0,
+                        itemData = {
+                            bagID = 0, slot = 0,
+                            isDropTarget = true,
+                            categoryId = categoryId,
+                            texture = def.icon or "Interface\\AddOns\\GudaBags\\Assets\\plus.png",
+                            count = 0,
+                            name = displayName,
+                        },
+                    }},
+                    hideControls = true,
+                    isDropTarget = true,
+                }
+                table.insert(nonEmptySections, dropTargetSection)
+            end
+        end
+    end
+
     -- Split sections by expansion if sortByExpansion is enabled
     local sortByExpansion = Database and Database:GetSetting("sortByExpansion")
     if sortByExpansion and ns.CURRENT_EXPANSION_ID then
@@ -842,8 +903,8 @@ function LayoutEngine:BuildCategorySections(items, isViewingCached, emptyCount, 
         local oldSections = {}
 
         for _, section in ipairs(nonEmptySections) do
-            -- Skip pseudo-categories (Empty, Soul) - keep them unsplit at the end
-            if section.categoryId == "Empty" or section.categoryId == "Soul" then
+            -- Skip pseudo-categories (Empty, Soul, drop targets) - keep them unsplit at the end
+            if section.categoryId == "Empty" or section.categoryId == "Soul" or section.isDropTarget then
                 table.insert(oldSections, section)
             else
                 local currentItems = {}
@@ -981,7 +1042,7 @@ end
 -- For merged groups, items are sorted by category order first to maintain category grouping
 function LayoutEngine:SortCategoryItems(items, isMergedGroup)
     local Database = ns:GetModule("Database")
-    local sortOrder = Database and Database:GetSetting("categorySortOrder") or "quality"
+    local sortPriority = Database and Database:GetSetting("sortPriority") or "default"
 
     table.sort(items, function(a, b)
         -- For merged groups, sort by category order first
@@ -995,106 +1056,35 @@ function LayoutEngine:SortCategoryItems(items, isMergedGroup)
 
         local aData = a.itemData
         local bData = b.itemData
-
-        -- Dynamic sort based on categorySortOrder setting
-        if sortOrder == "name" then
-            -- Name → Quality → Item Level → Item ID → Count
-            local aName = aData.name or ""
-            local bName = bData.name or ""
-            if aName ~= bName then return aName < bName end
-
-            local aQuality = aData.quality or 0
-            local bQuality = bData.quality or 0
-            if aQuality ~= bQuality then return aQuality > bQuality end
-
-            local aKey = GetCategorySortKey(aData)
-            local bKey = GetCategorySortKey(bData)
-            if aKey and bKey and aKey.itemLevel ~= bKey.itemLevel then
-                return aKey.itemLevel > bKey.itemLevel
-            end
-
-            local aID = aData.itemID or 0
-            local bID = bData.itemID or 0
-            if aID ~= bID then return aID < bID end
-
-            return (aData.count or 1) > (bData.count or 1)
-
-        elseif sortOrder == "itemLevel" then
-            -- Item Level → Quality → ClassID → SubClassID → Type → Name → Count
-            local aKey = GetCategorySortKey(aData)
-            local bKey = GetCategorySortKey(bData)
-            if aKey and bKey then
-                if aKey.itemLevel ~= bKey.itemLevel then return aKey.itemLevel > bKey.itemLevel end
-            end
-
-            local aQuality = aData.quality or 0
-            local bQuality = bData.quality or 0
-            if aQuality ~= bQuality then return aQuality > bQuality end
-
-            if aKey and bKey then
-                if aKey.classID ~= bKey.classID then return aKey.classID < bKey.classID end
-                if aKey.subClassID ~= bKey.subClassID then return aKey.subClassID < bKey.subClassID end
-            end
-
-            local aType = aData.itemType or ""
-            local bType = bData.itemType or ""
-            if aType ~= bType then return aType < bType end
-
-            local aName = aData.name or ""
-            local bName = bData.name or ""
-            if aName ~= bName then return aName < bName end
-
-            return (aData.count or 1) > (bData.count or 1)
-
-        elseif sortOrder == "type" then
-            -- ClassID → SubClassID → Quality → Item Level → Name → Count
-            local aKey = GetCategorySortKey(aData)
-            local bKey = GetCategorySortKey(bData)
-            if aKey and bKey then
-                if aKey.classID ~= bKey.classID then return aKey.classID < bKey.classID end
-                if aKey.subClassID ~= bKey.subClassID then return aKey.subClassID < bKey.subClassID end
-            end
-
-            local aQuality = aData.quality or 0
-            local bQuality = bData.quality or 0
-            if aQuality ~= bQuality then return aQuality > bQuality end
-
-            if aKey and bKey and aKey.itemLevel ~= bKey.itemLevel then
-                return aKey.itemLevel > bKey.itemLevel
-            end
-
-            local aName = aData.name or ""
-            local bName = bData.name or ""
-            if aName ~= bName then return aName < bName end
-
-            return (aData.count or 1) > (bData.count or 1)
-
-        else
-            -- Default "quality": Quality → ClassID → SubClassID → Item Level → Type → SubType → ItemID → Name → Count
         local aQuality = aData.quality or 0
         local bQuality = bData.quality or 0
-        if aQuality ~= bQuality then
-            return aQuality > bQuality
-        end
-
-        -- Get sort keys (classID, subClassID)
         local aKey = GetCategorySortKey(aData)
         local bKey = GetCategorySortKey(bData)
+        local aLevel = aKey and aKey.itemLevel or 0
+        local bLevel = bKey and bKey.itemLevel or 0
+
+        if sortPriority == "ilvl" then
+            -- Item level first (higher first)
+            if aLevel ~= bLevel then return aLevel > bLevel end
+            if aQuality ~= bQuality then return aQuality > bQuality end
+        elseif sortPriority == "quality" then
+            -- Quality first (higher first), then item level
+            if aQuality ~= bQuality then return aQuality > bQuality end
+            if aLevel ~= bLevel then return aLevel > bLevel end
+        else
+            -- Default: quality first, then class/subclass, then ilvl
+            if aQuality ~= bQuality then return aQuality > bQuality end
+        end
 
         if aKey and bKey then
-            -- Class ID (groups items by major category)
             if aKey.classID ~= bKey.classID then
                 return aKey.classID < bKey.classID
             end
-
-            -- SubClass ID (groups similar items together - all marks of honor have same subClassID)
             if aKey.subClassID ~= bKey.subClassID then
                 return aKey.subClassID < bKey.subClassID
             end
-
-            -- Item level (higher first, like bag view)
-            if aKey.itemLevel ~= bKey.itemLevel then
-                return aKey.itemLevel > bKey.itemLevel
+            if sortPriority == "default" then
+                if aLevel ~= bLevel then return aLevel > bLevel end
             end
         end
 
@@ -1112,14 +1102,14 @@ function LayoutEngine:SortCategoryItems(items, isMergedGroup)
             return aSubType < bSubType
         end
 
-        -- Item ID (groups related items together - items added at same time have consecutive IDs)
+        -- Item ID
         local aID = aData.itemID or 0
         local bID = bData.itemID or 0
         if aID ~= bID then
             return aID < bID
         end
 
-        -- Name (alphabetical, for items with same ID which shouldn't happen)
+        -- Name
         local aName = aData.name or ""
         local bName = bData.name or ""
         if aName ~= bName then

@@ -654,17 +654,12 @@ local function CreateGuildBankFrame()
         -- Only close the interaction if it's still open (user closed our frame)
         -- Don't close if the game already closed it (walked away, etc.)
         if wasOpen then
-            C_Timer.After(0.05, function()
-                -- Check again in case state changed
-                if scanner and scanner:IsGuildBankOpen() then
-                    ns:Debug("  Closing guild bank interaction")
-                    if C_PlayerInteractionManager and C_PlayerInteractionManager.ClearInteraction and Enum and Enum.PlayerInteractionType then
-                        C_PlayerInteractionManager.ClearInteraction(Enum.PlayerInteractionType.GuildBanker)
-                    elseif CloseGuildBankFrame then
-                        CloseGuildBankFrame()
-                    end
-                end
-            end)
+            ns:Debug("  Closing guild bank interaction")
+            if C_PlayerInteractionManager and C_PlayerInteractionManager.ClearInteraction and Enum and Enum.PlayerInteractionType then
+                C_PlayerInteractionManager.ClearInteraction(Enum.PlayerInteractionType.GuildBanker)
+            elseif CloseGuildBankFrame then
+                CloseGuildBankFrame()
+            end
         end
         -- Close any open character dropdown
         local BankCharactersModule = ns:GetModule("BankFrame.BankCharacters")
@@ -1297,6 +1292,12 @@ ns.OnGuildBankOpened = function()
     ns:Debug("OnGuildBankOpened callback triggered")
     LoadComponents()
 
+    -- Hide Blizzard's BankFrame if it exists, so GetActiveBankType() returns nil
+    -- and the template's right-click handler doesn't try to deposit items
+    if ns.IsRetail and _G.BankFrame then
+        _G.BankFrame:Hide()
+    end
+
     -- Auto open bags on guild bank interaction (before showing guild bank so it stays on top)
     local BagFrameModule = ns:GetModule("BagFrame")
     if Database:GetSetting("autoOpenBags") and BagFrameModule then
@@ -1341,6 +1342,12 @@ ns.OnGuildBankClosed = function()
     ns:Debug("OnGuildBankClosed callback triggered")
     showingPurchasePrompt = false  -- Reset purchase prompt state
     GuildBankFrame:Hide()
+
+    -- Hide Blizzard's BankFrame so GetActiveBankType() returns nil,
+    -- allowing normal item use (food, potions, containers) via right-click
+    if ns.IsRetail and _G.BankFrame then
+        _G.BankFrame:Hide()
+    end
 
     -- Auto close bags on guild bank interaction end
     local BagFrameModule = ns:GetModule("BagFrame")

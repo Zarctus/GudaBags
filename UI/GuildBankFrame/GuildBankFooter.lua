@@ -67,7 +67,8 @@ function GuildBankFooter:Init(parent)
         if GuildBankScanner and GuildBankScanner:IsGuildBankOpen() then
             local withdrawLimit = GetGuildBankWithdrawMoney and GetGuildBankWithdrawMoney() or 0
             -- Check for negative values (unlimited) - some versions return -1, others return MIN_INT64
-            if withdrawLimit < 0 then
+            -- Also check for extremely large values (e.g. 1844674407370955) that indicate unlimited
+            if withdrawLimit < 0 or withdrawLimit >= 10000000000000 then
                 GameTooltip:AddLine(L["GUILD_BANK_WITHDRAW_UNLIMITED"] or "Unlimited withdrawals", 1, 1, 1, true)
             elseif withdrawLimit > 0 then
                 local gold = math.floor(withdrawLimit / 10000)

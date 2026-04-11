@@ -769,6 +769,27 @@ Events:OnBankClosed(function()
     end
 end, RetailBankScanner)
 
+-- PLAYER_INTERACTION_MANAGER for modern Retail (TWW+, Midnight+)
+-- BANKFRAME_CLOSED may not fire reliably when ClearInteraction is called
+-- from addon code, so also listen for the interaction manager event.
+-- This mirrors what GuildBankScanner does for GuildBanker.
+if Enum and Enum.PlayerInteractionType and Enum.PlayerInteractionType.Banker then
+    local BANKER_TYPE = Enum.PlayerInteractionType.Banker
+
+    Events:Register("PLAYER_INTERACTION_MANAGER_FRAME_HIDE", function(event, interactionType)
+        if interactionType == BANKER_TYPE then
+            if not isBankOpen then return end  -- Already handled by BANKFRAME_CLOSED
+            isBankOpen = false
+            dirtyBags = {}
+            ns:Debug("Retail bank closed (via PLAYER_INTERACTION_MANAGER_FRAME_HIDE)")
+
+            if ns.OnBankClosed then
+                ns.OnBankClosed()
+            end
+        end
+    end, RetailBankScanner)
+end
+
 Events:Register("BAG_UPDATE", function(event, bagID)
     if not bagID then return end
 

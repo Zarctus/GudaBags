@@ -1118,7 +1118,6 @@ function LayoutEngine:SortCategoryItems(items, isMergedGroup)
 
         -- Stack count (higher stacks first)
         return (aData.count or 1) > (bData.count or 1)
-        end -- end of sort order branches
     end)
 end
 

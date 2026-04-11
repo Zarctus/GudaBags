@@ -1908,6 +1908,14 @@ Events:Register("ITEM_LOCK_CHANGED", function(event, bagID, slotID)
 
     -- Detect drag start for showing empty category drop targets
     if frame and frame:IsShown() and not viewingCharacter and not isDraggingItem then
+        -- Ignore lock events while the sort engine is moving items — the cursor
+        -- is held by the engine, not by the user. Without this guard, restack
+        -- triggers false-positive drag detection and the frame flickers as empty
+        -- category drop targets appear and disappear on every move.
+        local SortEngine = ns:GetModule("SortEngine")
+        if SortEngine and (SortEngine:IsSorting() or SortEngine:IsRestacking()) then
+            return
+        end
         local viewType = Database:GetSetting("bagViewType") or "single"
         if viewType == "category" then
             local cursorType = GetCursorInfo()

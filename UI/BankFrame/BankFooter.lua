@@ -879,10 +879,12 @@ function BankFooter:Init(parent)
                 else
                     slot.needPurchase = false
                     slot:SetAlpha(1)
-                    local invSlot = BankButtonIDToInvSlotID and BankButtonIDToInvSlotID(idx) or nil
-                    if invSlot then
-                        local textureName = GetInventoryItemTexture("player", invSlot)
-                        slot.icon:SetTexture(textureName or "Interface\\PaperDoll\\UI-PaperDoll-Slot-Bag")
+                    -- Use shared GetBankBagInfo for correct inventory slot mapping
+                    local itemID, texture = GetBankBagInfo(idx)
+                    if itemID and texture then
+                        slot.icon:SetTexture(texture)
+                    else
+                        slot.icon:SetTexture("Interface\\PaperDoll\\UI-PaperDoll-Slot-Bag")
                     end
                 end
             end

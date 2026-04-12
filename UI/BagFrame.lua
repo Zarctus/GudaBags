@@ -1326,8 +1326,58 @@ function BagFrame:IncrementalUpdate(dirtyBags)
         end
 
         if needsFullRefresh then
-            ns:Debug("CategoryView: FULL REFRESH triggered")
-            self:Refresh()
+            ns:Debug("CategoryView: full refresh needed — creating ghosts first")
+            -- Create ghost slots for removed items BEFORE the full refresh.
+            -- The ghosts are visible immediately at the item's old position.
+            -- A deferred refresh runs after 1.5s to clean up the layout.
+            for slotKey, button in pairs(buttonsBySlot) do
+                if not button.isEmptySlotButton then
+                    local currentSlot = currentItemsBySlot[slotKey]
+                    local oldItemID = cachedItemData[slotKey]
+                    if not currentSlot and oldItemID then
+                        local bID, sID = slotKey:match("^(-?%d+):(%d+)$")
+                        bID = tonumber(bID)
+                        sID = tonumber(sID)
+                        if bID and sID then
+                            ItemButton:SetEmpty(button, bID, sID, iconSize, false)
+                            cachedItemData[slotKey] = nil
+                            cachedItemCount[slotKey] = nil
+                        end
+                    end
+                end
+            end
+            -- Also handle grouped items that disappeared entirely
+            for itemKey, buttons in pairs(buttonsByItemKey) do
+                if not currentItemsByKey[itemKey] then
+                    for _, button in ipairs(buttons) do
+                        for slotKey, btn in pairs(buttonsBySlot) do
+                            if btn == button and cachedItemData[slotKey] then
+                                local bID, sID = slotKey:match("^(-?%d+):(%d+)$")
+                                bID = tonumber(bID)
+                                sID = tonumber(sID)
+                                if bID and sID then
+                                    ItemButton:SetEmpty(button, bID, sID, iconSize, false)
+                                    cachedItemData[slotKey] = nil
+                                    cachedItemCount[slotKey] = nil
+                                end
+                                break
+                            end
+                        end
+                    end
+                end
+            end
+            -- Deferred full refresh to update layout structure (category changes,
+            -- new items, etc.). Ghost slots stay visible until this fires.
+            C_Timer.After(1.5, function()
+                if frame and frame:IsShown() and not viewingCharacter then
+                    self:Refresh()
+                end
+            end)
+            -- Update footer and return
+            local regularTotal, regularFree, specialBags = BagScanner:GetDetailedSlotCounts()
+            local totalSlots, freeSlots = BagScanner:GetTotalSlots()
+            Footer:UpdateSlotInfo(totalSlots - freeSlots, totalSlots, regularTotal, regularFree, specialBags)
+            Footer:Update()
             return
         end
 
@@ -1575,6 +1625,23 @@ ns.OnBagsUpdated = function(dirtyBags)
                     or (AuctionHouseFrame and AuctionHouseFrame:IsShown())
                     or (ItemSocketingFrame and ItemSocketingFrame:IsShown()) then
                     groupingActive = false  -- Grouping suppressed, incremental is safe
+                end
+            end
+            -- Simple removals (equip/sell/delete) don't need regrouping — allow
+            -- incremental update to preserve ghost slots even with grouping active
+            if groupingActive and layoutCached and lastTotalItemCount > 0 then
+                local bags = BagScanner:GetCachedBags()
+                local currentCount = 0
+                for _, bagID in ipairs(Constants.BAG_IDS) do
+                    local bagData = bags[bagID]
+                    if bagData and bagData.slots then
+                        for _, itemData in pairs(bagData.slots) do
+                            if itemData then currentCount = currentCount + 1 end
+                        end
+                    end
+                end
+                if currentCount < lastTotalItemCount then
+                    groupingActive = false  -- Removal only, incremental is safe
                 end
             end
             if layoutCached and not groupingActive then
@@ -1907,35 +1974,42 @@ Events:Register("ITEM_LOCK_CHANGED", function(event, bagID, slotID)
     end
 
     -- Detect drag start for showing empty category drop targets
+    -- Deferred by one frame to distinguish equip operations (cursor clears within
+    -- the same frame) from actual user drags (cursor persists across frames).
+    -- Without this, right-click equip triggers false drag detection because the
+    -- WoW client briefly puts the item on the cursor during the internal swap,
+    -- causing two full Refresh() calls that destroy ghost slots.
     if frame and frame:IsShown() and not viewingCharacter and not isDraggingItem then
-        -- Ignore lock events while the sort engine is moving items — the cursor
-        -- is held by the engine, not by the user. Without this guard, restack
-        -- triggers false-positive drag detection and the frame flickers as empty
-        -- category drop targets appear and disappear on every move.
-        local SortEngine = ns:GetModule("SortEngine")
-        if SortEngine and (SortEngine:IsSorting() or SortEngine:IsRestacking()) then
-            return
-        end
         local viewType = Database:GetSetting("bagViewType") or "single"
         if viewType == "category" then
-            local cursorType = GetCursorInfo()
-            if cursorType == "item" then
-                isDraggingItem = true
-                BagFrame:Refresh()
-                -- Poll for cursor clear (item dropped/cancelled)
-                dragCheckTicker = C_Timer.NewTicker(0.1, function()
-                    if not CursorHasItem() then
-                        isDraggingItem = false
-                        if dragCheckTicker then
-                            dragCheckTicker:Cancel()
-                            dragCheckTicker = nil
+            C_Timer.After(0, function()
+                if isDraggingItem then return end
+                if not frame or not frame:IsShown() then return end
+                if viewingCharacter then return end
+                -- Ignore lock events while the sort engine is moving items
+                local SortEngine = ns:GetModule("SortEngine")
+                if SortEngine and (SortEngine:IsSorting() or SortEngine:IsRestacking()) then
+                    return
+                end
+                local cursorType = GetCursorInfo()
+                if cursorType == "item" then
+                    isDraggingItem = true
+                    BagFrame:Refresh()
+                    -- Poll for cursor clear (item dropped/cancelled)
+                    dragCheckTicker = C_Timer.NewTicker(0.1, function()
+                        if not CursorHasItem() then
+                            isDraggingItem = false
+                            if dragCheckTicker then
+                                dragCheckTicker:Cancel()
+                                dragCheckTicker = nil
+                            end
+                            if frame and frame:IsShown() then
+                                BagFrame:Refresh()
+                            end
                         end
-                        if frame and frame:IsShown() then
-                            BagFrame:Refresh()
-                        end
-                    end
-                end)
-            end
+                    end)
+                end
+            end)
         end
     end
 end, BagFrame)

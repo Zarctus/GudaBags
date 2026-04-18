@@ -2158,74 +2158,129 @@ function ItemButton:ClearHighlightedSlots(parentFrame)
     end
 end
 
--- Spotlight search: create a bold blinking cyan rounded border lazily on first use
--- Uses two layered BackdropTemplate borders for a thick, visible rounded glow
+-- Spotlight search: WeakAuras-style "shooting star" orbit.
+-- Static sunny-gold border + N bright streaks racing around the perimeter,
+-- each followed by a dimmer trailing echo for the "falling star" effect.
+-- Pure Lua, no Blizzard overlay textures — portable across all expansions.
+local STREAK_COUNT   = 4       -- bright streaks evenly spaced around the loop
+local STREAK_PERIOD  = 3.2     -- seconds per full lap
+local STREAK_SIZE    = 4       -- px (primary)
+local TRAIL_PER_STREAK = 2     -- dim echoes behind each bright streak
+local TRAIL_PHASE_STEP = 0.035 -- phase spacing between echoes
+local ORBIT_INSET    = 7       -- px inset of orbit path from glow frame edge
+                               --   (glow frame is +3 outside the button, so with
+                               --   inset 7 the streaks ride ~4px inside the icon)
+local ROUND_MASK     = "Interface\\CharacterFrame\\TempPortraitAlphaMask"
+
+-- Advance streaks along the perimeter based on frame delta. Called from
+-- each glow's OnUpdate handler while visible. Orbit path is inset from the
+-- glow frame so the streaks ride inside the icon edge.
+local function UpdateOrbitStreaks(glow, elapsed)
+    glow.orbitPhase = ((glow.orbitPhase or 0) + elapsed / STREAK_PERIOD) % 1
+    local fw, fh = glow:GetSize()
+    local w, h = fw - 2 * ORBIT_INSET, fh - 2 * ORBIT_INSET
+    if w <= 0 or h <= 0 then return end
+    local perim = 2 * (w + h)
+    local phase = glow.orbitPhase
+    for _, streak in ipairs(glow.streaks) do
+        local p = (phase + streak.phaseOffset) % 1
+        local d = p * perim
+        local x, y
+        if d < w then
+            x, y = d, 0
+        elseif d < w + h then
+            x, y = w, -(d - w)
+        elseif d < 2 * w + h then
+            x, y = w - (d - w - h), -h
+        else
+            x, y = 0, -(perim - d)
+        end
+        streak:SetPoint("CENTER", glow, "TOPLEFT", ORBIT_INSET + x, -ORBIT_INSET + y)
+    end
+end
+
 local function EnsureSearchGlow(button)
     if button.searchGlow then return button.searchGlow end
 
-    local glow = CreateFrame("Frame", nil, button)
-    glow:SetPoint("TOPLEFT", button, "TOPLEFT", -6, 6)
-    glow:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", 6, -6)
+    local glow = CreateFrame("Frame", nil, button, "BackdropTemplate")
+    glow:SetPoint("TOPLEFT", button, "TOPLEFT", -3, 3)
+    glow:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", 3, -3)
     glow:SetFrameLevel(button:GetFrameLevel() + Constants.FRAME_LEVELS.BORDER + 1)
 
-    -- Inner border layer (tighter, brighter)
-    local inner = CreateFrame("Frame", nil, glow, "BackdropTemplate")
-    inner:SetPoint("TOPLEFT", glow, "TOPLEFT", 3, -3)
-    inner:SetPoint("BOTTOMRIGHT", glow, "BOTTOMRIGHT", -3, 3)
-    inner:SetBackdrop({
+    -- Static sunny-gold border (matches image reference)
+    glow:SetBackdrop({
         edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-        edgeSize = 14,
+        edgeSize = 10,
         insets = { left = 3, right = 3, top = 3, bottom = 3 },
     })
-    inner:SetBackdropBorderColor(0, 1, 1, 1)
+    glow:SetBackdropBorderColor(1.0, 0.85, 0.2, 0.95)
 
-    -- Outer border layer (wider, slightly transparent for glow effect)
-    local outer = CreateFrame("Frame", nil, glow, "BackdropTemplate")
-    outer:SetAllPoints(glow)
-    outer:SetBackdrop({
-        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-        edgeSize = 16,
-        insets = { left = 3, right = 3, top = 3, bottom = 3 },
-    })
-    outer:SetBackdropBorderColor(0, 0.8, 0.8, 0.6)
+    -- Bright streaks + dimmer trailing echoes. Echoes are positioned behind
+    -- each bright streak by multiples of TRAIL_PHASE_STEP (smaller phase =
+    -- further back along the travel direction).
+    glow.streaks = {}
+    for i = 1, STREAK_COUNT do
+        local basePhase = (i - 1) / STREAK_COUNT
 
-    -- Blinking animation: pulse alpha between 0.3 and 1.0
-    local animGroup = glow:CreateAnimationGroup()
-    local fadeOut = animGroup:CreateAnimation("Alpha")
-    fadeOut:SetFromAlpha(1)
-    fadeOut:SetToAlpha(0.3)
-    fadeOut:SetDuration(0.45)
-    fadeOut:SetOrder(1)
-    fadeOut:SetSmoothing("IN_OUT")
-    local fadeIn = animGroup:CreateAnimation("Alpha")
-    fadeIn:SetFromAlpha(0.3)
-    fadeIn:SetToAlpha(1)
-    fadeIn:SetDuration(0.45)
-    fadeIn:SetOrder(2)
-    fadeIn:SetSmoothing("IN_OUT")
-    animGroup:SetLooping("REPEAT")
-    glow.animGroup = animGroup
+        -- Primary bright streak (round via circular alpha mask)
+        local primary = glow:CreateTexture(nil, "OVERLAY")
+        primary:SetSize(STREAK_SIZE, STREAK_SIZE)
+        primary:SetTexture("Interface\\Buttons\\WHITE8x8")
+        if primary.SetMask then primary:SetMask(ROUND_MASK) end
+        primary:SetVertexColor(1.0, 0.95, 0.45, 1.0)
+        primary:SetBlendMode("ADD")
+        primary:SetPoint("CENTER", glow, "TOPLEFT", 0, 0)
+        primary.phaseOffset = basePhase
+        glow.streaks[#glow.streaks + 1] = primary
+
+        -- Trailing echoes (dimmer, smaller, also rounded)
+        for t = 1, TRAIL_PER_STREAK do
+            local trail = glow:CreateTexture(nil, "OVERLAY")
+            local size = math.max(2, STREAK_SIZE - t)  -- 3, 2, 2...
+            trail:SetSize(size, size)
+            trail:SetTexture("Interface\\Buttons\\WHITE8x8")
+            if trail.SetMask then trail:SetMask(ROUND_MASK) end
+            trail:SetVertexColor(1.0, 0.85, 0.2, 1.0)
+            trail:SetBlendMode("ADD")
+            trail:SetAlpha(0.65 - t * 0.18)       -- 0.47, 0.29, 0.11
+            trail:SetPoint("CENTER", glow, "TOPLEFT", 0, 0)
+            trail.phaseOffset = (basePhase - t * TRAIL_PHASE_STEP) % 1
+            glow.streaks[#glow.streaks + 1] = trail
+        end
+    end
+
+    glow:SetScript("OnUpdate", UpdateOrbitStreaks)
+    glow:SetScript("OnShow", function(self) self.orbitPhase = 0 end)
     glow:Hide()
+
     button.searchGlow = glow
     return glow
+end
+
+local function StartSearchGlow(button)
+    local glow = button.searchGlow
+    if glow then glow:Show() end
+end
+
+local function StopSearchGlow(button)
+    local glow = button.searchGlow
+    if glow then glow:Hide() end
 end
 
 -- Apply spotlight search visual state to a single button
 function ItemButton:SetSearchState(button, isMatch)
     if isMatch then
-        -- Matching item: full visibility + blinking cyan border
+        -- Matching item: full visibility + Blizzard proc glow (WA "Proc Glow" equiv.)
         button:SetAlpha(1)
         SetItemButtonDesaturated(button, button.itemData and button.itemData.locked or false)
-        local glow = EnsureSearchGlow(button)
-        glow:Show()
-        glow.animGroup:Play()
+        EnsureSearchGlow(button)
+        StartSearchGlow(button)
     else
         -- Non-matching item: desaturated + dimmed
         button:SetAlpha(0.4)
         SetItemButtonDesaturated(button, true)
         if button.searchGlow then
-            button.searchGlow.animGroup:Stop()
-            button.searchGlow:Hide()
+            StopSearchGlow(button)
         end
     end
 end
@@ -2235,8 +2290,7 @@ function ItemButton:ClearSearchState(button)
     button:SetAlpha(1)
     SetItemButtonDesaturated(button, button.itemData and button.itemData.locked or false)
     if button.searchGlow then
-        button.searchGlow.animGroup:Stop()
-        button.searchGlow:Hide()
+        StopSearchGlow(button)
     end
 end
 

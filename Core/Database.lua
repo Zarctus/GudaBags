@@ -7,6 +7,7 @@ local Constants = ns.Constants
 local Events = ns:GetModule("Events")
 
 local playerFullName
+local isFreshInstall = false
 
 local function GetPlayerFullName()
     -- Don't use cached value if it was set incorrectly (nil name)
@@ -44,6 +45,7 @@ end
 
 local function InitializeCharDB()
     if not GudaBags_CharDB then
+        isFreshInstall = true
         GudaBags_CharDB = {
             settings = {},
             settingsVersion = 0,
@@ -175,6 +177,18 @@ end
 function Database:InitializeCharacter()
     if not InitializeCharacterData() then
         ns:Print("Warning: Could not initialize character data")
+    end
+end
+
+-- Fresh-install defaults that depend on player state (level, expansion).
+-- Must be called after PLAYER_LOGIN so UnitLevel/GetMaxPlayerLevel are reliable.
+function Database:ResolveFreshInstallDefaults()
+    if not isFreshInstall then return end
+    isFreshInstall = false
+
+    local atMaxLevel = UnitLevel("player") >= GetMaxPlayerLevel()
+    if ns.IsRetail or atMaxLevel then
+        GudaBags_CharDB.settings.showQuestBar = false
     end
 end
 

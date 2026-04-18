@@ -56,7 +56,7 @@ function DefaultCategories:GetRuleTypes()
         { id = "isProfessionTool", label = L["RULE_PROFESSION_TOOL"], valueType = "boolean" },
         { id = "isSoulShard", label = L["RULE_SOUL_SHARD"], valueType = "boolean" },
         { id = "isProjectile", label = L["RULE_PROJECTILE"], valueType = "boolean" },
-        { id = "isReagent", label = L["RULE_REAGENT"], valueType = "boolean" },
+        { id = "isReagent", label = L["RULE_REAGENT"], valueType = "boolean", tooltip = L["RULE_REAGENT_TIP"] },
         { id = "restoreTag", label = L["RULE_CONSUMABLE_TYPE"], valueType = "dropdown", options = {
             {value = "eat", label = L["CONSUMABLE_FOOD"]},
             {value = "drink", label = L["CONSUMABLE_DRINK"]},

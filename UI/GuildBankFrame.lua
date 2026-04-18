@@ -34,11 +34,6 @@ local cachedItemData = {}
 local cachedItemCount = {}
 local layoutCached = false
 
--- Transient search bar visibility (header toggle). Resets to false on Hide().
-local searchBarOpen = false
-local function IsSearchBarVisible()
-    return Database:GetSetting("showSearchBar") or searchBarOpen
-end
 
 -- Hidden frame to reparent Blizzard guild bank UI (used by some versions)
 local hiddenParent = CreateFrame("Frame")
@@ -111,7 +106,7 @@ local function UpdateFrameAppearance()
 
     GuildBankHeader:SetBackdropAlpha(bgAlpha)
 
-    local showSearchBar = IsSearchBarVisible()
+    local showSearchBar = GuildBankFrame:IsSearchBarVisible()
     local showFilterChips = Database:GetSetting("showFilterChips")
     local showFooter = Database:GetSetting("showFooter")
 
@@ -149,6 +144,16 @@ local function UpdateFrameAppearance()
     end
 
 end
+
+-- Transient search bar visibility (header toggle). Resets on Hide().
+-- Installs IsSearchBarVisible / ToggleSearchBar / ResetSearchToggle methods on GuildBankFrame.
+ns:GetModule("SearchBarToggle"):Apply(GuildBankFrame, {
+    getFrame = function() return frame end,
+    onChanged = function()
+        UpdateFrameAppearance()
+        GuildBankFrame:Refresh()
+    end,
+})
 
 -------------------------------------------------
 -- Side Tab Bar (Vertical tabs on RIGHT side)
@@ -1048,7 +1053,7 @@ function GuildBankFrame:Refresh()
     local actualContentHeight = (iconSize * itemRows) + (spacing * math.max(0, itemRows - 1)) + (headerCount * headerHeight)
 
     -- Calculate frame dimensions
-    local showSearchBar = IsSearchBarVisible()
+    local showSearchBar = GuildBankFrame:IsSearchBarVisible()
     local showFilterChips = Database:GetSetting("showFilterChips")
     local showFooter = Database:GetSetting("showFooter")
     local chipHeight = (showSearchBar and showFilterChips) and (Constants.FRAME.CHIP_STRIP_HEIGHT + 1) or 0
@@ -1267,7 +1272,7 @@ function GuildBankFrame:Hide()
 
         frame:Hide()
         -- Reset transient search toggle so next open starts collapsed
-        searchBarOpen = false
+        self:ResetSearchToggle()
         ItemButton:ReleaseAll(frame.container)
         ReleaseAllCategoryHeaders()
         buttonsBySlot = {}
@@ -1275,24 +1280,6 @@ function GuildBankFrame:Hide()
         cachedItemCount = {}
         itemButtons = {}
         layoutCached = false
-    end
-end
-
--- Toggle the transient search bar (used by the header search icon when
--- "Always Show Search Bar" is off). Focuses the search input on open.
-function GuildBankFrame:ToggleSearchBar()
-    if not frame or not frame:IsShown() then return end
-    if Database:GetSetting("showSearchBar") then
-        return
-    end
-    searchBarOpen = not searchBarOpen
-    UpdateFrameAppearance()
-    self:Refresh()
-    if searchBarOpen then
-        local instance = SearchBar:GetInstance(frame)
-        if instance and instance.searchBox then
-            instance.searchBox:SetFocus()
-        end
     end
 end
 

@@ -48,12 +48,6 @@ local pseudoItemButtons = {} -- Track Empty/Soul pseudo-item buttons for proper 
                              -- Keys are "Empty:<categoryId>" or "Soul:<categoryId>" to avoid overwrites in merged groups
 local lastTotalItemCount = 0 -- Track item count to detect Empty/Soul category changes
 
--- Transient search bar visibility (header toggle). Resets to false on Hide().
-local searchBarOpen = false
-local function IsSearchBarVisible()
-    return Database:GetSetting("showSearchBar") or searchBarOpen
-end
-
 -- Helper to find a pseudo-item button by type (Empty or Soul)
 local function FindPseudoItemButton(pseudoType)
     local prefix = pseudoType .. ":"
@@ -175,6 +169,16 @@ local UpdateFrameAppearance
 local SaveFramePosition
 local RestoreFramePosition
 local RegisterCombatEndCallback
+
+-- Transient search bar visibility (header toggle). Resets on Hide().
+-- Installs IsSearchBarVisible / ToggleSearchBar / ResetSearchToggle methods on BankFrame.
+ns:GetModule("SearchBarToggle"):Apply(BankFrame, {
+    getFrame = function() return frame end,
+    onChanged = function()
+        UpdateFrameAppearance()
+        BankFrame:Refresh()
+    end,
+})
 
 local function CreateBankFrame()
     local f = CreateFrame("Frame", "GudaBankFrame", UIParent, "BackdropTemplate")
@@ -1511,7 +1515,7 @@ function BankFrame:Refresh()
     local classifiedBags = BagClassifier:ClassifyBags(bank, isViewingCached or not isBankOpen, bagIDsToUse)
     local bagsToShow = LayoutEngine:BuildDisplayOrder(classifiedBags, false)
 
-    local showSearchBar = IsSearchBarVisible()
+    local showSearchBar = BankFrame:IsSearchBarVisible()
     local showFilterChips = Database:GetSetting("showFilterChips")
     local showFooterSetting = Database:GetSetting("showFooter")
     local showFooter = showFooterSetting or isViewingCached or not isBankOpen
@@ -2407,7 +2411,7 @@ function BankFrame:Hide()
     if frame then
         frame:Hide()
         -- Reset transient search toggle so next open starts collapsed
-        searchBarOpen = false
+        self:ResetSearchToggle()
         if viewingCharacter then
             viewingCharacter = nil
             BankHeader:SetViewingCharacter(nil, nil)
@@ -2434,24 +2438,6 @@ end
 
 function BankFrame:IsShown()
     return frame and frame:IsShown()
-end
-
--- Toggle the transient search bar (used by the header search icon when
--- "Always Show Search Bar" is off). Focuses the search input on open.
-function BankFrame:ToggleSearchBar()
-    if not frame or not frame:IsShown() then return end
-    if Database:GetSetting("showSearchBar") then
-        return
-    end
-    searchBarOpen = not searchBarOpen
-    UpdateFrameAppearance()
-    self:Refresh()
-    if searchBarOpen then
-        local instance = SearchBar:GetInstance(frame)
-        if instance and instance.searchBox then
-            instance.searchBox:SetFocus()
-        end
-    end
 end
 
 function BankFrame:InvalidateLayout()
@@ -2940,7 +2926,7 @@ UpdateFrameAppearance = function()
         QuestBar:UpdateSize()
     end
 
-    local showSearchBar = IsSearchBarVisible()
+    local showSearchBar = BankFrame:IsSearchBarVisible()
     local showFooter = Database:GetSetting("showFooter")
 
     -- Only toggle search bar visibility here - scroll frame positioning is handled by Refresh()

@@ -6,9 +6,9 @@ ns:RegisterModule("GuildBankFrame.GuildBankHeader", GuildBankHeader)
 local Constants = ns.Constants
 local L = ns.L
 local Database = ns:GetModule("Database")
-local Events = ns:GetModule("Events")
 local IconButton = ns:GetModule("IconButton")
 local ItemButton = ns:GetModule("ItemButton")
+local SearchToggleButton = ns:GetModule("SearchToggleButton")
 local Theme = ns:GetModule("Theme")
 
 local frame = nil
@@ -107,20 +107,11 @@ local function CreateHeader(parent)
     lastRightButton = settingsButton
 
     -- Search toggle button (shown when "Always Show Search Bar" is off)
-    local searchButton = IconButton:Create(titleBar, "search", {
-        tooltip = L["TOOLTIP_TOGGLE_SEARCH"],
-        onClick = function()
-            local GuildBankFrameModule = ns:GetModule("GuildBankFrame")
-            if GuildBankFrameModule and GuildBankFrameModule.ToggleSearchBar then
-                GuildBankFrameModule:ToggleSearchBar()
-            end
-        end,
+    local searchButton = SearchToggleButton:Create(titleBar, {
+        targetModule = "GuildBankFrame",
+        anchorButton = lastRightButton,
     })
-    searchButton:SetPoint("RIGHT", lastRightButton, "LEFT", -4, 0)
     titleBar.searchButton = searchButton
-    if Database:GetSetting("showSearchBar") then
-        searchButton:Hide()
-    end
     lastRightButton = searchButton
 
     return titleBar
@@ -174,21 +165,6 @@ function GuildBankHeader:SetBackdropAlpha(alpha)
         frame.closeButton
     )
 end
-
-function GuildBankHeader:UpdateSearchToggleVisibility()
-    if not frame or not frame.searchButton then return end
-    if Database:GetSetting("showSearchBar") then
-        frame.searchButton:Hide()
-    else
-        frame.searchButton:Show()
-    end
-end
-
-Events:Register("SETTING_CHANGED", function(event, key)
-    if key == "showSearchBar" then
-        GuildBankHeader:UpdateSearchToggleVisibility()
-    end
-end, GuildBankHeader)
 
 function GuildBankHeader:SetGuildName(guildName)
     if not frame or not frame.title then return end

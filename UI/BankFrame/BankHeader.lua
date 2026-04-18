@@ -6,9 +6,9 @@ ns:RegisterModule("BankFrame.BankHeader", BankHeader)
 local Constants = ns.Constants
 local L = ns.L
 local Database = ns:GetModule("Database")
-local Events = ns:GetModule("Events")
 local IconButton = ns:GetModule("IconButton")
 local ItemButton = ns:GetModule("ItemButton")
+local SearchToggleButton = ns:GetModule("SearchToggleButton")
 local Theme = ns:GetModule("Theme")
 
 local frame = nil
@@ -158,20 +158,11 @@ local function CreateHeader(parent)
     end
 
     -- Search toggle button (shown when "Always Show Search Bar" is off)
-    local searchButton = IconButton:Create(titleBar, "search", {
-        tooltip = L["TOOLTIP_TOGGLE_SEARCH"],
-        onClick = function()
-            local BankFrameModule = ns:GetModule("BankFrame")
-            if BankFrameModule and BankFrameModule.ToggleSearchBar then
-                BankFrameModule:ToggleSearchBar()
-            end
-        end,
+    local searchButton = SearchToggleButton:Create(titleBar, {
+        targetModule = "BankFrame",
+        anchorButton = lastRightButton,
     })
-    searchButton:SetPoint("RIGHT", lastRightButton, "LEFT", -4, 0)
     titleBar.searchButton = searchButton
-    if Database:GetSetting("showSearchBar") then
-        searchButton:Hide()
-    end
     lastRightButton = searchButton
 
     return titleBar
@@ -227,21 +218,6 @@ function BankHeader:SetBackdropAlpha(alpha)
         frame.closeButton
     )
 end
-
-function BankHeader:UpdateSearchToggleVisibility()
-    if not frame or not frame.searchButton then return end
-    if Database:GetSetting("showSearchBar") then
-        frame.searchButton:Hide()
-    else
-        frame.searchButton:Show()
-    end
-end
-
-Events:Register("SETTING_CHANGED", function(event, key)
-    if key == "showSearchBar" then
-        BankHeader:UpdateSearchToggleVisibility()
-    end
-end, BankHeader)
 
 function BankHeader:SetViewingCharacter(fullName, charData)
     viewingCharacterData = charData

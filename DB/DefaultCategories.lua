@@ -33,6 +33,7 @@ function DefaultCategories:GetRuleTypes()
         { id = "itemID", label = L["RULE_ITEM_ID"], shortLabel = L["RULE_ITEM_ID_SHORT"], valueType = "itemID" },
         { id = "itemSubtype", label = L["RULE_ITEM_SUBTYPE"], valueType = "text" },
         { id = "namePattern", label = L["RULE_NAME_CONTAINS"], valueType = "text" },
+        { id = "tooltipPattern", label = L["RULE_TOOLTIP_CONTAINS"], valueType = "text", tooltip = L["RULE_TOOLTIP_CONTAINS_TIP"] },
         { id = "quality", label = L["RULE_QUALITY_EXACT"], valueType = "dropdown", options = {
             {value = 0, label = L["QUALITY_POOR"]},
             {value = 1, label = L["QUALITY_COMMON"]},

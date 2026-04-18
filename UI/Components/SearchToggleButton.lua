@@ -16,6 +16,14 @@ local IconButton = ns:GetModule("IconButton")
 --   anchorButton = <Button>,      -- anchor for SetPoint("RIGHT", anchor, "LEFT", -4, 0)
 --   tooltip      = string,        -- optional, defaults to L["TOOLTIP_TOGGLE_SEARCH"]
 -- }
+-- Button is visible only when:
+--   - "Always Show Search Bar" (showSearchBar) is OFF (bar is on-demand), AND
+--   - "Show Search Button" (showHeaderSearch) is ON.
+local function ShouldShow()
+    return not Database:GetSetting("showSearchBar")
+        and Database:GetSetting("showHeaderSearch") ~= false
+end
+
 function SearchToggleButton:Create(parent, opts)
     local button = IconButton:Create(parent, "search", {
         tooltip = opts.tooltip or L["TOOLTIP_TOGGLE_SEARCH"],
@@ -29,18 +37,18 @@ function SearchToggleButton:Create(parent, opts)
     if opts.anchorButton then
         button:SetPoint("RIGHT", opts.anchorButton, "LEFT", -4, 0)
     end
-    if Database:GetSetting("showSearchBar") then
+    if not ShouldShow() then
         button:Hide()
     end
 
-    -- Keep visibility in sync with the "Always Show Search Bar" setting.
-    -- Uses the button itself as the listener owner so each header gets its own callback.
+    -- Keep visibility in sync with either setting. Uses the button itself
+    -- as the listener owner so each header gets its own callback.
     Events:Register("SETTING_CHANGED", function(event, key)
-        if key == "showSearchBar" then
-            if Database:GetSetting("showSearchBar") then
-                button:Hide()
-            else
+        if key == "showSearchBar" or key == "showHeaderSearch" then
+            if ShouldShow() then
                 button:Show()
+            else
+                button:Hide()
             end
         end
     end, button)

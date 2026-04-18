@@ -6,6 +6,7 @@ ns:RegisterModule("Header", Header)
 local Constants = ns.Constants
 local L = ns.L
 local Database = ns:GetModule("Database")
+local HeaderButtonVisibility = ns:GetModule("HeaderButtonVisibility")
 local IconButton = ns:GetModule("IconButton")
 local ItemButton = ns:GetModule("ItemButton")
 local SearchToggleButton = ns:GetModule("SearchToggleButton")
@@ -121,6 +122,8 @@ local function CreateHeader(parent)
         })
         charactersButton:SetPoint("LEFT", titleBar, "LEFT", 6, 0)
         titleBar.charactersButton = charactersButton
+        HeaderButtonVisibility:SetKey(charactersButton, "showHeaderCharacters")
+        HeaderButtonVisibility:ApplyState(charactersButton)
         lastLeftButton = charactersButton
     end
 
@@ -149,6 +152,8 @@ local function CreateHeader(parent)
             chestButton:SetPoint("LEFT", titleBar, "LEFT", 6, 0)
         end
         titleBar.chestButton = chestButton
+        HeaderButtonVisibility:SetKey(chestButton, "showHeaderBank")
+        HeaderButtonVisibility:ApplyState(chestButton)
         lastLeftButton = chestButton
     end
 
@@ -185,6 +190,8 @@ local function CreateHeader(parent)
             guildButton:SetPoint("LEFT", titleBar, "LEFT", 6, 0)
         end
         titleBar.guildButton = guildButton
+        HeaderButtonVisibility:SetKey(guildButton, "showHeaderGuildBank")
+        HeaderButtonVisibility:ApplyState(guildButton)
         lastLeftButton = guildButton
     end
 
@@ -204,6 +211,8 @@ local function CreateHeader(parent)
             envelopeButton:SetPoint("LEFT", titleBar, "LEFT", 6, 0)
         end
         titleBar.envelopeButton = envelopeButton
+        HeaderButtonVisibility:SetKey(envelopeButton, "showHeaderMail")
+        HeaderButtonVisibility:ApplyState(envelopeButton)
         lastLeftButton = envelopeButton
     end
 
@@ -274,6 +283,8 @@ local function CreateHeader(parent)
         end)
         sortButton:SetPoint("RIGHT", lastRightButton, "LEFT", -4, 0)
         titleBar.sortButton = sortButton
+        HeaderButtonVisibility:SetKey(sortButton, "showHeaderSort")
+        HeaderButtonVisibility:ApplyState(sortButton)
         lastRightButton = sortButton
     end
 
@@ -309,8 +320,11 @@ function Header:SetDragCallback(callback)
     onDragStop = callback
 end
 
+local lastAlpha = 1
+
 function Header:SetBackdropAlpha(alpha)
     if not frame then return end
+    lastAlpha = alpha
     local headerBackdrop = Theme:GetValue("headerBackdrop")
     if headerBackdrop then
         frame:SetBackdrop(headerBackdrop)
@@ -333,17 +347,21 @@ function Header:SetBackdropAlpha(alpha)
             frame:SetFrameLevel(parent:GetFrameLevel() + Constants.FRAME_LEVELS.HEADER)
         end
     end
-    -- Build left buttons array without nil holes (ipairs stops at first nil)
-    local leftButtons = {}
-    if frame.charactersButton then leftButtons[#leftButtons + 1] = frame.charactersButton end
-    if frame.chestButton then leftButtons[#leftButtons + 1] = frame.chestButton end
-    if frame.guildButton then leftButtons[#leftButtons + 1] = frame.guildButton end
-    if frame.envelopeButton then leftButtons[#leftButtons + 1] = frame.envelopeButton end
+    -- Sync any tagged button's Show state to its settings, then filter out
+    -- hidden ones before handing to Theme so anchors chain without gaps.
+    HeaderButtonVisibility:ApplyState(frame.charactersButton)
+    HeaderButtonVisibility:ApplyState(frame.chestButton)
+    HeaderButtonVisibility:ApplyState(frame.guildButton)
+    HeaderButtonVisibility:ApplyState(frame.envelopeButton)
+    HeaderButtonVisibility:ApplyState(frame.sortButton)
+    -- searchButton manages its own Show/Hide via SearchToggleButton's listener
 
-    local rightButtons = {}
-    if frame.settingsButton then rightButtons[#rightButtons + 1] = frame.settingsButton end
-    if frame.sortButton then rightButtons[#rightButtons + 1] = frame.sortButton end
-    if frame.searchButton then rightButtons[#rightButtons + 1] = frame.searchButton end
+    local leftButtons = HeaderButtonVisibility:Filter({
+        frame.charactersButton, frame.chestButton, frame.guildButton, frame.envelopeButton
+    })
+    local rightButtons = HeaderButtonVisibility:Filter({
+        frame.settingsButton, frame.sortButton, frame.searchButton
+    })
 
     Theme:ApplyHeaderButtons(
         frame,
@@ -352,6 +370,11 @@ function Header:SetBackdropAlpha(alpha)
         frame.closeButton
     )
 end
+
+-- Re-apply header layout when any header button setting flips.
+HeaderButtonVisibility:Watch(Header, function()
+    if frame then Header:SetBackdropAlpha(lastAlpha) end
+end)
 
 function Header:SetViewingCharacter(fullName, charData)
     viewingCharacterData = charData
@@ -485,22 +508,24 @@ function Header:SetNarrowMode(isCompact)
             titleBar.menuButton:Hide()
         end
 
-        -- Show and restore nav buttons inline — match theme-aware spacing
-        -- used by Theme:ApplyHeaderButtons so Blizzard/Metal themes keep
-        -- their 10px gap / 13px left offset.
+        -- Sync each nav button's Show state to its setting, then chain only
+        -- the visible ones. Spacing matches Theme:ApplyHeaderButtons so
+        -- Blizzard/Metal themes keep their 10px gap / 13px left offset.
+        for _, btn in ipairs(navButtons) do
+            HeaderButtonVisibility:ApplyState(btn)
+        end
         local useBlizzard = Theme:GetValue("useBlizzardFrame")
         local useMetal = Theme:GetValue("useMetalFrame")
         local gap = (useBlizzard or useMetal) and 10 or 4
         local firstLeftOffset = (useBlizzard or useMetal) and 13 or 4
         local lastBtn = nil
-        for _, btn in ipairs(navButtons) do
+        for _, btn in ipairs(HeaderButtonVisibility:Filter(navButtons)) do
             btn:ClearAllPoints()
             if lastBtn then
                 btn:SetPoint("LEFT", lastBtn, "RIGHT", gap, 0)
             else
                 btn:SetPoint("LEFT", titleBar, "LEFT", firstLeftOffset, 0)
             end
-            btn:Show()
             lastBtn = btn
         end
 
@@ -542,28 +567,30 @@ function Header:ShowNavMenu(anchor)
 
     local L = ns.L
     local menuItems = {}
-    if Constants.FEATURES.CHARACTERS then
+    -- Only include nav entries whose button is currently visible (expansion
+    -- feature flag + user visibility setting).
+    if Constants.FEATURES.CHARACTERS and HeaderButtonVisibility:IsSettingEnabled(titleBar.charactersButton) then
         table.insert(menuItems, { label = L["TOOLTIP_CHARACTERS"] or "Characters", onClick = function()
             if titleBar.charactersButton then
                 titleBar.charactersButton:Click()
             end
         end})
     end
-    if Constants.FEATURES.BANK then
+    if Constants.FEATURES.BANK and HeaderButtonVisibility:IsSettingEnabled(titleBar.chestButton) then
         table.insert(menuItems, { label = L["TOOLTIP_BANK"] or "Bank", onClick = function()
             if titleBar.chestButton then
                 titleBar.chestButton:Click()
             end
         end})
     end
-    if Constants.FEATURES.GUILD_BANK and IsInGuild() then
+    if Constants.FEATURES.GUILD_BANK and IsInGuild() and HeaderButtonVisibility:IsSettingEnabled(titleBar.guildButton) then
         table.insert(menuItems, { label = L["TOOLTIP_GUILD_BANK"] or "Guild Bank", onClick = function()
             if titleBar.guildButton then
                 titleBar.guildButton:Click()
             end
         end})
     end
-    if Constants.FEATURES.MAIL then
+    if Constants.FEATURES.MAIL and HeaderButtonVisibility:IsSettingEnabled(titleBar.envelopeButton) then
         table.insert(menuItems, { label = L["TOOLTIP_MAIL"] or "Mail", onClick = function()
             if titleBar.envelopeButton then
                 titleBar.envelopeButton:Click()

@@ -6,6 +6,7 @@ ns:RegisterModule("GuildBankFrame.GuildBankHeader", GuildBankHeader)
 local Constants = ns.Constants
 local L = ns.L
 local Database = ns:GetModule("Database")
+local HeaderButtonVisibility = ns:GetModule("HeaderButtonVisibility")
 local IconButton = ns:GetModule("IconButton")
 local ItemButton = ns:GetModule("ItemButton")
 local SearchToggleButton = ns:GetModule("SearchToggleButton")
@@ -130,8 +131,11 @@ function GuildBankHeader:SetDragCallback(callback)
     onDragStop = callback
 end
 
+local lastAlpha = 1
+
 function GuildBankHeader:SetBackdropAlpha(alpha)
     if not frame then return end
+    lastAlpha = alpha
     local headerBackdrop = Theme:GetValue("headerBackdrop")
     if headerBackdrop then
         frame:SetBackdrop(headerBackdrop)
@@ -154,9 +158,9 @@ function GuildBankHeader:SetBackdropAlpha(alpha)
             frame:SetFrameLevel(parent:GetFrameLevel() + Constants.FRAME_LEVELS.HEADER)
         end
     end
-    local rightButtons = {}
-    if frame.settingsButton then rightButtons[#rightButtons + 1] = frame.settingsButton end
-    if frame.searchButton then rightButtons[#rightButtons + 1] = frame.searchButton end
+    local rightButtons = HeaderButtonVisibility:Filter({
+        frame.settingsButton, frame.searchButton
+    })
 
     Theme:ApplyHeaderButtons(
         frame,
@@ -165,6 +169,11 @@ function GuildBankHeader:SetBackdropAlpha(alpha)
         frame.closeButton
     )
 end
+
+-- Re-apply layout when any header button setting flips.
+HeaderButtonVisibility:Watch(GuildBankHeader, function()
+    if frame then GuildBankHeader:SetBackdropAlpha(lastAlpha) end
+end)
 
 function GuildBankHeader:SetGuildName(guildName)
     if not frame or not frame.title then return end

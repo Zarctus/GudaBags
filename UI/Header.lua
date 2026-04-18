@@ -349,10 +349,15 @@ function Header:SetBackdropAlpha(alpha)
     end
     -- Sync any tagged button's Show state to its settings, then filter out
     -- hidden ones before handing to Theme so anchors chain without gaps.
-    HeaderButtonVisibility:ApplyState(frame.charactersButton)
-    HeaderButtonVisibility:ApplyState(frame.chestButton)
-    HeaderButtonVisibility:ApplyState(frame.guildButton)
-    HeaderButtonVisibility:ApplyState(frame.envelopeButton)
+    -- In compact mode the nav buttons are managed by SetNarrowMode (hidden to
+    -- make room for the hamburger) — skip them here so we don't accidentally
+    -- un-hide them and overlap the hamburger.
+    if not frame.isCompactMode then
+        HeaderButtonVisibility:ApplyState(frame.charactersButton)
+        HeaderButtonVisibility:ApplyState(frame.chestButton)
+        HeaderButtonVisibility:ApplyState(frame.guildButton)
+        HeaderButtonVisibility:ApplyState(frame.envelopeButton)
+    end
     HeaderButtonVisibility:ApplyState(frame.sortButton)
     -- searchButton manages its own Show/Hide via SearchToggleButton's listener
 
@@ -444,40 +449,43 @@ function Header:SetNarrowMode(isCompact)
             btn:Hide()
         end
 
-        -- Create hamburger menu button (once)
+        -- Create hamburger menu button (once) — uses Assets/more.png
         if not titleBar.menuButton then
             local menuBtn = CreateFrame("Button", nil, titleBar)
             menuBtn:SetSize(16, 16)
 
+            -- Theme-aware background chip (matches the other header icons).
+            -- Always created; shown/hidden below based on current theme.
+            local themeBg = CreateFrame("Frame", nil, menuBtn, "BackdropTemplate")
+            themeBg:SetSize(21, 17)
+            themeBg:SetPoint("CENTER")
+            themeBg:SetFrameLevel(menuBtn:GetFrameLevel())
+            themeBg:SetBackdrop({
+                bgFile = "Interface\\Buttons\\WHITE8x8",
+                edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+                edgeSize = 8,
+                insets = { left = 2, right = 2, top = 2, bottom = 2 },
+            })
+            themeBg:SetBackdropColor(0.15, 0.12, 0.10, 0.6)
+            themeBg:SetBackdropBorderColor(0.45, 0.40, 0.35, 1)
+            themeBg:Hide()
+            menuBtn.themeBg = themeBg
+
             local menuIcon = menuBtn:CreateTexture(nil, "ARTWORK")
-            menuIcon:SetAllPoints()
-            menuIcon:SetTexture("Interface\\Buttons\\WHITE8x8")
+            menuIcon:SetPoint("CENTER")
+            menuIcon:SetSize(14, 14)
+            menuIcon:SetTexture("Interface\\AddOns\\GudaBags\\Assets\\more.png")
             menuIcon:SetVertexColor(0.7, 0.7, 0.7)
             menuBtn.icon = menuIcon
 
-            -- Draw 3 horizontal lines
-            local function CreateLine(parent, yOffset)
-                local line = parent:CreateTexture(nil, "OVERLAY")
-                line:SetSize(10, 1)
-                line:SetPoint("CENTER", parent, "CENTER", 0, yOffset)
-                line:SetTexture("Interface\\Buttons\\WHITE8x8")
-                line:SetVertexColor(0.9, 0.9, 0.9)
-                return line
-            end
-            menuBtn.line1 = CreateLine(menuBtn, 4)
-            menuBtn.line2 = CreateLine(menuBtn, 0)
-            menuBtn.line3 = CreateLine(menuBtn, -4)
-            -- Hide the bg square, just show lines
-            menuIcon:SetVertexColor(0.15, 0.15, 0.15, 0.6)
-
             menuBtn:SetScript("OnEnter", function(self)
-                self.icon:SetVertexColor(0.25, 0.25, 0.25, 0.8)
+                self.icon:SetVertexColor(1, 1, 1)
                 GameTooltip:SetOwner(self, "ANCHOR_BOTTOM")
                 GameTooltip:SetText("Navigation")
                 GameTooltip:Show()
             end)
             menuBtn:SetScript("OnLeave", function(self)
-                self.icon:SetVertexColor(0.15, 0.15, 0.15, 0.6)
+                self.icon:SetVertexColor(0.7, 0.7, 0.7)
                 GameTooltip:Hide()
             end)
             menuBtn:SetScript("OnClick", function(self)
@@ -487,8 +495,19 @@ function Header:SetNarrowMode(isCompact)
             titleBar.menuButton = menuBtn
         end
 
+        -- Match theme-aware chip + offset used by other header icons.
+        local useBlizzardMenu = Theme:GetValue("useBlizzardFrame")
+        local useMetalMenu = Theme:GetValue("useMetalFrame")
+        if titleBar.menuButton.themeBg then
+            if useBlizzardMenu or useMetalMenu then
+                titleBar.menuButton.themeBg:Show()
+            else
+                titleBar.menuButton.themeBg:Hide()
+            end
+        end
         titleBar.menuButton:ClearAllPoints()
-        titleBar.menuButton:SetPoint("LEFT", titleBar, "LEFT", 6, 0)
+        local menuOffset = (useBlizzardMenu or useMetalMenu) and 13 or 4
+        titleBar.menuButton:SetPoint("LEFT", titleBar, "LEFT", menuOffset, 0)
         titleBar.menuButton:Show()
 
         -- Title next to menu button

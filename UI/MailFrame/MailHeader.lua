@@ -6,6 +6,7 @@ ns:RegisterModule("MailFrame.MailHeader", MailHeader)
 local Constants = ns.Constants
 local L = ns.L
 local Database = ns:GetModule("Database")
+local Events = ns:GetModule("Events")
 local IconButton = ns:GetModule("IconButton")
 local Theme = ns:GetModule("Theme")
 
@@ -111,6 +112,24 @@ local function CreateHeader(parent)
         offsetY = 0,
     })
     titleBar.closeButton = closeButton
+    local lastRightButton = closeButton
+
+    -- Search toggle button (shown when "Always Show Search Bar" is off)
+    local searchButton = IconButton:Create(titleBar, "search", {
+        tooltip = L["TOOLTIP_TOGGLE_SEARCH"],
+        onClick = function()
+            local MailFrameModule = ns:GetModule("MailFrame")
+            if MailFrameModule and MailFrameModule.ToggleSearchBar then
+                MailFrameModule:ToggleSearchBar()
+            end
+        end,
+    })
+    searchButton:SetPoint("RIGHT", lastRightButton, "LEFT", -4, 0)
+    titleBar.searchButton = searchButton
+    if Database:GetSetting("showSearchBar") then
+        searchButton:Hide()
+    end
+    lastRightButton = searchButton
 
     return titleBar
 end
@@ -152,13 +171,31 @@ function MailHeader:SetBackdropAlpha(alpha)
             frame:SetFrameLevel(parent:GetFrameLevel() + Constants.FRAME_LEVELS.HEADER)
         end
     end
+    local rightButtons = {}
+    if frame.searchButton then rightButtons[#rightButtons + 1] = frame.searchButton end
+
     Theme:ApplyHeaderButtons(
         frame,
         {frame.charactersButton},
-        {},
+        rightButtons,
         frame.closeButton
     )
 end
+
+function MailHeader:UpdateSearchToggleVisibility()
+    if not frame or not frame.searchButton then return end
+    if Database:GetSetting("showSearchBar") then
+        frame.searchButton:Hide()
+    else
+        frame.searchButton:Show()
+    end
+end
+
+Events:Register("SETTING_CHANGED", function(event, key)
+    if key == "showSearchBar" then
+        MailHeader:UpdateSearchToggleVisibility()
+    end
+end, MailHeader)
 
 function MailHeader:SetViewingCharacter(fullName, charData)
     viewingCharacterData = charData

@@ -52,6 +52,12 @@ local pseudoItemButtons = {} -- Track Empty/Soul/DropTarget pseudo-item buttons 
 local isDraggingItem = false
 local dragCheckTicker = nil
 
+-- Transient search bar visibility (header toggle). Resets to false on Hide().
+local searchBarOpen = false
+local function IsSearchBarVisible()
+    return Database:GetSetting("showSearchBar") or searchBarOpen
+end
+
 -- Helper to find a pseudo-item button by type (Empty or Soul)
 local function FindPseudoItemButton(pseudoType)
     local prefix = pseudoType .. ":"
@@ -397,7 +403,7 @@ function BagFrame:Refresh()
     Footer:SetNarrowMode(isNarrow)
 
     -- Calculate common settings
-    local showSearchBar = Database:GetSetting("showSearchBar")
+    local showSearchBar = IsSearchBarVisible()
     local showFooterSetting = Database:GetSetting("showFooter")
     local showFooter = showFooterSetting or isViewingCached
     local showCategoryCount = Database:GetSetting("showCategoryCount")
@@ -1018,6 +1024,8 @@ end
 function BagFrame:Hide()
     if frame then
         frame:Hide()
+        -- Reset transient search toggle so next open starts collapsed
+        searchBarOpen = false
         -- Reset to current character when closing
         if viewingCharacter then
             viewingCharacter = nil
@@ -1053,6 +1061,25 @@ end
 
 function BagFrame:IsShown()
     return frame and frame:IsShown()
+end
+
+-- Toggle the transient search bar (used by the header search icon when
+-- "Always Show Search Bar" is off). Focuses the search input on open.
+function BagFrame:ToggleSearchBar()
+    if not frame or not frame:IsShown() then return end
+    if Database:GetSetting("showSearchBar") then
+        -- Always-on mode: toggle has no effect
+        return
+    end
+    searchBarOpen = not searchBarOpen
+    UpdateFrameAppearance()
+    self:Refresh()
+    if searchBarOpen then
+        local instance = SearchBar:GetInstance(frame)
+        if instance and instance.searchBox then
+            instance.searchBox:SetFocus()
+        end
+    end
 end
 
 function BagFrame:InvalidateLayout()
@@ -1689,7 +1716,7 @@ UpdateFrameAppearance = function()
     end
 
     -- Show/Hide search bar (always hide for cached views)
-    local showSearchBar = Database:GetSetting("showSearchBar")
+    local showSearchBar = IsSearchBarVisible()
     local showFooter = Database:GetSetting("showFooter")
     -- Always show footer space for cached views (money display)
     local dynamicFooterHeight = Footer:GetHeight()

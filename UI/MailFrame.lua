@@ -23,6 +23,12 @@ local ROW_HEIGHT = 44
 local ICON_SIZE = 36
 local MAX_VISIBLE_ROWS = 12
 
+-- Transient search bar visibility (header toggle). Resets to false on Hide().
+local searchBarOpen = false
+local function IsSearchBarVisible()
+    return Database:GetSetting("showSearchBar") or searchBarOpen
+end
+
 -------------------------------------------------
 -- Lazy Load Components
 -------------------------------------------------
@@ -81,7 +87,7 @@ local function UpdateFrameAppearance()
         MailHeader:SetBackdropAlpha(bgAlpha)
     end
 
-    local showSearchBar = Database:GetSetting("showSearchBar")
+    local showSearchBar = IsSearchBarVisible()
     local showFilterChips = Database:GetSetting("showFilterChips")
     local showFooter = Database:GetSetting("showFooter")
 
@@ -488,6 +494,27 @@ end
 function MailFrame:Hide()
     if frame then
         frame:Hide()
+        -- Reset transient search toggle so next open starts collapsed
+        searchBarOpen = false
+    end
+end
+
+-- Toggle the transient search bar (used by the header search icon when
+-- "Always Show Search Bar" is off). Focuses the search input on open.
+function MailFrame:ToggleSearchBar()
+    if not frame or not frame:IsShown() then return end
+    if Database:GetSetting("showSearchBar") then
+        return
+    end
+    searchBarOpen = not searchBarOpen
+    UpdateFrameAppearance()
+    self:Refresh()
+    if searchBarOpen then
+        local SearchBar = ns:GetModule("SearchBar")
+        local instance = SearchBar and SearchBar:GetInstance(frame)
+        if instance and instance.searchBox then
+            instance.searchBox:SetFocus()
+        end
     end
 end
 

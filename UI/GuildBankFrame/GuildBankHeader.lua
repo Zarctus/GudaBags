@@ -6,6 +6,7 @@ ns:RegisterModule("GuildBankFrame.GuildBankHeader", GuildBankHeader)
 local Constants = ns.Constants
 local L = ns.L
 local Database = ns:GetModule("Database")
+local Events = ns:GetModule("Events")
 local IconButton = ns:GetModule("IconButton")
 local ItemButton = ns:GetModule("ItemButton")
 local Theme = ns:GetModule("Theme")
@@ -105,6 +106,23 @@ local function CreateHeader(parent)
     titleBar.settingsButton = settingsButton
     lastRightButton = settingsButton
 
+    -- Search toggle button (shown when "Always Show Search Bar" is off)
+    local searchButton = IconButton:Create(titleBar, "search", {
+        tooltip = L["TOOLTIP_TOGGLE_SEARCH"],
+        onClick = function()
+            local GuildBankFrameModule = ns:GetModule("GuildBankFrame")
+            if GuildBankFrameModule and GuildBankFrameModule.ToggleSearchBar then
+                GuildBankFrameModule:ToggleSearchBar()
+            end
+        end,
+    })
+    searchButton:SetPoint("RIGHT", lastRightButton, "LEFT", -4, 0)
+    titleBar.searchButton = searchButton
+    if Database:GetSetting("showSearchBar") then
+        searchButton:Hide()
+    end
+    lastRightButton = searchButton
+
     return titleBar
 end
 
@@ -145,13 +163,32 @@ function GuildBankHeader:SetBackdropAlpha(alpha)
             frame:SetFrameLevel(parent:GetFrameLevel() + Constants.FRAME_LEVELS.HEADER)
         end
     end
+    local rightButtons = {}
+    if frame.settingsButton then rightButtons[#rightButtons + 1] = frame.settingsButton end
+    if frame.searchButton then rightButtons[#rightButtons + 1] = frame.searchButton end
+
     Theme:ApplyHeaderButtons(
         frame,
         {},
-        {frame.settingsButton},
+        rightButtons,
         frame.closeButton
     )
 end
+
+function GuildBankHeader:UpdateSearchToggleVisibility()
+    if not frame or not frame.searchButton then return end
+    if Database:GetSetting("showSearchBar") then
+        frame.searchButton:Hide()
+    else
+        frame.searchButton:Show()
+    end
+end
+
+Events:Register("SETTING_CHANGED", function(event, key)
+    if key == "showSearchBar" then
+        GuildBankHeader:UpdateSearchToggleVisibility()
+    end
+end, GuildBankHeader)
 
 function GuildBankHeader:SetGuildName(guildName)
     if not frame or not frame.title then return end

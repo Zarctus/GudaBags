@@ -6,8 +6,10 @@ ns:RegisterModule("BankFrame.BankHeader", BankHeader)
 local Constants = ns.Constants
 local L = ns.L
 local Database = ns:GetModule("Database")
+local HeaderButtonVisibility = ns:GetModule("HeaderButtonVisibility")
 local IconButton = ns:GetModule("IconButton")
 local ItemButton = ns:GetModule("ItemButton")
+local SearchToggleButton = ns:GetModule("SearchToggleButton")
 local Theme = ns:GetModule("Theme")
 
 local frame = nil
@@ -86,6 +88,8 @@ local function CreateHeader(parent)
         })
         charactersButton:SetPoint("LEFT", titleBar, "LEFT", 6, 0)
         titleBar.charactersButton = charactersButton
+        HeaderButtonVisibility:SetKey(charactersButton, "showHeaderCharacters")
+        HeaderButtonVisibility:ApplyState(charactersButton)
         lastLeftButton = charactersButton
     end
 
@@ -153,8 +157,18 @@ local function CreateHeader(parent)
         end)
         sortButton:SetPoint("RIGHT", lastRightButton, "LEFT", -4, 0)
         titleBar.sortButton = sortButton
+        HeaderButtonVisibility:SetKey(sortButton, "showHeaderSort")
+        HeaderButtonVisibility:ApplyState(sortButton)
         lastRightButton = sortButton
     end
+
+    -- Search toggle button (shown when "Always Show Search Bar" is off)
+    local searchButton = SearchToggleButton:Create(titleBar, {
+        targetModule = "BankFrame",
+        anchorButton = lastRightButton,
+    })
+    titleBar.searchButton = searchButton
+    lastRightButton = searchButton
 
     return titleBar
 end
@@ -173,8 +187,11 @@ function BankHeader:SetDragCallback(callback)
     onDragStop = callback
 end
 
+local lastAlpha = 1
+
 function BankHeader:SetBackdropAlpha(alpha)
     if not frame then return end
+    lastAlpha = alpha
     local headerBackdrop = Theme:GetValue("headerBackdrop")
     if headerBackdrop then
         frame:SetBackdrop(headerBackdrop)
@@ -197,13 +214,26 @@ function BankHeader:SetBackdropAlpha(alpha)
             frame:SetFrameLevel(parent:GetFrameLevel() + Constants.FRAME_LEVELS.HEADER)
         end
     end
+    HeaderButtonVisibility:ApplyState(frame.charactersButton)
+    HeaderButtonVisibility:ApplyState(frame.sortButton)
+
+    local leftButtons = HeaderButtonVisibility:Filter({ frame.charactersButton })
+    local rightButtons = HeaderButtonVisibility:Filter({
+        frame.settingsButton, frame.sortButton, frame.searchButton
+    })
+
     Theme:ApplyHeaderButtons(
         frame,
-        {frame.charactersButton},
-        {frame.settingsButton, frame.sortButton},
+        leftButtons,
+        rightButtons,
         frame.closeButton
     )
 end
+
+-- Re-apply layout when any header button setting flips.
+HeaderButtonVisibility:Watch(BankHeader, function()
+    if frame then BankHeader:SetBackdropAlpha(lastAlpha) end
+end)
 
 function BankHeader:SetViewingCharacter(fullName, charData)
     viewingCharacterData = charData

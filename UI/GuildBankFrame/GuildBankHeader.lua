@@ -6,8 +6,10 @@ ns:RegisterModule("GuildBankFrame.GuildBankHeader", GuildBankHeader)
 local Constants = ns.Constants
 local L = ns.L
 local Database = ns:GetModule("Database")
+local HeaderButtonVisibility = ns:GetModule("HeaderButtonVisibility")
 local IconButton = ns:GetModule("IconButton")
 local ItemButton = ns:GetModule("ItemButton")
+local SearchToggleButton = ns:GetModule("SearchToggleButton")
 local Theme = ns:GetModule("Theme")
 
 local frame = nil
@@ -105,6 +107,14 @@ local function CreateHeader(parent)
     titleBar.settingsButton = settingsButton
     lastRightButton = settingsButton
 
+    -- Search toggle button (shown when "Always Show Search Bar" is off)
+    local searchButton = SearchToggleButton:Create(titleBar, {
+        targetModule = "GuildBankFrame",
+        anchorButton = lastRightButton,
+    })
+    titleBar.searchButton = searchButton
+    lastRightButton = searchButton
+
     return titleBar
 end
 
@@ -121,8 +131,11 @@ function GuildBankHeader:SetDragCallback(callback)
     onDragStop = callback
 end
 
+local lastAlpha = 1
+
 function GuildBankHeader:SetBackdropAlpha(alpha)
     if not frame then return end
+    lastAlpha = alpha
     local headerBackdrop = Theme:GetValue("headerBackdrop")
     if headerBackdrop then
         frame:SetBackdrop(headerBackdrop)
@@ -145,13 +158,22 @@ function GuildBankHeader:SetBackdropAlpha(alpha)
             frame:SetFrameLevel(parent:GetFrameLevel() + Constants.FRAME_LEVELS.HEADER)
         end
     end
+    local rightButtons = HeaderButtonVisibility:Filter({
+        frame.settingsButton, frame.searchButton
+    })
+
     Theme:ApplyHeaderButtons(
         frame,
         {},
-        {frame.settingsButton},
+        rightButtons,
         frame.closeButton
     )
 end
+
+-- Re-apply layout when any header button setting flips.
+HeaderButtonVisibility:Watch(GuildBankHeader, function()
+    if frame then GuildBankHeader:SetBackdropAlpha(lastAlpha) end
+end)
 
 function GuildBankHeader:SetGuildName(guildName)
     if not frame or not frame.title then return end

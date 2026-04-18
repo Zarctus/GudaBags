@@ -130,6 +130,21 @@ function SettingsSchema.GetLayout()
             { type = "checkbox", key = "groupIdenticalItems", label = L["SETTINGS_GROUP_IDENTICAL"], tooltip = L["SETTINGS_GROUP_IDENTICAL_TIP"] },
         }},
 
+        { type = "separator", label = L["SETTINGS_SECTION_HEADER_BUTTONS"] },
+        { type = "row", children = {
+            { type = "checkbox", key = "showHeaderCharacters", label = L["SETTINGS_SHOW_HEADER_CHARACTERS"] },
+            { type = "checkbox", key = "showHeaderBank", label = L["SETTINGS_SHOW_HEADER_BANK"] },
+        }},
+        { type = "row", children = {
+            { type = "checkbox", key = "showHeaderGuildBank", label = L["SETTINGS_SHOW_HEADER_GUILD_BANK"],
+              hidden = function() return not (ns.Constants.FEATURES and ns.Constants.FEATURES.GUILD_BANK) end },
+            { type = "checkbox", key = "showHeaderMail", label = L["SETTINGS_SHOW_HEADER_MAIL"] },
+        }},
+        { type = "row", children = {
+            { type = "checkbox", key = "showHeaderSort", label = L["SETTINGS_SHOW_HEADER_SORT"] },
+            { type = "checkbox", key = "showHeaderSearch", label = L["SETTINGS_SHOW_HEADER_SEARCH"] },
+        }},
+
         { type = "separator", label = L["SETTINGS_SECTION_OPTIONS"] },
         { type = "row", children = {
             { type = "checkbox", key = "showSearchBar", label = L["SETTINGS_SHOW_SEARCH"], tooltip = L["SETTINGS_SHOW_SEARCH_TIP"] },

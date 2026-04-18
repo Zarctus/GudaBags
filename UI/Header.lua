@@ -6,8 +6,10 @@ ns:RegisterModule("Header", Header)
 local Constants = ns.Constants
 local L = ns.L
 local Database = ns:GetModule("Database")
+local HeaderButtonVisibility = ns:GetModule("HeaderButtonVisibility")
 local IconButton = ns:GetModule("IconButton")
 local ItemButton = ns:GetModule("ItemButton")
+local SearchToggleButton = ns:GetModule("SearchToggleButton")
 local Theme = ns:GetModule("Theme")
 
 local frame = nil
@@ -120,6 +122,8 @@ local function CreateHeader(parent)
         })
         charactersButton:SetPoint("LEFT", titleBar, "LEFT", 6, 0)
         titleBar.charactersButton = charactersButton
+        HeaderButtonVisibility:SetKey(charactersButton, "showHeaderCharacters")
+        HeaderButtonVisibility:ApplyState(charactersButton)
         lastLeftButton = charactersButton
     end
 
@@ -148,6 +152,8 @@ local function CreateHeader(parent)
             chestButton:SetPoint("LEFT", titleBar, "LEFT", 6, 0)
         end
         titleBar.chestButton = chestButton
+        HeaderButtonVisibility:SetKey(chestButton, "showHeaderBank")
+        HeaderButtonVisibility:ApplyState(chestButton)
         lastLeftButton = chestButton
     end
 
@@ -184,6 +190,8 @@ local function CreateHeader(parent)
             guildButton:SetPoint("LEFT", titleBar, "LEFT", 6, 0)
         end
         titleBar.guildButton = guildButton
+        HeaderButtonVisibility:SetKey(guildButton, "showHeaderGuildBank")
+        HeaderButtonVisibility:ApplyState(guildButton)
         lastLeftButton = guildButton
     end
 
@@ -203,6 +211,8 @@ local function CreateHeader(parent)
             envelopeButton:SetPoint("LEFT", titleBar, "LEFT", 6, 0)
         end
         titleBar.envelopeButton = envelopeButton
+        HeaderButtonVisibility:SetKey(envelopeButton, "showHeaderMail")
+        HeaderButtonVisibility:ApplyState(envelopeButton)
         lastLeftButton = envelopeButton
     end
 
@@ -273,8 +283,18 @@ local function CreateHeader(parent)
         end)
         sortButton:SetPoint("RIGHT", lastRightButton, "LEFT", -4, 0)
         titleBar.sortButton = sortButton
+        HeaderButtonVisibility:SetKey(sortButton, "showHeaderSort")
+        HeaderButtonVisibility:ApplyState(sortButton)
         lastRightButton = sortButton
     end
+
+    -- Search toggle button (shown when "Always Show Search Bar" is off)
+    local searchButton = SearchToggleButton:Create(titleBar, {
+        targetModule = "BagFrame",
+        anchorButton = lastRightButton,
+    })
+    titleBar.searchButton = searchButton
+    lastRightButton = searchButton
 
     return titleBar
 end
@@ -300,8 +320,11 @@ function Header:SetDragCallback(callback)
     onDragStop = callback
 end
 
+local lastAlpha = 1
+
 function Header:SetBackdropAlpha(alpha)
     if not frame then return end
+    lastAlpha = alpha
     local headerBackdrop = Theme:GetValue("headerBackdrop")
     if headerBackdrop then
         frame:SetBackdrop(headerBackdrop)
@@ -324,16 +347,26 @@ function Header:SetBackdropAlpha(alpha)
             frame:SetFrameLevel(parent:GetFrameLevel() + Constants.FRAME_LEVELS.HEADER)
         end
     end
-    -- Build left buttons array without nil holes (ipairs stops at first nil)
-    local leftButtons = {}
-    if frame.charactersButton then leftButtons[#leftButtons + 1] = frame.charactersButton end
-    if frame.chestButton then leftButtons[#leftButtons + 1] = frame.chestButton end
-    if frame.guildButton then leftButtons[#leftButtons + 1] = frame.guildButton end
-    if frame.envelopeButton then leftButtons[#leftButtons + 1] = frame.envelopeButton end
+    -- Sync any tagged button's Show state to its settings, then filter out
+    -- hidden ones before handing to Theme so anchors chain without gaps.
+    -- In compact mode the nav buttons are managed by SetNarrowMode (hidden to
+    -- make room for the hamburger) — skip them here so we don't accidentally
+    -- un-hide them and overlap the hamburger.
+    if not frame.isCompactMode then
+        HeaderButtonVisibility:ApplyState(frame.charactersButton)
+        HeaderButtonVisibility:ApplyState(frame.chestButton)
+        HeaderButtonVisibility:ApplyState(frame.guildButton)
+        HeaderButtonVisibility:ApplyState(frame.envelopeButton)
+    end
+    HeaderButtonVisibility:ApplyState(frame.sortButton)
+    -- searchButton manages its own Show/Hide via SearchToggleButton's listener
 
-    local rightButtons = {}
-    if frame.settingsButton then rightButtons[#rightButtons + 1] = frame.settingsButton end
-    if frame.sortButton then rightButtons[#rightButtons + 1] = frame.sortButton end
+    local leftButtons = HeaderButtonVisibility:Filter({
+        frame.charactersButton, frame.chestButton, frame.guildButton, frame.envelopeButton
+    })
+    local rightButtons = HeaderButtonVisibility:Filter({
+        frame.settingsButton, frame.sortButton, frame.searchButton
+    })
 
     Theme:ApplyHeaderButtons(
         frame,
@@ -342,6 +375,11 @@ function Header:SetBackdropAlpha(alpha)
         frame.closeButton
     )
 end
+
+-- Re-apply header layout when any header button setting flips.
+HeaderButtonVisibility:Watch(Header, function()
+    if frame then Header:SetBackdropAlpha(lastAlpha) end
+end)
 
 function Header:SetViewingCharacter(fullName, charData)
     viewingCharacterData = charData
@@ -411,40 +449,43 @@ function Header:SetNarrowMode(isCompact)
             btn:Hide()
         end
 
-        -- Create hamburger menu button (once)
+        -- Create hamburger menu button (once) — uses Assets/more.png
         if not titleBar.menuButton then
             local menuBtn = CreateFrame("Button", nil, titleBar)
             menuBtn:SetSize(16, 16)
 
+            -- Theme-aware background chip (matches the other header icons).
+            -- Always created; shown/hidden below based on current theme.
+            local themeBg = CreateFrame("Frame", nil, menuBtn, "BackdropTemplate")
+            themeBg:SetSize(21, 17)
+            themeBg:SetPoint("CENTER")
+            themeBg:SetFrameLevel(menuBtn:GetFrameLevel())
+            themeBg:SetBackdrop({
+                bgFile = "Interface\\Buttons\\WHITE8x8",
+                edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+                edgeSize = 8,
+                insets = { left = 2, right = 2, top = 2, bottom = 2 },
+            })
+            themeBg:SetBackdropColor(0.15, 0.12, 0.10, 0.6)
+            themeBg:SetBackdropBorderColor(0.45, 0.40, 0.35, 1)
+            themeBg:Hide()
+            menuBtn.themeBg = themeBg
+
             local menuIcon = menuBtn:CreateTexture(nil, "ARTWORK")
-            menuIcon:SetAllPoints()
-            menuIcon:SetTexture("Interface\\Buttons\\WHITE8x8")
+            menuIcon:SetPoint("CENTER")
+            menuIcon:SetSize(14, 14)
+            menuIcon:SetTexture("Interface\\AddOns\\GudaBags\\Assets\\more.png")
             menuIcon:SetVertexColor(0.7, 0.7, 0.7)
             menuBtn.icon = menuIcon
 
-            -- Draw 3 horizontal lines
-            local function CreateLine(parent, yOffset)
-                local line = parent:CreateTexture(nil, "OVERLAY")
-                line:SetSize(10, 1)
-                line:SetPoint("CENTER", parent, "CENTER", 0, yOffset)
-                line:SetTexture("Interface\\Buttons\\WHITE8x8")
-                line:SetVertexColor(0.9, 0.9, 0.9)
-                return line
-            end
-            menuBtn.line1 = CreateLine(menuBtn, 4)
-            menuBtn.line2 = CreateLine(menuBtn, 0)
-            menuBtn.line3 = CreateLine(menuBtn, -4)
-            -- Hide the bg square, just show lines
-            menuIcon:SetVertexColor(0.15, 0.15, 0.15, 0.6)
-
             menuBtn:SetScript("OnEnter", function(self)
-                self.icon:SetVertexColor(0.25, 0.25, 0.25, 0.8)
+                self.icon:SetVertexColor(1, 1, 1)
                 GameTooltip:SetOwner(self, "ANCHOR_BOTTOM")
                 GameTooltip:SetText("Navigation")
                 GameTooltip:Show()
             end)
             menuBtn:SetScript("OnLeave", function(self)
-                self.icon:SetVertexColor(0.15, 0.15, 0.15, 0.6)
+                self.icon:SetVertexColor(0.7, 0.7, 0.7)
                 GameTooltip:Hide()
             end)
             menuBtn:SetScript("OnClick", function(self)
@@ -454,8 +495,19 @@ function Header:SetNarrowMode(isCompact)
             titleBar.menuButton = menuBtn
         end
 
+        -- Match theme-aware chip + offset used by other header icons.
+        local useBlizzardMenu = Theme:GetValue("useBlizzardFrame")
+        local useMetalMenu = Theme:GetValue("useMetalFrame")
+        if titleBar.menuButton.themeBg then
+            if useBlizzardMenu or useMetalMenu then
+                titleBar.menuButton.themeBg:Show()
+            else
+                titleBar.menuButton.themeBg:Hide()
+            end
+        end
         titleBar.menuButton:ClearAllPoints()
-        titleBar.menuButton:SetPoint("LEFT", titleBar, "LEFT", 6, 0)
+        local menuOffset = (useBlizzardMenu or useMetalMenu) and 13 or 4
+        titleBar.menuButton:SetPoint("LEFT", titleBar, "LEFT", menuOffset, 0)
         titleBar.menuButton:Show()
 
         -- Title next to menu button
@@ -475,16 +527,24 @@ function Header:SetNarrowMode(isCompact)
             titleBar.menuButton:Hide()
         end
 
-        -- Show and restore nav buttons inline
-        local lastBtn = nil
+        -- Sync each nav button's Show state to its setting, then chain only
+        -- the visible ones. Spacing matches Theme:ApplyHeaderButtons so
+        -- Blizzard/Metal themes keep their 10px gap / 13px left offset.
         for _, btn in ipairs(navButtons) do
+            HeaderButtonVisibility:ApplyState(btn)
+        end
+        local useBlizzard = Theme:GetValue("useBlizzardFrame")
+        local useMetal = Theme:GetValue("useMetalFrame")
+        local gap = (useBlizzard or useMetal) and 10 or 4
+        local firstLeftOffset = (useBlizzard or useMetal) and 13 or 4
+        local lastBtn = nil
+        for _, btn in ipairs(HeaderButtonVisibility:Filter(navButtons)) do
             btn:ClearAllPoints()
             if lastBtn then
-                btn:SetPoint("LEFT", lastBtn, "RIGHT", 4, 0)
+                btn:SetPoint("LEFT", lastBtn, "RIGHT", gap, 0)
             else
-                btn:SetPoint("LEFT", titleBar, "LEFT", 6, 0)
+                btn:SetPoint("LEFT", titleBar, "LEFT", firstLeftOffset, 0)
             end
-            btn:Show()
             lastBtn = btn
         end
 
@@ -526,28 +586,30 @@ function Header:ShowNavMenu(anchor)
 
     local L = ns.L
     local menuItems = {}
-    if Constants.FEATURES.CHARACTERS then
+    -- Only include nav entries whose button is currently visible (expansion
+    -- feature flag + user visibility setting).
+    if Constants.FEATURES.CHARACTERS and HeaderButtonVisibility:IsSettingEnabled(titleBar.charactersButton) then
         table.insert(menuItems, { label = L["TOOLTIP_CHARACTERS"] or "Characters", onClick = function()
             if titleBar.charactersButton then
                 titleBar.charactersButton:Click()
             end
         end})
     end
-    if Constants.FEATURES.BANK then
+    if Constants.FEATURES.BANK and HeaderButtonVisibility:IsSettingEnabled(titleBar.chestButton) then
         table.insert(menuItems, { label = L["TOOLTIP_BANK"] or "Bank", onClick = function()
             if titleBar.chestButton then
                 titleBar.chestButton:Click()
             end
         end})
     end
-    if Constants.FEATURES.GUILD_BANK and IsInGuild() then
+    if Constants.FEATURES.GUILD_BANK and IsInGuild() and HeaderButtonVisibility:IsSettingEnabled(titleBar.guildButton) then
         table.insert(menuItems, { label = L["TOOLTIP_GUILD_BANK"] or "Guild Bank", onClick = function()
             if titleBar.guildButton then
                 titleBar.guildButton:Click()
             end
         end})
     end
-    if Constants.FEATURES.MAIL then
+    if Constants.FEATURES.MAIL and HeaderButtonVisibility:IsSettingEnabled(titleBar.envelopeButton) then
         table.insert(menuItems, { label = L["TOOLTIP_MAIL"] or "Mail", onClick = function()
             if titleBar.envelopeButton then
                 titleBar.envelopeButton:Click()

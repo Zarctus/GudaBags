@@ -170,6 +170,16 @@ local SaveFramePosition
 local RestoreFramePosition
 local RegisterCombatEndCallback
 
+-- Transient search bar visibility (header toggle). Resets on Hide().
+-- Installs IsSearchBarVisible / ToggleSearchBar / ResetSearchToggle methods on BankFrame.
+ns:GetModule("SearchBarToggle"):Apply(BankFrame, {
+    getFrame = function() return frame end,
+    onChanged = function()
+        UpdateFrameAppearance()
+        BankFrame:Refresh()
+    end,
+})
+
 local function CreateBankFrame()
     local f = CreateFrame("Frame", "GudaBankFrame", UIParent, "BackdropTemplate")
     f:SetSize(400, 300)
@@ -1505,7 +1515,7 @@ function BankFrame:Refresh()
     local classifiedBags = BagClassifier:ClassifyBags(bank, isViewingCached or not isBankOpen, bagIDsToUse)
     local bagsToShow = LayoutEngine:BuildDisplayOrder(classifiedBags, false)
 
-    local showSearchBar = Database:GetSetting("showSearchBar")
+    local showSearchBar = BankFrame:IsSearchBarVisible()
     local showFilterChips = Database:GetSetting("showFilterChips")
     local showFooterSetting = Database:GetSetting("showFooter")
     local showFooter = showFooterSetting or isViewingCached or not isBankOpen
@@ -2400,6 +2410,8 @@ end
 function BankFrame:Hide()
     if frame then
         frame:Hide()
+        -- Reset transient search toggle so next open starts collapsed
+        self:ResetSearchToggle()
         if viewingCharacter then
             viewingCharacter = nil
             BankHeader:SetViewingCharacter(nil, nil)
@@ -2914,7 +2926,7 @@ UpdateFrameAppearance = function()
         QuestBar:UpdateSize()
     end
 
-    local showSearchBar = Database:GetSetting("showSearchBar")
+    local showSearchBar = BankFrame:IsSearchBarVisible()
     local showFooter = Database:GetSetting("showFooter")
 
     -- Only toggle search bar visibility here - scroll frame positioning is handled by Refresh()

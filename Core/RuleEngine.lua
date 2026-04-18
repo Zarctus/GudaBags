@@ -47,7 +47,10 @@ function RuleEngine:Evaluate(rule, itemData, context)
 end
 
 -- Evaluate multiple rules with match mode
--- matchMode: "any" (OR) or "all" (AND)
+-- matchMode: "any" (OR, with required-rule override) or "all" (AND)
+-- In "any" mode, rules flagged `required = true` must ALL pass, and at least
+-- one non-required rule must pass. If every rule is required, all-required-pass
+-- is sufficient. In "all" mode the `required` flag is ignored.
 -- Returns: boolean
 function RuleEngine:EvaluateAll(rules, itemData, context, matchMode)
     if not rules or #rules == 0 then
@@ -65,13 +68,27 @@ function RuleEngine:EvaluateAll(rules, itemData, context, matchMode)
         end
         return true
     else
-        -- Any rule must match (OR)
+        -- "any" with required-rule semantics
+        local hasNonRequired = false
+        local anyNonRequiredPassed = false
         for _, rule in ipairs(rules) do
-            if self:Evaluate(rule, itemData, context) then
-                return true
+            local passed = self:Evaluate(rule, itemData, context)
+            if rule.required then
+                if not passed then
+                    return false
+                end
+            else
+                hasNonRequired = true
+                if passed then
+                    anyNonRequiredPassed = true
+                end
             end
         end
-        return false
+        if hasNonRequired then
+            return anyNonRequiredPassed
+        end
+        -- Every rule was required and all passed
+        return true
     end
 end
 

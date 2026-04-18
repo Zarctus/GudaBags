@@ -682,7 +682,7 @@ local function CreateChipStrip(searchBar, parent)
     local dropIcon = typesDropdown:CreateTexture(nil, "ARTWORK")
     dropIcon:SetSize(10, 10)
     dropIcon:SetPoint("LEFT", typesDropdown, "LEFT", 4, 0)
-    dropIcon:SetTexture("Interface\\AddOns\\GudaBags\\Assets\\search.png")
+    dropIcon:SetTexture("Interface\\AddOns\\GudaBags\\Assets\\categories.png")
     dropIcon:SetVertexColor(0.55, 0.55, 0.55)
     typesDropdown.icon = dropIcon
     -- Label

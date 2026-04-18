@@ -34,6 +34,7 @@ local cachedItemData = {}
 local cachedItemCount = {}
 local layoutCached = false
 
+
 -- Hidden frame to reparent Blizzard guild bank UI (used by some versions)
 local hiddenParent = CreateFrame("Frame")
 hiddenParent:Hide()
@@ -105,7 +106,7 @@ local function UpdateFrameAppearance()
 
     GuildBankHeader:SetBackdropAlpha(bgAlpha)
 
-    local showSearchBar = Database:GetSetting("showSearchBar")
+    local showSearchBar = GuildBankFrame:IsSearchBarVisible()
     local showFilterChips = Database:GetSetting("showFilterChips")
     local showFooter = Database:GetSetting("showFooter")
 
@@ -143,6 +144,16 @@ local function UpdateFrameAppearance()
     end
 
 end
+
+-- Transient search bar visibility (header toggle). Resets on Hide().
+-- Installs IsSearchBarVisible / ToggleSearchBar / ResetSearchToggle methods on GuildBankFrame.
+ns:GetModule("SearchBarToggle"):Apply(GuildBankFrame, {
+    getFrame = function() return frame end,
+    onChanged = function()
+        UpdateFrameAppearance()
+        GuildBankFrame:Refresh()
+    end,
+})
 
 -------------------------------------------------
 -- Side Tab Bar (Vertical tabs on RIGHT side)
@@ -1042,7 +1053,7 @@ function GuildBankFrame:Refresh()
     local actualContentHeight = (iconSize * itemRows) + (spacing * math.max(0, itemRows - 1)) + (headerCount * headerHeight)
 
     -- Calculate frame dimensions
-    local showSearchBar = Database:GetSetting("showSearchBar")
+    local showSearchBar = GuildBankFrame:IsSearchBarVisible()
     local showFilterChips = Database:GetSetting("showFilterChips")
     local showFooter = Database:GetSetting("showFooter")
     local chipHeight = (showSearchBar and showFilterChips) and (Constants.FRAME.CHIP_STRIP_HEIGHT + 1) or 0
@@ -1260,6 +1271,8 @@ function GuildBankFrame:Hide()
         SearchBar:ClearAllFilters(frame)
 
         frame:Hide()
+        -- Reset transient search toggle so next open starts collapsed
+        self:ResetSearchToggle()
         ItemButton:ReleaseAll(frame.container)
         ReleaseAllCategoryHeaders()
         buttonsBySlot = {}

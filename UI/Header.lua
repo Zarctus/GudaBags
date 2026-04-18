@@ -485,14 +485,20 @@ function Header:SetNarrowMode(isCompact)
             titleBar.menuButton:Hide()
         end
 
-        -- Show and restore nav buttons inline
+        -- Show and restore nav buttons inline — match theme-aware spacing
+        -- used by Theme:ApplyHeaderButtons so Blizzard/Metal themes keep
+        -- their 10px gap / 13px left offset.
+        local useBlizzard = Theme:GetValue("useBlizzardFrame")
+        local useMetal = Theme:GetValue("useMetalFrame")
+        local gap = (useBlizzard or useMetal) and 10 or 4
+        local firstLeftOffset = (useBlizzard or useMetal) and 13 or 4
         local lastBtn = nil
         for _, btn in ipairs(navButtons) do
             btn:ClearAllPoints()
             if lastBtn then
-                btn:SetPoint("LEFT", lastBtn, "RIGHT", 4, 0)
+                btn:SetPoint("LEFT", lastBtn, "RIGHT", gap, 0)
             else
-                btn:SetPoint("LEFT", titleBar, "LEFT", 6, 0)
+                btn:SetPoint("LEFT", titleBar, "LEFT", firstLeftOffset, 0)
             end
             btn:Show()
             lastBtn = btn

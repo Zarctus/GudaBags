@@ -224,6 +224,11 @@ local function CreateRuleTypeDropdown(parent, index, onSelect)
                 end
             end
             info.checked = (rt.id == currentTypeId)
+            if rt.tooltip then
+                info.tooltipTitle = rt.label
+                info.tooltipText = rt.tooltip
+                info.tooltipOnButton = true
+            end
             UIDropDownMenu_AddButton(info, level)
         end
     end)
@@ -278,9 +283,36 @@ local function CreateRuleRow(parent, index)
     typeDropdown:SetPoint("LEFT", row, "LEFT", -12, 0)
     row.typeDropdown = typeDropdown
 
-    -- Value container (positioned after dropdown)
+    -- Required-rule checkbox (between type dropdown and value control)
+    local requiredCheckbox = CreateFrame("CheckButton", nil, row, "UICheckButtonTemplate")
+    requiredCheckbox:SetSize(18, 18)
+    requiredCheckbox:SetPoint("LEFT", typeDropdown, "RIGHT", -10, 0)
+    requiredCheckbox:SetScript("OnClick", function(self)
+        if currentMatchMode == "all" then
+            -- No-op in "all" mode; keep visual state synced to stored value
+            self:SetChecked(currentRules[index] and currentRules[index].required == true)
+            return
+        end
+        if currentRules[index] then
+            if self:GetChecked() then
+                currentRules[index].required = true
+            else
+                currentRules[index].required = nil
+            end
+        end
+    end)
+    requiredCheckbox:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:SetText(ns.L["RULE_REQUIRED"], 1, 0.82, 0)
+        GameTooltip:AddLine(ns.L["RULE_REQUIRED_TIP"], 1, 1, 1, true)
+        GameTooltip:Show()
+    end)
+    requiredCheckbox:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    row.requiredCheckbox = requiredCheckbox
+
+    -- Value container (positioned after required-checkbox)
     local valueContainer = CreateFrame("Frame", nil, row)
-    valueContainer:SetPoint("LEFT", typeDropdown, "RIGHT", -10, 0)
+    valueContainer:SetPoint("LEFT", requiredCheckbox, "RIGHT", 2, 0)
     valueContainer:SetPoint("RIGHT", deleteBtn, "LEFT", -8, 0)
     valueContainer:SetHeight(ROW_HEIGHT)
     row.valueContainer = valueContainer
@@ -291,6 +323,24 @@ local function CreateRuleRow(parent, index)
     row.valueControl = nil
 
     return row
+end
+
+-- Sync every rule row's required-checkbox to current state and matchMode
+local function UpdateRequiredCheckboxes()
+    local disabled = currentMatchMode == "all"
+    for i, row in ipairs(ruleRows) do
+        if row.requiredCheckbox then
+            local rule = currentRules[i]
+            row.requiredCheckbox:SetChecked(rule and rule.required == true)
+            if disabled then
+                row.requiredCheckbox:Disable()
+                row.requiredCheckbox:SetAlpha(0.35)
+            else
+                row.requiredCheckbox:Enable()
+                row.requiredCheckbox:SetAlpha(1)
+            end
+        end
+    end
 end
 
 local function UpdateRuleRowValue(row, ruleType, ruleValue)
@@ -331,6 +381,15 @@ local function UpdateRuleRowValue(row, ruleType, ruleValue)
         cb:SetScript("OnClick", function(self)
             currentRules[row.index].value = self:GetChecked()
         end)
+        if ruleInfo.tooltip then
+            cb:SetScript("OnEnter", function(self)
+                GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+                GameTooltip:SetText(ruleInfo.label, 1, 0.82, 0)
+                GameTooltip:AddLine(ruleInfo.tooltip, 1, 1, 1, true)
+                GameTooltip:Show()
+            end)
+            cb:SetScript("OnLeave", function() GameTooltip:Hide() end)
+        end
         row.valueControl = cb
 
     elseif ruleInfo.valueType == "dropdown" then
@@ -684,12 +743,14 @@ local function CreateEditorFrame()
         matchAnyBtn:SetChecked(true)
         matchAllBtn:SetChecked(false)
         currentMatchMode = "any"
+        UpdateRequiredCheckboxes()
     end)
 
     matchAllBtn:SetScript("OnClick", function()
         matchAnyBtn:SetChecked(false)
         matchAllBtn:SetChecked(true)
         currentMatchMode = "all"
+        UpdateRequiredCheckboxes()
     end)
 
     yOffset = yOffset - 50
@@ -789,7 +850,7 @@ function CategoryEditor:Open(categoryId)
     currentRules = {}
     if categoryDef.rules then
         for i, rule in ipairs(categoryDef.rules) do
-            currentRules[i] = { type = rule.type, value = rule.value }
+            currentRules[i] = { type = rule.type, value = rule.value, required = rule.required and true or nil }
         end
     end
 
@@ -893,6 +954,9 @@ function CategoryEditor:RefreshRules()
     end
 
     scrollChild:SetHeight(math.abs(yOffset) + 10)
+
+    -- Sync required-rule checkboxes to current state and matchMode
+    UpdateRequiredCheckboxes()
 end
 
 function CategoryEditor:AddRule()
@@ -931,7 +995,7 @@ function CategoryEditor:Save()
             categoryDef.categoryMark = currentMark
             categoryDef.rules = {}
             for i, rule in ipairs(currentRules) do
-                categoryDef.rules[i] = { type = rule.type, value = rule.value }
+                categoryDef.rules[i] = { type = rule.type, value = rule.value, required = rule.required and true or nil }
             end
             CategoryManager:UpdateCategory(newId, categoryDef)
         end
@@ -954,7 +1018,7 @@ function CategoryEditor:Save()
         categoryDef.categoryMark = currentMark
         categoryDef.rules = {}
         for i, rule in ipairs(currentRules) do
-            categoryDef.rules[i] = { type = rule.type, value = rule.value }
+            categoryDef.rules[i] = { type = rule.type, value = rule.value, required = rule.required and true or nil }
         end
 
         CategoryManager:UpdateCategory(currentCategoryId, categoryDef)

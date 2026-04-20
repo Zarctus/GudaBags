@@ -33,6 +33,7 @@ function DefaultCategories:GetRuleTypes()
         { id = "itemID", label = L["RULE_ITEM_ID"], shortLabel = L["RULE_ITEM_ID_SHORT"], valueType = "itemID" },
         { id = "itemSubtype", label = L["RULE_ITEM_SUBTYPE"], valueType = "text" },
         { id = "namePattern", label = L["RULE_NAME_CONTAINS"], valueType = "text" },
+        { id = "tooltipPattern", label = L["RULE_TOOLTIP_CONTAINS"], valueType = "text", tooltip = L["RULE_TOOLTIP_CONTAINS_TIP"] },
         { id = "quality", label = L["RULE_QUALITY_EXACT"], valueType = "dropdown", options = {
             {value = 0, label = L["QUALITY_POOR"]},
             {value = 1, label = L["QUALITY_COMMON"]},
@@ -56,7 +57,7 @@ function DefaultCategories:GetRuleTypes()
         { id = "isProfessionTool", label = L["RULE_PROFESSION_TOOL"], valueType = "boolean" },
         { id = "isSoulShard", label = L["RULE_SOUL_SHARD"], valueType = "boolean" },
         { id = "isProjectile", label = L["RULE_PROJECTILE"], valueType = "boolean" },
-        { id = "isReagent", label = L["RULE_REAGENT"], valueType = "boolean" },
+        { id = "isReagent", label = L["RULE_REAGENT"], valueType = "boolean", tooltip = L["RULE_REAGENT_TIP"] },
         { id = "restoreTag", label = L["RULE_CONSUMABLE_TYPE"], valueType = "dropdown", options = {
             {value = "eat", label = L["CONSUMABLE_FOOD"]},
             {value = "drink", label = L["CONSUMABLE_DRINK"]},

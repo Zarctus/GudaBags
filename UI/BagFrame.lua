@@ -89,6 +89,17 @@ end
 local UpdateFrameAppearance
 local RegisterCombatEndCallback
 
+-- Transient search bar visibility (header toggle). Resets on Hide().
+-- Installs IsSearchBarVisible / ToggleSearchBar / ResetSearchToggle methods on BagFrame.
+-- Placed after forward declarations so UpdateFrameAppearance is an upvalue.
+ns:GetModule("SearchBarToggle"):Apply(BagFrame, {
+    getFrame = function() return frame end,
+    onChanged = function()
+        UpdateFrameAppearance()
+        BagFrame:Refresh()
+    end,
+})
+
 -------------------------------------------------
 -- Category Header Pool (uses shared CategoryHeaderPool module)
 -------------------------------------------------
@@ -396,7 +407,7 @@ function BagFrame:Refresh()
     Footer:SetNarrowMode(isNarrow)
 
     -- Calculate common settings
-    local showSearchBar = Database:GetSetting("showSearchBar")
+    local showSearchBar = BagFrame:IsSearchBarVisible()
     local showFooterSetting = Database:GetSetting("showFooter")
     local showFooter = showFooterSetting or isViewingCached
     local showCategoryCount = Database:GetSetting("showCategoryCount")
@@ -1095,6 +1106,8 @@ end
 function BagFrame:Hide()
     if frame then
         frame:Hide()
+        -- Reset transient search toggle so next open starts collapsed
+        self:ResetSearchToggle()
         -- Reset to current character when closing
         if viewingCharacter then
             viewingCharacter = nil
@@ -1793,7 +1806,7 @@ UpdateFrameAppearance = function()
     end
 
     -- Show/Hide search bar (always hide for cached views)
-    local showSearchBar = Database:GetSetting("showSearchBar")
+    local showSearchBar = BagFrame:IsSearchBarVisible()
     local showFooter = Database:GetSetting("showFooter")
     -- Always show footer space for cached views (money display)
     local dynamicFooterHeight = Footer:GetHeight()

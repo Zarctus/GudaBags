@@ -59,7 +59,7 @@ local function UpdateFrameAppearance()
         MailHeader:SetBackdropAlpha(bgAlpha)
     end
 
-    local showSearchBar = Database:GetSetting("showSearchBar")
+    local showSearchBar = MailFrame:IsSearchBarVisible()
     local showFilterChips = Database:GetSetting("showFilterChips")
     local showFooter = Database:GetSetting("showFooter")
 
@@ -99,6 +99,16 @@ local function UpdateFrameAppearance()
         MailFooter:Hide()
     end
 end
+
+-- Transient search bar visibility (header toggle). Resets on Hide().
+-- Installs IsSearchBarVisible / ToggleSearchBar / ResetSearchToggle methods on MailFrame.
+ns:GetModule("SearchBarToggle"):Apply(MailFrame, {
+    getFrame = function() return frame end,
+    onChanged = function()
+        UpdateFrameAppearance()
+        MailFrame:Refresh()
+    end,
+})
 
 -------------------------------------------------
 -- Mail Row UI
@@ -485,6 +495,8 @@ end
 function MailFrame:Hide()
     if frame then
         frame:Hide()
+        -- Reset transient search toggle so next open starts collapsed
+        self:ResetSearchToggle()
     end
 end
 

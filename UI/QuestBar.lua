@@ -976,6 +976,7 @@ end
 -------------------------------------------------
 
 Events:OnPlayerLogin(function()
+    Database:ResolveFreshInstallDefaults()
     QuestBar:Init()
     QuestBar:Show()
 end, QuestBar)

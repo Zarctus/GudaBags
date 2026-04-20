@@ -133,22 +133,52 @@ function SettingsSchema.GetLayout()
         { type = "separator", label = L["SETTINGS_SECTION_COLUMNS"] },
         { type = "slider", key = "bagColumns", label = L["SETTINGS_BAG_COLUMNS"], min = 5, max = 22, step = 1 },
         { type = "slider", key = "bankColumns", label = L["SETTINGS_BANK_COLUMNS"], min = 5, max = 36, step = 1 },
-        { type = "slider", key = "guildBankColumns", label = L["SETTINGS_GUILD_BANK_COLUMNS"], min = 10, max = 36, step = 1 },
+                { type = "slider", key = "guildBankColumns", label = L["SETTINGS_GUILD_BANK_COLUMNS"], min = 10, max = 36, step = 1 },
 
-        { type = "separator", label = L["SETTINGS_SECTION_OPTIONS"] },
-        { type = "row", children = {
-            { type = "checkbox", key = "showSearchBar", label = L["SETTINGS_SHOW_SEARCH"], tooltip = L["SETTINGS_SHOW_SEARCH_TIP"] },
-            { type = "checkbox", key = "showFilterChips", label = L["SETTINGS_SHOW_FILTER_CHIPS"], tooltip = L["SETTINGS_SHOW_FILTER_CHIPS_TIP"] },
-        }},
-        { type = "row", children = {
-            { type = "checkbox", key = "showFooter", label = L["SETTINGS_SHOW_FOOTER"], tooltip = L["SETTINGS_SHOW_FOOTER_TIP"] },
-            { type = "checkbox", key = "showCategoryCount", label = L["SETTINGS_SHOW_CAT_COUNT"], tooltip = L["SETTINGS_SHOW_CAT_COUNT_TIP"] },
-        }},
+                { type = "separator", label = L["SETTINGS_SECTION_CATEGORY"],
+                    hidden = function() local Database = ns:GetModule("Database")
+                        return Database:GetSetting("bagViewType") ~= "category" and Database:GetSetting("bankViewType") ~= "category" end },
+                { type = "row", hidden = function() local Database = ns:GetModule("Database")
+                        return Database:GetSetting("bagViewType") ~= "category" and Database:GetSetting("bankViewType") ~= "category" end,
+                    children = {
+                        { type = "checkbox", key = "showCategoryCount", label = L["SETTINGS_SHOW_CAT_COUNT"], tooltip = L["SETTINGS_SHOW_CAT_COUNT_TIP"] },
+                        { type = "checkbox", key = "showEquipSetCategories", label = L["SETTINGS_EQUIP_SET_CATEGORIES"], tooltip = L["SETTINGS_EQUIP_SET_CATEGORIES_TIP"] },
+                }},
+                { type = "row", hidden = function() local Database = ns:GetModule("Database")
+                        return Database:GetSetting("bagViewType") ~= "category" and Database:GetSetting("bankViewType") ~= "category" end,
+                    children = {
+                        { type = "checkbox", key = "groupIdenticalItems", label = L["SETTINGS_GROUP_IDENTICAL"], tooltip = L["SETTINGS_GROUP_IDENTICAL_TIP"] },
+                }},
 
-        { type = "row", children = {
-            { type = "checkbox", key = "groupIdenticalItems", label = L["SETTINGS_GROUP_IDENTICAL"], tooltip = L["SETTINGS_GROUP_IDENTICAL_TIP"] },
-            { type = "checkbox", key = "showEquipSetCategories", label = L["SETTINGS_EQUIP_SET_CATEGORIES"], tooltip = L["SETTINGS_EQUIP_SET_CATEGORIES_TIP"] },
-        }},
+                { type = "separator", label = L["SETTINGS_SECTION_HEADER_BUTTONS"] },
+                { type = "row", children = {
+                        { type = "checkbox", key = "showHeaderCharacters", label = L["SETTINGS_SHOW_HEADER_CHARACTERS"] },
+                        { type = "checkbox", key = "showHeaderBank", label = L["SETTINGS_SHOW_HEADER_BANK"] },
+                }},
+                { type = "row", children = {
+                        { type = "checkbox", key = "showHeaderGuildBank", label = L["SETTINGS_SHOW_HEADER_GUILD_BANK"],
+                            hidden = function() return not (ns.Constants.FEATURES and ns.Constants.FEATURES.GUILD_BANK) end },
+                        { type = "checkbox", key = "showHeaderMail", label = L["SETTINGS_SHOW_HEADER_MAIL"] },
+                }},
+                { type = "row", children = {
+                        { type = "checkbox", key = "showHeaderSort", label = L["SETTINGS_SHOW_HEADER_SORT"] },
+                        { type = "checkbox", key = "showHeaderSearch", label = L["SETTINGS_SHOW_HEADER_SEARCH"] },
+                }},
+
+                { type = "separator", label = L["SETTINGS_SECTION_OPTIONS"] },
+                { type = "row", children = {
+                        { type = "checkbox", key = "showSearchBar", label = L["SETTINGS_SHOW_SEARCH"], tooltip = L["SETTINGS_SHOW_SEARCH_TIP"] },
+                        { type = "checkbox", key = "showFilterChips", label = L["SETTINGS_SHOW_FILTER_CHIPS"], tooltip = L["SETTINGS_SHOW_FILTER_CHIPS_TIP"] },
+                }},
+                { type = "row", children = {
+                        { type = "checkbox", key = "showFooter", label = L["SETTINGS_SHOW_FOOTER"], tooltip = L["SETTINGS_SHOW_FOOTER_TIP"] },
+                }},
+
+                { type = "row", children = {
+                        { type = "checkbox", key = "sortByExpansion", label = L["SETTINGS_SORT_BY_EXPANSION"], tooltip = L["SETTINGS_SORT_BY_EXPANSION_TIP"],
+                            hidden = function() local Database = ns:GetModule("Database")
+                                return Database:GetSetting("bagViewType") ~= "category" and Database:GetSetting("bankViewType") ~= "category" end },
+                }},
         { type = "row", children = {
             { type = "checkbox", key = "sortByExpansion", label = L["SETTINGS_SORT_BY_EXPANSION"], tooltip = L["SETTINGS_SORT_BY_EXPANSION_TIP"],
               hidden = function() local Database = ns:GetModule("Database")

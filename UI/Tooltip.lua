@@ -45,6 +45,12 @@ local function AddInventorySection(tooltip, itemID, skipReadyCheck)
     tooltip:AddLine(" ")
     tooltip:AddLine(L["TOOLTIP_INVENTORY"], 1, 0.82, 0)
 
+    local youSuffix = L["TOOLTIP_YOU"] or " (you)"
+    local labelBags = L["TOOLTIP_BAGS"] or "Bags"
+    local labelBank = L["TOOLTIP_BANK_LOWER"] or "Bank"
+    local labelMail = L["TOOLTIP_MAIL_LOWER"] or "Mail"
+    local labelEquipped = L["TOOLTIP_EQUIPPED"] or "Equipped"
+
     for _, charInfo in ipairs(characterCounts) do
         local classColor = RAID_CLASS_COLORS[charInfo.class]
         local r, g, b = 0.7, 0.7, 0.7
@@ -52,24 +58,25 @@ local function AddInventorySection(tooltip, itemID, skipReadyCheck)
             r, g, b = classColor.r, classColor.g, classColor.b
         end
 
-        local raceIcon = Utils:GetRaceIcon(charInfo.race, charInfo.sex)
-        local displayName = raceIcon .. " " .. (charInfo.isCurrent and (charInfo.name .. L["TOOLTIP_YOU"]) or charInfo.name)
+        local raceIcon = Utils:GetRaceIcon(charInfo.race, charInfo.sex) or ""
+        local charName = charInfo.name or "?"
+        local displayName = raceIcon .. " " .. (charInfo.isCurrent and (charName .. youSuffix) or charName)
 
         -- Build count string with label: count format
         local cyan = "|cFF00CCCC"
         local white = "|cFFFFFFFF"
         local countParts = {}
         if charInfo.bagCount and charInfo.bagCount > 0 then
-            table.insert(countParts, cyan .. L["TOOLTIP_BAGS"] .. ": " .. white .. charInfo.bagCount .. "|r")
+            table.insert(countParts, cyan .. labelBags .. ": " .. white .. charInfo.bagCount .. "|r")
         end
         if charInfo.bankCount and charInfo.bankCount > 0 then
-            table.insert(countParts, cyan .. L["TOOLTIP_BANK_LOWER"] .. ": " .. white .. charInfo.bankCount .. "|r")
+            table.insert(countParts, cyan .. labelBank .. ": " .. white .. charInfo.bankCount .. "|r")
         end
         if charInfo.mailCount and charInfo.mailCount > 0 then
-            table.insert(countParts, cyan .. L["TOOLTIP_MAIL_LOWER"] .. ": " .. white .. charInfo.mailCount .. "|r")
+            table.insert(countParts, cyan .. labelMail .. ": " .. white .. charInfo.mailCount .. "|r")
         end
         if charInfo.equippedCount and charInfo.equippedCount > 0 then
-            table.insert(countParts, cyan .. L["TOOLTIP_EQUIPPED"] .. ": " .. white .. charInfo.equippedCount .. "|r")
+            table.insert(countParts, cyan .. labelEquipped .. ": " .. white .. charInfo.equippedCount .. "|r")
         end
         local countStr = table.concat(countParts, white .. ", ")
 

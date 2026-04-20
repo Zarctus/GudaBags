@@ -267,6 +267,13 @@ Constants.DEFAULTS = {
     hoverBagline = false,
     showFooter = true,
     showTooltipCounts = true,
+    -- Header button visibility (see UI/Components/HeaderButtonVisibility.lua)
+    showHeaderCharacters = true,
+    showHeaderBank = true,
+    showHeaderGuildBank = true,
+    showHeaderMail = true,
+    showHeaderSort = true,
+    showHeaderSearch = true,
     goldTrackAllRealms = false,  -- Show gold from all realms in money tooltip (Retail only)
     bagViewType = "single",
     bankViewType = "single",
@@ -377,7 +384,7 @@ Constants.CATEGORY_UI = {
 
     -- Settings popup
     POPUP_WIDTH = 520,
-    POPUP_HEIGHT = 565,
+    POPUP_HEIGHT = 600,
     POPUP_PADDING = 16,
 
     -- Editor

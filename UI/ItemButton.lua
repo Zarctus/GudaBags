@@ -54,21 +54,39 @@ local function CreateSpellOverlay(button)
         if parent:GetScript("OnLeave") then parent:GetScript("OnLeave")(parent) end
     end)
     overlay:Hide()
-    button.spellOverlay = overlay
+    button.searchDimOverlay = overlay
     return overlay
 end
 
-local function UpdateSpellOverlay(button)
-    if spellTargetingActive and button.itemData and button.itemData.itemID and IsItemProtected(button.itemData.itemID) then
-        local overlay = CreateSpellOverlay(button)
-        overlay:SetFrameLevel(button:GetFrameLevel() + 21)
-        overlay:Show()
-        spellOverlayButtons[button] = true
-    else
-        if button.spellOverlay then
-            button.spellOverlay:Hide()
+local function StartSearchGlow(button)
+    local glow = button.searchGlow
+    if glow then glow:Show() end
+end
+
+local function StopSearchGlow(button)
+    local glow = button.searchGlow
+    if glow then glow:Hide() end
+end
+
+-- Apply spotlight search visual state to a single button
+function ItemButton:SetSearchState(button, isMatch)
+    if isMatch then
+        -- Matching item: full visibility + glow
+        button:SetAlpha(1)
+        SetItemButtonDesaturated(button, button.itemData and button.itemData.locked or false)
+        if button.searchDimOverlay then
+            button.searchDimOverlay:Hide()
         end
-        spellOverlayButtons[button] = nil
+        EnsureSearchGlow(button)
+        StartSearchGlow(button)
+    else
+        -- Non-matching item: desaturated + dim overlay, stop glow
+        SetItemButtonDesaturated(button, true)
+        if button.searchGlow then
+            StopSearchGlow(button)
+        end
+        local overlay = EnsureSearchDimOverlay(button)
+        overlay:Show()
     end
 end
 

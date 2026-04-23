@@ -31,6 +31,8 @@ end
 -- Uses overlay frames on protected buttons that eat clicks while spell targeting is active
 local spellTargetingActive = false
 local spellOverlayButtons = {}
+local EnsureSearchDimOverlay
+local EnsureSearchGlow
 
 local function CreateSpellOverlay(button)
     if button.spellOverlay then return button.spellOverlay end
@@ -91,7 +93,7 @@ function ItemButton:SetSearchState(button, isMatch)
 end
 
 -- Create or return the search dim overlay covering button + border area
-local function EnsureSearchDimOverlay(button)
+EnsureSearchDimOverlay = function(button)
     if button.searchDimOverlay then return button.searchDimOverlay end
 
     local BORDER_THICKNESS = Constants.ICON.BORDER_THICKNESS
@@ -2467,7 +2469,7 @@ local function UpdateOrbitStreaks(glow, elapsed)
     end
 end
 
-local function EnsureSearchGlow(button)
+EnsureSearchGlow = function(button)
     if button.searchGlow then return button.searchGlow end
 
     local glow = CreateFrame("Frame", nil, button, "BackdropTemplate")

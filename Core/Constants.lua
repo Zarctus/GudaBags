@@ -455,6 +455,7 @@ Constants.PROFESSION_TOOL_IDS = {
     -- Alchemy
     [9149] = true,   -- Philosopher's Stone
     [13503] = true,  -- Alchemist's Stone
+    [31080] = true,  -- Mercurial Stone (TBC)
     -- Jewelcrafting
     [20815] = true,  -- Jeweler's Kit
     [20824] = true,  -- Simple Grinder

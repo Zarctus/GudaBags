@@ -346,7 +346,7 @@ DefaultCategories.DEFINITIONS = {
         rules = {
             { type = "isProfessionTool", value = true },
         },
-        matchMode = "any",
+        matchMode = "all",
         priority = 60,
         enabled = true,
         isBuiltIn = true,

@@ -1198,6 +1198,48 @@ local function ConsolidateStacks(bagIDs, bagFamilies)
     return consolidationMoves
 end
 
+-- Route specialized items (e.g. ammo→quiver, soul shards→soul bag) for the Restack API.
+-- Snapshots once, plans moves via RouteSpecializedItems_Offline (the same offline planner
+-- used by SortBags), then executes them with direct API calls in the same style as
+-- ConsolidateStacks. Returns the number of moves executed.
+local function RestackRouteSpecialized(bagIDs)
+    local slotMap = SnapshotSlots(bagIDs)
+    local containers, bagFamilies = ClassifyBags(bagIDs)
+    local moves = RouteSpecializedItems_Offline(bagIDs, containers, bagFamilies, slotMap)
+
+    if #moves == 0 then return 0 end
+
+    ClearCursor()
+    ClearPendingLocks()
+
+    local executed = 0
+    for _, move in ipairs(moves) do
+        local srcInfo = C_Container_GetContainerItemInfo(move.sourceBag, move.sourceSlot)
+        local tgtInfo = C_Container_GetContainerItemInfo(move.targetBag, move.targetSlot)
+
+        -- Verify the world still matches the plan: source still holds the expected item,
+        -- target is still empty, and neither slot is locked from a prior pickup.
+        if srcInfo and srcInfo.itemID == move.expectedItemID and not srcInfo.isLocked
+           and (not tgtInfo or not tgtInfo.itemID) then
+            C_Container_PickupContainerItem(move.sourceBag, move.sourceSlot)
+            C_Container_PickupContainerItem(move.targetBag, move.targetSlot)
+            ClearCursor()
+
+            AddPendingLock(move.sourceBag, move.sourceSlot)
+            AddPendingLock(move.targetBag, move.targetSlot)
+
+            if not soundsMuted then
+                MutePickupSounds()
+                soundsMuted = true
+            end
+
+            executed = executed + 1
+        end
+    end
+
+    return executed
+end
+
 -- Cached specialized bag type list (initialized once on first use)
 local cachedSpecializedTypes = nil
 local function GetSpecializedTypes()
@@ -1604,6 +1646,7 @@ local restackCallback = nil
 local restackPassCount = 0
 local restackMaxPasses = 4
 local restackNextPassTime = 0
+local restackPhase = nil  -- "route" then "consolidate"; nil when idle
 
 local restackFrame = CreateFrame("Frame")
 restackFrame:SetScript("OnUpdate", function(self, elapsed)
@@ -1613,6 +1656,7 @@ restackFrame:SetScript("OnUpdate", function(self, elapsed)
     if InCombatLockdown() then
         ClearCursor()
         restackInProgress = false
+        restackPhase = nil
         ClearPendingLocks()
         UnmutePickupSounds()
         ns:Print("Restack cancelled: entered combat")
@@ -1630,12 +1674,25 @@ restackFrame:SetScript("OnUpdate", function(self, elapsed)
 
     if now < restackNextPassTime then return end
 
-    -- Check if any items are locked (uses targeted pendingLockSlots from ConsolidateStacks)
+    -- Check if any items are locked (uses targeted pendingLockSlots from prior pass)
     if AnyItemsLocked() then
         restackNextPassTime = now + lockWaitTime
         return
     end
 
+    -- Phase 1 (one-shot): route specialized items into matching bags
+    -- so Category View's "Clean Up" sends ammo→quiver, soul shards→soul bag, etc.
+    if restackPhase == "route" then
+        local routedMoves = RestackRouteSpecialized(restackBagIDs)
+        restackPhase = "consolidate"
+        if routedMoves > 0 then
+            -- Defer next pass so the lock-wait check above gates execution
+            restackNextPassTime = now + lockWaitTime
+        end
+        return
+    end
+
+    -- Phase 2: consolidate partial stacks (existing multi-pass loop)
     restackPassCount = restackPassCount + 1
 
     local _, bagFamilies = ClassifyBags(restackBagIDs)
@@ -1644,6 +1701,7 @@ restackFrame:SetScript("OnUpdate", function(self, elapsed)
     if moves == 0 or restackPassCount >= restackMaxPasses then
         -- Done restacking - invalidate layouts so next update triggers full refresh
         restackInProgress = false
+        restackPhase = nil
         ClearPendingLocks()
         UnmutePickupSounds()
         local BagFrameModule = ns:GetModule("BagFrame")
@@ -1668,6 +1726,7 @@ function SortEngine:RestackBags(callback)
     restackCallback = callback
     restackPassCount = 0
     restackNextPassTime = 0
+    restackPhase = "route"
 
     MutePickupSounds()
     return true
@@ -1690,6 +1749,7 @@ function SortEngine:RestackBank(callback)
     restackCallback = callback
     restackPassCount = 0
     restackNextPassTime = 0
+    restackPhase = "consolidate"
 
     MutePickupSounds()
     return true
@@ -1716,6 +1776,7 @@ function SortEngine:RestackWarbandBank(callback)
     restackCallback = callback
     restackPassCount = 0
     restackNextPassTime = 0
+    restackPhase = "consolidate"
 
     MutePickupSounds()
     return true

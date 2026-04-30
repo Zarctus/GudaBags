@@ -21,6 +21,7 @@ local knownItemIDs = {}  -- Track known quest item IDs to detect new loot
 local activeItemIndex = 1
 local pendingRefresh = false
 local initialized = false
+local infoRefreshScheduled = false
 
 -- Constants
 local PADDING = 0
@@ -971,6 +972,19 @@ local function OnQuestLogUpdate()
     end
 end
 
+-- GET_ITEM_INFO_RECEIVED fires once per itemID as async item data finishes loading.
+-- Freshly looted quest items often have nil GetItemSpell on the first scan and get
+-- filtered out; this debounced refresh catches them once data lands.
+local function OnItemInfoReceived()
+    if not frame then return end
+    if infoRefreshScheduled then return end
+    infoRefreshScheduled = true
+    C_Timer.After(0.1, function()
+        infoRefreshScheduled = false
+        if frame then QuestBar:Refresh() end
+    end)
+end
+
 -------------------------------------------------
 -- Initialization
 -------------------------------------------------
@@ -1006,6 +1020,7 @@ end, QuestBar)
 Events:Register("QUEST_LOG_UPDATE", OnQuestLogUpdate, QuestBar)
 Events:Register("QUEST_ACCEPTED", OnQuestLogUpdate, QuestBar)
 Events:Register("QUEST_REMOVED", OnQuestLogUpdate, QuestBar)
+Events:Register("GET_ITEM_INFO_RECEIVED", OnItemInfoReceived, QuestBar)
 
 -- Refresh when entering/leaving battlegrounds
 Events:Register("PLAYER_ENTERING_WORLD", function()

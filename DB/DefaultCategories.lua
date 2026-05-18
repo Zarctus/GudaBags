@@ -99,6 +99,7 @@ local CATEGORY_LOCALE_KEYS = {
     ["Reagent"] = "CAT_REAGENT",
     ["Recipe"] = "CAT_RECIPE",
     ["Quiver"] = "CAT_QUIVER",
+    ["Quiver Bag"] = "CAT_QUIVER_BAG",
     ["Container"] = "CAT_CONTAINER",
     ["Soul Bag"] = "CAT_SOUL_BAG",
     ["Tools"] = "CAT_TOOLS",
@@ -337,8 +338,8 @@ DefaultCategories.DEFINITIONS = {
         group = "Main",
     },
 
-    ["Quiver"] = {
-        name = "Quiver",
+    ["Quiver Bag"] = {
+        name = "Quiver Bag",
         icon = "Interface\\Icons\\INV_Misc_Quiver_03",
         rules = {
             { type = "itemType", value = "Quiver" },
@@ -505,6 +506,19 @@ DefaultCategories.DEFINITIONS = {
         isBuiltIn = true,
         group = "Expansion",
     },
+
+    ["Quiver"] = {
+        name = "Quiver",
+        icon = "Interface\\AddOns\\GudaBags\\Assets\\quiver.png",
+        rules = {},  -- No rules - this is a pseudo-category for empty quiver/ammo bag slots only
+        matchMode = "any",
+        priority = -10,  -- Same as Empty - lowest priority, only for empty slot display
+        enabled = true,
+        isBuiltIn = true,
+        isQuiverCategory = true,  -- Special flag for quiver/ammo bag empty slot handling
+        group = "Other",
+        hideControls = true,  -- Don't show in category editor
+    },
 }
 
 -- Remove expansion-specific categories based on feature availability
@@ -512,6 +526,7 @@ if not Expansion.Features.HasKeyring then
     DefaultCategories.DEFINITIONS["Keyring"] = nil
 end
 if not Expansion.Features.HasQuiverBags then
+    DefaultCategories.DEFINITIONS["Quiver Bag"] = nil
     DefaultCategories.DEFINITIONS["Quiver"] = nil
 end
 if not Expansion.IsRetail then
@@ -525,8 +540,13 @@ local _, playerClass = UnitClass("player")
 if playerClass ~= "HUNTER" and playerClass ~= "WARLOCK" then
     DefaultCategories.DEFINITIONS["Class Items"].enabled = false
 end
-if playerClass ~= "HUNTER" and DefaultCategories.DEFINITIONS["Quiver"] then
-    DefaultCategories.DEFINITIONS["Quiver"].enabled = false
+if playerClass ~= "HUNTER" then
+    if DefaultCategories.DEFINITIONS["Quiver Bag"] then
+        DefaultCategories.DEFINITIONS["Quiver Bag"].enabled = false
+    end
+    if DefaultCategories.DEFINITIONS["Quiver"] then
+        DefaultCategories.DEFINITIONS["Quiver"].enabled = false
+    end
 end
 if playerClass ~= "WARLOCK" then
     DefaultCategories.DEFINITIONS["Soul Bag"].enabled = false
@@ -548,9 +568,9 @@ DefaultCategories.ORDER = {
     "Recipe",
 }
 
--- Quiver category for expansions that have it
+-- Quiver Bag category for expansions that have it (catches actual quiver/ammo bag items)
 if Expansion.Features.HasQuiverBags then
-    table.insert(DefaultCategories.ORDER, "Quiver")
+    table.insert(DefaultCategories.ORDER, "Quiver Bag")
 end
 
 -- Continue with common categories
@@ -566,6 +586,7 @@ local commonOrderContinued = {
     "Tools",
     "Empty",
     "Soul",
+    "Quiver",
     "Class Items",
 }
 for _, cat in ipairs(commonOrderContinued) do

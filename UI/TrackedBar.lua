@@ -227,6 +227,18 @@ end
 -- UI Creation
 -------------------------------------------------
 
+-- Region map for Masque, used at both initial registration and on live resize
+-- (UpdateSize re-registers each button at its new size to re-apply the skin).
+local function GetMasqueRegions(button)
+    return {
+        Icon = button.icon,
+        Cooldown = button.cooldown,
+        Count = button.count,
+        Highlight = button.highlight,
+        Normal = button:GetNormalTexture(),
+    }
+end
+
 local function CreateTrackedBarFrame()
     local buttonSize = GetButtonSize()
     local f = CreateFrame("Frame", "GudaTrackedBar", UIParent, "BackdropTemplate")
@@ -250,13 +262,7 @@ local function CreateTrackedBarFrame()
 
         -- Register with Masque if active
         if masqueActive then
-            MasqueModule:AddButton(button, "Tracked Items", {
-                Icon = button.icon,
-                Cooldown = button.cooldown,
-                Count = button.count,
-                Highlight = button.highlight,
-                Normal = button:GetNormalTexture(),
-            })
+            MasqueModule:AddButton(button, "Tracked Items", GetMasqueRegions(button))
         end
     end
 
@@ -620,12 +626,22 @@ function TrackedBar:UpdateSize()
     local buttonSize = GetButtonSize()
     local questIconSize = math.max(12, math.floor(buttonSize * 0.38))
 
+    local MasqueModule = ns:GetModule("Masque")
+    local masqueActive = MasqueModule and MasqueModule:IsActive()
+
     -- Resize all buttons and re-anchor child elements
     for i, button in ipairs(itemButtons) do
+        -- If Masque is active, unregister BEFORE resizing so we can re-register
+        -- at the new size — same effect as /reload, where Masque skins each
+        -- button at its current (new) size. Group:ReSkin alone is not enough:
+        -- it preserves stale region sizing from the original registration.
+        if masqueActive then
+            MasqueModule:RemoveButton(button)
+        end
+
         button:SetSize(buttonSize, buttonSize)
 
         -- Re-anchor icon and bg to fill resized button
-        -- (Masque may have overridden SetAllPoints with its own positioning)
         if button.icon then
             button.icon:ClearAllPoints()
             button.icon:SetAllPoints(button)
@@ -649,6 +665,11 @@ function TrackedBar:UpdateSize()
         end
         if button.questIcon then
             button.questIcon:SetSize(questIconSize, questIconSize)
+        end
+
+        -- Re-register with Masque so it re-skins the button at its new size.
+        if masqueActive then
+            MasqueModule:AddButton(button, "Tracked Items", GetMasqueRegions(button))
         end
     end
 

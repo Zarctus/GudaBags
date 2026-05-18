@@ -114,7 +114,7 @@ local function CreateBagSlotButton(parent, bagID, bagSlotSize)
                 ToggleBagVisibility(self.bagID)
                 BagSlots:UpdateBagVisualState(self)
 
-                -- Check if this is a soul bag and update SoulBag footer state
+                -- Check if this is a soul/quiver bag and update footer toggle state
                 local BagClassifier = ns:GetModule("BagFrame.BagClassifier")
                 if BagClassifier then
                     local bagType = BagClassifier:GetBagType(self.bagID)
@@ -122,6 +122,11 @@ local function CreateBagSlotButton(parent, bagID, bagSlotSize)
                         local SoulBag = ns:GetModule("Footer.SoulBag")
                         if SoulBag then
                             SoulBag:UpdateState()
+                        end
+                    elseif bagType == "quiver" or bagType == "ammo" then
+                        local QuiverBag = ns:GetModule("Footer.QuiverBag")
+                        if QuiverBag then
+                            QuiverBag:UpdateState()
                         end
                     end
                 end

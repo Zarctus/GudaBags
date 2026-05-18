@@ -15,6 +15,7 @@ local onBackCallback = nil
 local BagSlots = nil
 local Keyring = nil
 local SoulBag = nil
+local QuiverBag = nil
 local Money = nil
 local Currency = nil
 
@@ -22,6 +23,7 @@ local function LoadComponents()
     BagSlots = ns:GetModule("Footer.BagSlots")
     Keyring = ns:GetModule("Footer.Keyring")
     SoulBag = ns:GetModule("Footer.SoulBag")
+    QuiverBag = ns:GetModule("Footer.QuiverBag")
     Money = ns:GetModule("Footer.Money")
     Currency = ns:GetModule("Footer.Currency")
 end
@@ -68,16 +70,22 @@ function Footer:Init(parent)
     frame.soulBagButton = SoulBag:Init(frame)
     local soulBagButton = SoulBag:GetButton()
 
+    -- Initialize quiver/ammo bag toggle (Hunter Classic/TBC only - returns nil otherwise)
+    frame.quiverBagButton = QuiverBag:Init(frame)
+    local quiverBagButton = QuiverBag:GetButton()
+
     -- Initialize keyring (TBC only - returns nil for other expansions)
     frame.keyringButton = Keyring:Init(frame)
     local keyringButton = Keyring:GetButton()
 
-    -- Slot counter after keyring, soul bag, or bag slots (with tooltip frame for hover)
+    -- Slot counter after keyring, soul bag, quiver bag, or bag slots (with tooltip frame for hover)
     local slotInfoFrame = CreateFrame("Button", nil, frame)
     slotInfoFrame:EnableMouse(true)
     -- Anchor to rightmost special button available - NO GAP to prevent click-through
     if keyringButton then
         slotInfoFrame:SetPoint("LEFT", keyringButton, "RIGHT", 0, 0)
+    elseif quiverBagButton then
+        slotInfoFrame:SetPoint("LEFT", quiverBagButton, "RIGHT", 0, 0)
     elseif soulBagButton then
         slotInfoFrame:SetPoint("LEFT", soulBagButton, "RIGHT", 0, 0)
     else
@@ -188,7 +196,20 @@ function Footer:Show()
         end
     end
 
-    -- Position keyring relative to soul bag or bag slots (TBC only)
+    -- Position quiver/ammo bag relative to bag slots (Hunter Classic/TBC only)
+    local quiverBagButton = QuiverBag:GetButton()
+    if quiverBagButton then
+        local viewType = Database:GetSetting("bagViewType") or "single"
+        if viewType == "single" then
+            QuiverBag:SetAnchor(lastAnchor)
+            QuiverBag:Show()
+            lastAnchor = quiverBagButton
+        else
+            QuiverBag:Hide()
+        end
+    end
+
+    -- Position keyring relative to soul/quiver bag or bag slots (TBC only)
     local keyringButton = Keyring:GetButton()
     if keyringButton then
         Keyring:SetAnchor(lastAnchor)
@@ -219,6 +240,9 @@ function Footer:Hide()
     end
     if SoulBag:GetButton() then
         SoulBag:Hide()
+    end
+    if QuiverBag:GetButton() then
+        QuiverBag:Hide()
     end
     Money:Hide()
     Currency:Hide()
@@ -275,6 +299,47 @@ function Footer:Update()
                 end
             else
                 -- Position slot counter after bag slots
+                if frame.slotInfoFrame then
+                    frame.slotInfoFrame:ClearAllPoints()
+                    frame.slotInfoFrame:SetPoint("LEFT", bagAnchor, "RIGHT", 0, 0)
+                end
+            end
+        end
+    end
+
+    -- Update quiver/ammo bag visibility based on view type
+    -- (Hunter and Warlock are mutually exclusive, so this block runs only for Hunters)
+    local quiverBagButton = QuiverBag:GetButton()
+    if quiverBagButton then
+        local viewType = Database:GetSetting("bagViewType") or "single"
+        local bagAnchor = BagSlots:GetAnchor()
+        local keyringButton = Keyring:GetButton()
+
+        if viewType == "single" or viewType == "category" then
+            QuiverBag:SetAnchor(bagAnchor)
+            QuiverBag:Show()
+            QuiverBag:UpdateState()
+            if keyringButton then
+                Keyring:SetAnchor(quiverBagButton)
+                if frame.slotInfoFrame then
+                    frame.slotInfoFrame:ClearAllPoints()
+                    frame.slotInfoFrame:SetPoint("LEFT", keyringButton, "RIGHT", 0, 0)
+                end
+            else
+                if frame.slotInfoFrame then
+                    frame.slotInfoFrame:ClearAllPoints()
+                    frame.slotInfoFrame:SetPoint("LEFT", quiverBagButton, "RIGHT", 0, 0)
+                end
+            end
+        else
+            QuiverBag:Hide()
+            if keyringButton then
+                Keyring:SetAnchor(bagAnchor)
+                if frame.slotInfoFrame then
+                    frame.slotInfoFrame:ClearAllPoints()
+                    frame.slotInfoFrame:SetPoint("LEFT", keyringButton, "RIGHT", 0, 0)
+                end
+            else
                 if frame.slotInfoFrame then
                     frame.slotInfoFrame:ClearAllPoints()
                     frame.slotInfoFrame:SetPoint("LEFT", bagAnchor, "RIGHT", 0, 0)
@@ -345,6 +410,19 @@ function Footer:IsSoulBagVisible()
         return SoulBag:IsVisible()
     end
     return true  -- Default to showing soul bags when module not available
+end
+
+function Footer:SetQuiverBagCallback(callback)
+    if QuiverBag then
+        QuiverBag:SetCallback(callback)
+    end
+end
+
+function Footer:IsQuiverBagVisible()
+    if QuiverBag then
+        return QuiverBag:IsVisible()
+    end
+    return true  -- Default to showing quiver bags when module not available
 end
 
 function Footer:SetBagVisibilityCallback(callback)
@@ -443,6 +521,19 @@ function Footer:ShowCached(characterFullName)
         end
     end
 
+    -- Position and show quiver bag toggle (Hunter Classic/TBC only, single view only)
+    local quiverBagButton = QuiverBag:GetButton()
+    if quiverBagButton then
+        local viewType = Database:GetSetting("bagViewType") or "single"
+        if viewType == "single" then
+            QuiverBag:SetAnchor(lastAnchor)
+            QuiverBag:Show()
+            lastAnchor = quiverBagButton
+        else
+            QuiverBag:Hide()
+        end
+    end
+
     -- Position and show keyring for toggle functionality (TBC only)
     local keyringButton = Keyring:GetButton()
     if keyringButton then
@@ -457,13 +548,16 @@ function Footer:ShowCached(characterFullName)
     Money:Show()
     Money:UpdateCached(characterFullName)
 
-    -- Update bag slots and keyring/soul bag state
+    -- Update bag slots and keyring/soul/quiver bag state
     BagSlots:Update()
     if keyringButton then
         Keyring:UpdateState()
     end
     if soulBagButton then
         SoulBag:UpdateState()
+    end
+    if quiverBagButton then
+        QuiverBag:UpdateState()
     end
 end
 

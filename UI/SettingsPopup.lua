@@ -50,6 +50,7 @@ local function GetTabList()
         { id = "layout", label = ns.L["TAB_LAYOUT"], tooltip = ns.L["TAB_LAYOUT_TIP"] },
         { id = "icons", label = ns.L["TAB_ICONS"], tooltip = ns.L["TAB_ICONS_TIP"] },
         { id = "bar", label = ns.L["TAB_BAR"], tooltip = ns.L["TAB_BAR_TIP"] },
+        { id = "features", label = ns.L["TAB_FEATURES"], tooltip = ns.L["TAB_FEATURES_TIP"] },
         { id = "profiles", label = ns.L["TAB_PROFILES"], tooltip = ns.L["TAB_PROFILES_TIP"] },
         { id = "categories", label = ns.L["TAB_CATEGORIES"], tooltip = ns.L["TAB_CATEGORIES_TIP"] },
         { id = "guide", label = ns.L["TAB_GUIDE"], tooltip = ns.L["TAB_GUIDE_TIP"] },
@@ -1896,6 +1897,13 @@ local function CreateSettingsFrame()
         f.Inset:Hide()
     end
 
+    -- Bypass HideParentPanel -> HideUIPanel (blocked in combat because it
+    -- touches UIParent's panel-management attributes). frame:Hide() on a
+    -- non-protected frame is combat-safe, matching the ESC / bag-frame toggle path.
+    if f.CloseButton then
+        f.CloseButton:SetScript("OnClick", function() f:Hide() end)
+    end
+
     -- Set title
     f:SetTitle(L["SETTINGS_TITLE"])
 
@@ -1960,6 +1968,7 @@ local function CreateSettingsFrame()
     tabPanel:SetContent("layout", CreateTabFromSchema(f, function() return SettingsSchema.GetLayout() end))
     tabPanel:SetContent("icons", CreateTabFromSchema(f, SettingsSchema.GetIcons()))
     tabPanel:SetContent("bar", CreateTabFromSchema(f, SettingsSchema.GetBar()))
+    tabPanel:SetContent("features", CreateTabFromSchema(f, function() return SettingsSchema.GetFeatures() end))
     local ProfilesTabModule = ns:GetModule("ProfilesTab")
     tabPanel:SetContent("profiles", ProfilesTabModule:CreateContent(f))
     tabPanel:SetContent("categories", CreateCategoriesTab(f))

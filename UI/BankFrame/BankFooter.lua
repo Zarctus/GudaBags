@@ -20,6 +20,7 @@ local BankScanner = nil
 local RetailBankScanner = nil
 local Money = nil
 local Database = nil
+local Events = nil
 
 -- Retail bank action buttons
 local depositReagentsButton = nil
@@ -32,6 +33,7 @@ local function LoadComponents()
     BankScanner = ns:GetModule("BankScanner")
     Money = ns:GetModule("Footer.Money")
     Database = ns:GetModule("Database")
+    Events = ns:GetModule("Events")
     if ns.IsRetail then
         RetailBankScanner = ns:GetModule("RetailBankScanner")
     end
@@ -863,6 +865,28 @@ function BankFooter:Init(parent)
             end
         end)
 
+        flySlot:RegisterForDrag("LeftButton")
+
+        flySlot:SetScript("OnDragStart", function(self)
+            if self.bagID and self.bagID >= 5 and self.bagID <= 11 and not self.needPurchase then
+                local bankBagIndex = self.bagID - 4
+                local itemID, _, invSlot = GetBankBagInfo(bankBagIndex)
+                if itemID then
+                    PickupInventoryItem(invSlot)
+                end
+            end
+        end)
+
+        flySlot:SetScript("OnReceiveDrag", function(self)
+            if self.bagID and self.bagID >= 5 and self.bagID <= 11 and not self.needPurchase then
+                local bankBagIndex = self.bagID - 4
+                local _, _, invSlot = GetBankBagInfo(bankBagIndex)
+                if CursorHasItem() then
+                    PickupInventoryItem(invSlot)
+                end
+            end
+        end)
+
         frame.flyoutSlots[i] = flySlot
     end
 
@@ -912,6 +936,17 @@ function BankFooter:Init(parent)
     function BankFooter:RefreshFlyoutSlots()
         UpdateFlyoutSlots()
     end
+
+    -- Repaint bag-slot textures when an equipped bank bag is swapped/added/removed.
+    -- PLAYERBANKBAGSLOTS_CHANGED only reliably fires for slot purchases on Classic, so
+    -- we react to BAG_UPDATE for the bank-bag bagIDs (5-11) instead.
+    Events:Register("BAG_UPDATE", function(event, bagID)
+        if not bagID or bagID < 5 or bagID > 11 then return end
+        if viewingCharacter then return end
+        if not BankScanner:IsBankOpen() then return end
+        BankFooter:Update()
+        UpdateFlyoutSlots()
+    end, BankFooter)
 
     -- Slot counter after bag containers (with tooltip frame for hover)
     local slotInfoFrame = CreateFrame("Frame", nil, frame)

@@ -107,7 +107,7 @@ function CategoryDropIndicator:Show(hoveredButton)
     end
 
     local categoryId = hoveredButton.categoryId
-    if not categoryId or categoryId == "Empty" or categoryId == "Home" or categoryId == "Recent" or categoryId == "Soul" then
+    if not categoryId or categoryId == "Empty" or categoryId == "Home" or categoryId == "Recent" or categoryId == "Soul" or categoryId == "Quiver" then
         return
     end
 
@@ -207,7 +207,7 @@ end
 function CategoryDropIndicator:OnItemButtonEnter(button)
     if dropCooldown then return end  -- Don't show during cooldown after drop
     if not self:CursorHasItem() then return end
-    if not button.categoryId or button.categoryId == "Empty" or button.categoryId == "Home" or button.categoryId == "Recent" or button.categoryId == "Soul" then return end
+    if not button.categoryId or button.categoryId == "Empty" or button.categoryId == "Home" or button.categoryId == "Recent" or button.categoryId == "Soul" or button.categoryId == "Quiver" then return end
 
     -- Don't show indicator if dragged item is already in this category
     if self:IsDraggedItemInCategory(button.categoryId) then return end
@@ -221,7 +221,7 @@ function CategoryDropIndicator:OnItemButtonUpdate(button)
         self:Hide()
         return
     end
-    if not button.categoryId or button.categoryId == "Empty" or button.categoryId == "Home" or button.categoryId == "Recent" or button.categoryId == "Soul" then return end
+    if not button.categoryId or button.categoryId == "Empty" or button.categoryId == "Home" or button.categoryId == "Recent" or button.categoryId == "Soul" or button.categoryId == "Quiver" then return end
 
     -- Don't show indicator if dragged item is already in this category
     if self:IsDraggedItemInCategory(button.categoryId) then

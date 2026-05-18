@@ -55,6 +55,7 @@ local function InitializeCharDB()
     GudaBags_CharDB.pinnedSlots = GudaBags_CharDB.pinnedSlots or {}
     GudaBags_CharDB.lockedItems = GudaBags_CharDB.lockedItems or {}
     GudaBags_CharDB.setProtectionExceptions = GudaBags_CharDB.setProtectionExceptions or {}
+    GudaBags_CharDB.markedJunk = GudaBags_CharDB.markedJunk or {}
 
     for key, default in pairs(Constants.DEFAULTS) do
         if GudaBags_CharDB.settings[key] == nil then
@@ -261,6 +262,32 @@ function Database:ToggleItemLock(itemID)
         GudaBags_CharDB.lockedItems[itemID] = true
         return true
     end
+end
+
+-------------------------------------------------
+-- Marked Junk (per-character, itemID-based)
+-------------------------------------------------
+
+function Database:IsItemMarkedJunk(itemID)
+    if not itemID or not GudaBags_CharDB or not GudaBags_CharDB.markedJunk then return false end
+    return GudaBags_CharDB.markedJunk[itemID] or false
+end
+
+function Database:ToggleItemMarkedJunk(itemID)
+    if not itemID or not GudaBags_CharDB then return false end
+    GudaBags_CharDB.markedJunk = GudaBags_CharDB.markedJunk or {}
+    if GudaBags_CharDB.markedJunk[itemID] then
+        GudaBags_CharDB.markedJunk[itemID] = nil
+        return false
+    else
+        GudaBags_CharDB.markedJunk[itemID] = true
+        return true
+    end
+end
+
+function Database:GetMarkedJunkSet()
+    if not GudaBags_CharDB or not GudaBags_CharDB.markedJunk then return {} end
+    return GudaBags_CharDB.markedJunk
 end
 
 -------------------------------------------------

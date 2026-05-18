@@ -31,6 +31,15 @@ local SAVE_DELAY = 1.0
 local updateFrame = CreateFrame("Frame")
 updateFrame:Hide()
 
+-- Server denies QueryGuildBankTab on tabs the player cannot view, producing
+-- "You don't have permission to do that" chat spam. Skip those tabs.
+local function QueryViewableTab(tabIndex)
+    local _, _, isViewable = GetGuildBankTabInfo(tabIndex)
+    if isViewable then
+        QueryGuildBankTab(tabIndex)
+    end
+end
+
 -------------------------------------------------
 -- Guild Bank State
 -------------------------------------------------
@@ -230,7 +239,7 @@ function GuildBankScanner:ScanAllTabs()
     -- Query all tabs to request data from server
     for i = 1, numTabs do
         ns:Debug("ScanAllTabs: Querying tab", i)
-        QueryGuildBankTab(i)
+        QueryViewableTab(i)
     end
 
     -- Scan each tab (data may not be fully loaded yet, but scan what's available)
@@ -453,7 +462,7 @@ local function HandleGuildBankOpened()
     local numTabs = GuildBankScanner:GetNumTabs()
     ns:Debug("  numTabs =", numTabs)
     for i = 1, numTabs do
-        QueryGuildBankTab(i)
+        QueryViewableTab(i)
     end
 
     -- Initial scan (may have partial data)
@@ -598,7 +607,7 @@ Events:Register("GUILDBANKBAGSLOTS_CHANGED", function()
 
         -- Query all tabs
         for i = 1, numTabs do
-            QueryGuildBankTab(i)
+            QueryViewableTab(i)
         end
 
         -- Second phase: After queries, scan the data
@@ -656,7 +665,7 @@ Events:Register("GUILDBANK_ITEM_LOCK_CHANGED", function(event, tabIndex, slotInd
             ns:Debug("  Querying tab", targetTab, "after item lock change")
             isQueryingTabs = true
             queryStartTime = GetTime()
-            QueryGuildBankTab(targetTab)
+            QueryViewableTab(targetTab)
         end
 
         -- Scan after query
@@ -746,7 +755,7 @@ if Expansion and Expansion.InterfaceVersion and Expansion.InterfaceVersion >= 50
                 local numTabs = GuildBankScanner:GetNumTabs()
                 ns:Debug("  numTabs =", numTabs)
                 for i = 1, numTabs do
-                    QueryGuildBankTab(i)
+                    QueryViewableTab(i)
                 end
 
                 -- Initial scan

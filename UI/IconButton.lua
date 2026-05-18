@@ -41,6 +41,14 @@ local ICONS = {
         texture = "Interface\\AddOns\\GudaBags\\Assets\\envelope.png",
         size = 16,
     },
+    viewCycle = {
+        texture = "Interface\\AddOns\\GudaBags\\Assets\\categories.png",
+        size = 16,
+    },
+    recent = {
+        texture = "Interface\\AddOns\\GudaBags\\Assets\\fav.png",
+        size = 16,
+    },
 }
 
 local DEFAULT_HIGHLIGHT = "Interface\\Buttons\\UI-Panel-MinimizeButton-Highlight"

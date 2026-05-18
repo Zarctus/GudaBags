@@ -24,7 +24,18 @@ function TooltipScanner:SetBagItem(bagID, slotID)
     local tooltip = self:GetTooltip()
     tooltip:SetOwner(WorldFrame, "ANCHOR_NONE")
     tooltip:ClearLines()
-    tooltip:SetBagItem(bagID, slotID)
+
+    if bagID == -1 then
+        -- BANK_CONTAINER's 28 main slots use inventory slot IDs, not bag/slot.
+        -- tooltip:SetBagItem(-1, slot) does not reliably return per-slot data
+        -- (e.g. "X Charges") in Classic. Mirrors UI/Tooltip.lua:208-219.
+        local invSlot = BankButtonIDToInvSlotID and BankButtonIDToInvSlotID(slotID)
+        if invSlot then
+            tooltip:SetInventoryItem("player", invSlot)
+        end
+    else
+        tooltip:SetBagItem(bagID, slotID)
+    end
 
     return tooltip:NumLines() and tooltip:NumLines() > 0
 end
@@ -237,4 +248,67 @@ function TooltipScanner:HasSpecialProperties(bagID, slotID)
     end
 
     return self:HasText({"Use:", "Equip:", "Chance on hit"})
+end
+
+-------------------------------------------------
+-- Charges (Wizard Oil, Sharpening Stones, etc.)
+-------------------------------------------------
+
+-- Per-slot cache: charges depend on slot state (uses deplete a charge), not on the link.
+-- Value = number (charges remaining), false (scanned, no charges), nil (not scanned yet)
+local chargesCache = {}
+
+function TooltipScanner:GetCharges(bagID, slotID)
+    if not bagID or not slotID then return nil end
+    local key = bagID * 1000 + slotID
+    local cached = chargesCache[key]
+    if cached ~= nil then
+        if cached == false then return nil end
+        return cached
+    end
+
+    if not self:SetBagItem(bagID, slotID) then
+        return nil  -- tooltip not ready; don't poison cache
+    end
+
+    local charges = nil
+    self:ScanLines(function(lineNum, text)
+        local _, _, num = string.find(text:lower(), "^(%d+) charges?$")
+        if num then
+            charges = tonumber(num)
+            return true
+        end
+    end, 10)
+
+    chargesCache[key] = charges or false
+    return charges
+end
+
+function TooltipScanner:InvalidateCharges(bagID)
+    if bagID then
+        local lo = bagID * 1000
+        local hi = lo + 999
+        for key in pairs(chargesCache) do
+            if key >= lo and key <= hi then
+                chargesCache[key] = nil
+            end
+        end
+    else
+        chargesCache = {}
+    end
+end
+
+local Events = ns:GetModule("Events")
+if Events then
+    Events:Register("BAG_UPDATE", function(event, bagID)
+        TooltipScanner:InvalidateCharges(bagID)
+    end, "TooltipScanner_Charges")
+
+    -- Applying oils, sharpening stones, scrolls, etc. fires UNIT_SPELLCAST_SUCCEEDED
+    -- but does NOT reliably fire BAG_UPDATE in Classic — the slot's itemID and
+    -- stackCount are unchanged, only the embedded charge count decremented.
+    Events:Register("UNIT_SPELLCAST_SUCCEEDED", function(event, unit)
+        if unit ~= "player" then return end
+        TooltipScanner:InvalidateCharges()
+    end, "TooltipScanner_Charges_Cast")
 end

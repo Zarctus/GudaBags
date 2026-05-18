@@ -59,29 +59,32 @@ function BagScanner:ScanAllBags()
 end
 
 -- Scan only specific bags that are marked dirty
--- Optimized: only scans slots that actually changed, not the entire bag
+-- Optimized: only scans slots that actually changed, not the entire bag.
+--
+-- Recent-marker emission is deferred to the end of this function: a snapshot
+-- of knownItemIDs is taken before per-slot diffs run, and only itemIDs whose
+-- TOTAL slot occurrence count went 0→>0 (first appears) or >0→0 (last
+-- vanishes) emit a marker. The per-slot path used to fire MarkRecent for any
+-- item that landed in a previously-empty slot, which produced false positives
+-- whenever a sort moved items between slots.
 function BagScanner:ScanDirtyBags(bagIDs)
-    -- Cache module reference once for the entire scan batch
-    local RecentItems = ns:GetModule("RecentItems")
-
-    -- Don't mark items as Recent while sorting/restacking (items just move slots)
-    local SortEngine = ns:GetModule("SortEngine")
-    local isSorting = SortEngine and (SortEngine:IsSorting() or SortEngine:IsRestacking())
+    -- Snapshot for the post-loop Recent diff. Shallow copy is enough because
+    -- knownItemIDs values are numbers.
+    local prevKnown = {}
+    for itemID, count in pairs(knownItemIDs) do
+        prevKnown[itemID] = count
+    end
 
     for bagID in pairs(bagIDs) do
         local numSlots = C_Container.GetContainerNumSlots(bagID)
         if not numSlots or numSlots == 0 then
-            -- Bag was removed or emptied - update known item counts
+            -- Bag was removed or emptied - update known item counts.
             if cachedBags[bagID] and cachedBags[bagID].slots then
                 for slot, itemData in pairs(cachedBags[bagID].slots) do
                     if itemData and itemData.itemID then
                         knownItemIDs[itemData.itemID] = (knownItemIDs[itemData.itemID] or 1) - 1
                         if knownItemIDs[itemData.itemID] <= 0 then
                             knownItemIDs[itemData.itemID] = nil
-                            -- Item completely removed from inventory - remove from Recent
-                            if RecentItems then
-                                RecentItems:RemoveRecent(itemData.itemID)
-                            end
                         end
                     end
                 end
@@ -90,20 +93,15 @@ function BagScanner:ScanDirtyBags(bagIDs)
         else
             local existingBag = cachedBags[bagID]
             if not existingBag then
-                -- New bag, do full scan
+                -- New bag (newly equipped) - do full scan and update known counts.
+                -- Recent emission is handled by the post-loop diff against prevKnown.
                 local bagData = ItemScanner:ScanContainer(bagID)
                 if bagData then
                     cachedBags[bagID] = bagData
-                    -- Track item IDs from this bag
                     if bagData.slots then
                         for slot, itemData in pairs(bagData.slots) do
                             if itemData and itemData.itemID then
-                                local wasNew = not knownItemIDs[itemData.itemID]
                                 knownItemIDs[itemData.itemID] = (knownItemIDs[itemData.itemID] or 0) + 1
-                                -- Mark truly new items as Recent (skip during sorting)
-                                if wasNew and not isSorting and RecentItems then
-                                    RecentItems:MarkRecent(itemData.itemID)
-                                end
                             end
                         end
                     end
@@ -120,27 +118,20 @@ function BagScanner:ScanDirtyBags(bagIDs)
                     local cachedItemID = cachedItem and cachedItem.itemID
 
                     if currentItemID ~= cachedItemID then
-                        -- Slot changed - update known item counts
+                        -- Slot changed - update known item counts. Recent
+                        -- emission is handled by the post-loop diff so that
+                        -- items merely moving between slots (sort, restack,
+                        -- manual rearrange) don't fire false markers.
                         if cachedItemID then
                             knownItemIDs[cachedItemID] = (knownItemIDs[cachedItemID] or 1) - 1
                             if knownItemIDs[cachedItemID] <= 0 then
                                 knownItemIDs[cachedItemID] = nil
-                                -- Item completely removed from inventory - remove from Recent
-                                if not isSorting and RecentItems then
-                                    RecentItems:RemoveRecent(cachedItemID)
-                                end
                             end
                         end
 
                         if itemInfo then
-                            -- Update known count
                             if currentItemID then
-                                local wasNew = not knownItemIDs[currentItemID]
                                 knownItemIDs[currentItemID] = (knownItemIDs[currentItemID] or 0) + 1
-                                -- Mark truly new items as Recent (skip during sorting)
-                                if wasNew and not isSorting and RecentItems then
-                                    RecentItems:MarkRecent(currentItemID)
-                                end
                             end
 
                             -- Try fast path first (uses cached tooltip data)
@@ -174,6 +165,31 @@ function BagScanner:ScanDirtyBags(bagIDs)
                 -- Update free slots count
                 existingBag.freeSlots = freeSlots
                 existingBag.numSlots = numSlots
+            end
+        end
+    end
+
+    -- Deferred Recent diff: emit MarkRecent only for itemIDs whose first slot
+    -- just appeared, RemoveRecent only for those whose last slot just vanished.
+    -- Skip entirely while a sort or restack is in progress — those operations
+    -- preserve total item counts, so the post-sort scan will see no diff and
+    -- correctly emit no markers. (Mid-sort scans can show transient cursor-
+    -- pickup states where a count momentarily drops to 0; suppressing them
+    -- avoids false marker churn.)
+    local SortEngine = ns:GetModule("SortEngine")
+    local sortActive = SortEngine and (SortEngine:IsSorting() or SortEngine:IsRestacking())
+    if not sortActive then
+        local RecentItems = ns:GetModule("RecentItems")
+        if RecentItems then
+            for itemID, count in pairs(knownItemIDs) do
+                if count and count > 0 and not prevKnown[itemID] then
+                    RecentItems:MarkRecent(itemID)
+                end
+            end
+            for itemID, prevCount in pairs(prevKnown) do
+                if prevCount > 0 and not knownItemIDs[itemID] then
+                    RecentItems:RemoveRecent(itemID)
+                end
             end
         end
     end

@@ -11,6 +11,8 @@ local Database = ns:GetModule("Database")
 -- This is stored in character DB and persists across sessions
 local recentItems = nil  -- Lazy loaded from DB
 
+local JUNK_RULE = { type = "isJunk", value = true }
+
 -- Flag to indicate Recent items were removed (for triggering full refresh)
 local recentItemsRemoved = false
 
@@ -31,6 +33,30 @@ local function SaveRecentItems()
     if GudaBags_CharDB then
         GudaBags_CharDB.recentItems = recentItems
     end
+end
+
+local function FindItemSlot(itemID)
+    local BagScanner = ns:GetModule("BagScanner")
+    if not BagScanner then return nil end
+    local bags = BagScanner:GetCachedBags()
+    if not bags then return nil end
+    for bagID, bagData in pairs(bags) do
+        if bagData.slots then
+            for slot, itemData in pairs(bagData.slots) do
+                if itemData and itemData.itemID == itemID then
+                    return itemData, bagID, slot
+                end
+            end
+        end
+    end
+    return nil
+end
+
+local function IsItemCurrentlyJunk(itemID)
+    local itemData, bagID, slot = FindItemSlot(itemID)
+    if not itemData then return false end
+    local context = RuleEngine:BuildContext(bagID, slot, false)
+    return RuleEngine:Evaluate(JUNK_RULE, itemData, context)
 end
 
 -- Get the recent duration from the Recent category rule (in seconds)
@@ -91,6 +117,10 @@ local function MarkItemRecent(itemID)
         if categories.itemOverrides and categories.itemOverrides[itemID] then
             return  -- Item was manually assigned, don't mark as recent
         end
+    end
+
+    if IsItemCurrentlyJunk(itemID) then
+        return
     end
 
     local items = GetRecentItems()
@@ -166,6 +196,16 @@ end
 RuleEngine:RegisterEvaluator("isRecent", function(ruleValue, itemData, context)
     -- Can't track recent for other characters
     if context.isOtherChar then
+        return false
+    end
+
+    if itemData and itemData.itemID
+       and RuleEngine:Evaluate(JUNK_RULE, itemData, context) then
+        local items = GetRecentItems()
+        if items[itemData.itemID] then
+            items[itemData.itemID] = nil
+            SaveRecentItems()
+        end
         return false
     end
 

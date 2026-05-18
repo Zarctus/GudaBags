@@ -240,6 +240,10 @@ Constants.CATEGORY_FONT_SMALL = 9        -- Font size when icon size < threshold
 Constants.CATEGORY_FONT_LARGE = 10       -- Font size when icon size >= threshold
 Constants.CATEGORY_ICON_SIZE_THRESHOLD = 28
 
+-- Bag/bank view modes — single source of truth for the cycle order, the select
+-- options in SettingsSchema, and the default values below.
+Constants.VIEW_TYPES = { "single", "category", "split" }
+
 Constants.DEFAULTS = {
     -- General
     theme = "guda",
@@ -266,6 +270,7 @@ Constants.DEFAULTS = {
     hideQuestBarInBGs = true,
     hoverBagline = false,
     showFooter = true,
+    showDragFlyout = true,
     showTooltipCounts = true,
     -- Header button visibility (see UI/Components/HeaderButtonVisibility.lua)
     showHeaderCharacters = true,
@@ -274,6 +279,8 @@ Constants.DEFAULTS = {
     showHeaderMail = true,
     showHeaderSort = true,
     showHeaderSearch = true,
+    showHeaderViewCycle = false,
+    showHeaderRecentToggle = false,
     goldTrackAllRealms = false,  -- Show gold from all realms in money tooltip (Retail only)
     bagViewType = "single",
     bankViewType = "single",
@@ -285,6 +292,7 @@ Constants.DEFAULTS = {
     mergedGroups = {},  -- Per-group merge settings: { ["Main"] = true, ["Other"] = false }
     recentDuration = 15,  -- Minutes items stay in Recent category
     showSoulBag = true,  -- Show soul bag in single view (Warlock only)
+    hideQuiverItems = false,  -- Hide arrow/bullet items in category view (Hunter only)
     autoOpenBags = true,  -- Auto open bags when interacting with mail, trade, AH, bank, guild bank
     autoCloseBags = true,  -- Auto close bags when ending those interactions
     autoVendorJunk = true,  -- Auto sell gray items at merchants
@@ -312,6 +320,7 @@ Constants.DEFAULTS = {
     markUnusableItems = true,
     markEquipmentSets = true,
     showItemLevel = true,
+    showCharges = true,
     reverseStackSort = false,
     sortRightToLeft = false,
     smoothSort = false,  -- Spread sort moves across frames to avoid stuttering
@@ -383,8 +392,8 @@ Constants.CATEGORY_UI = {
     HEADER_HEIGHT = 20,
 
     -- Settings popup
-    POPUP_WIDTH = 520,
-    POPUP_HEIGHT = 600,
+    POPUP_WIDTH = 620,
+    POPUP_HEIGHT = 550,
     POPUP_PADDING = 16,
 
     -- Editor

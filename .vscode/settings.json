@@ -98,5 +98,6 @@
         "BagItemAutoSortButton",
         "NUM_CONTAINER_FRAMES"
     ],
-    "Lua.type.weakUnionCheck": true
+    "Lua.type.weakUnionCheck": true,
+    "stylua.targetReleaseVersion": "latest"
 }

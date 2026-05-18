@@ -7,6 +7,7 @@ local Constants = ns.Constants
 local L = ns.L
 local Database = ns:GetModule("Database")
 local HeaderButtonVisibility = ns:GetModule("HeaderButtonVisibility")
+local HeaderViewControls = ns:GetModule("HeaderViewControls")
 local IconButton = ns:GetModule("IconButton")
 local ItemButton = ns:GetModule("ItemButton")
 local SearchToggleButton = ns:GetModule("SearchToggleButton")
@@ -83,11 +84,23 @@ local function CreateHeader(parent)
     titleBar:SetScript("OnDragStart", function()
         if not Database:GetSetting("locked") then
             parent:StartMoving()
+            -- Public flag observed by satellite buttons (Disenchant, Pick Lock,
+            -- Prospecting) so they can hide during the drag. Frame:IsMoving()
+            -- is not available on all Classic clients.
+            parent._isDragging = true
+
+            if parent == _G["GudaBagsBagFrame"] then
+                local ProfessionButton = ns:GetModule("Footer.ProfessionButton")
+                if ProfessionButton and ProfessionButton.HideAllInstantly then
+                    ProfessionButton:HideAllInstantly()
+                end
+            end
         end
     end)
 
     titleBar:SetScript("OnDragStop", function()
         parent:StopMovingOrSizing()
+        parent._isDragging = nil
         if onDragStop then
             onDragStop()
         end
@@ -288,6 +301,15 @@ local function CreateHeader(parent)
         lastRightButton = sortButton
     end
 
+    local viewCycleButton, recentToggleButton = HeaderViewControls:Attach(titleBar, {
+        viewSettingKey = "bagViewType",
+        ownerPrefix    = "Header",
+        anchorButton   = lastRightButton,
+    })
+    titleBar.viewCycleButton = viewCycleButton
+    titleBar.recentToggleButton = recentToggleButton
+    lastRightButton = recentToggleButton
+
     -- Search toggle button (shown when "Always Show Search Bar" is off)
     local searchButton = SearchToggleButton:Create(titleBar, {
         targetModule = "BagFrame",
@@ -359,13 +381,14 @@ function Header:SetBackdropAlpha(alpha)
         HeaderButtonVisibility:ApplyState(frame.envelopeButton)
     end
     HeaderButtonVisibility:ApplyState(frame.sortButton)
+    HeaderViewControls:ApplyVisibility(frame.viewCycleButton, frame.recentToggleButton, "bagViewType")
     -- searchButton manages its own Show/Hide via SearchToggleButton's listener
 
     local leftButtons = HeaderButtonVisibility:Filter({
         frame.charactersButton, frame.chestButton, frame.guildButton, frame.envelopeButton
     })
     local rightButtons = HeaderButtonVisibility:Filter({
-        frame.settingsButton, frame.sortButton, frame.searchButton
+        frame.settingsButton, frame.sortButton, frame.viewCycleButton, frame.recentToggleButton, frame.searchButton
     })
 
     Theme:ApplyHeaderButtons(
@@ -378,6 +401,11 @@ end
 
 -- Re-apply header layout when any header button setting flips.
 HeaderButtonVisibility:Watch(Header, function()
+    if frame then Header:SetBackdropAlpha(lastAlpha) end
+end)
+
+-- Recent toggle is gated by bagViewType too — re-lay out when the view cycles.
+HeaderViewControls:WatchViewType("bagViewType", "Header", function()
     if frame then Header:SetBackdropAlpha(lastAlpha) end
 end)
 

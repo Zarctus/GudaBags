@@ -66,10 +66,11 @@ local function IsInteractionWindowOpen()
 end
 
 -- Build display order from classified bags
--- Returns array of {bagID, needsSpacing, isKeyring, isSoulBag}
+-- Returns array of {bagID, needsSpacing, isKeyring, isSoulBag, isQuiverBag}
 -- bags parameter is optional, used to check cached keyring data
 -- showSoulBag parameter controls whether soul bags are included (default true)
-function LayoutEngine:BuildDisplayOrder(classifiedBags, showKeyring, bags, showSoulBag)
+-- showQuiverBag parameter controls whether quiver/ammo bags are included (default true)
+function LayoutEngine:BuildDisplayOrder(classifiedBags, showKeyring, bags, showSoulBag, showQuiverBag)
     local bagsToShow = {}
 
     -- Regular bags first (no spacing)
@@ -98,14 +99,14 @@ function LayoutEngine:BuildDisplayOrder(classifiedBags, showKeyring, bags, showS
         end
     end
 
-    -- Quiver bags
-    for i, bagID in ipairs(classifiedBags.quiver or {}) do
-        table.insert(bagsToShow, {bagID = bagID, needsSpacing = (i == 1)})
-    end
-
-    -- Ammo bags
-    for i, bagID in ipairs(classifiedBags.ammo or {}) do
-        table.insert(bagsToShow, {bagID = bagID, needsSpacing = (i == 1)})
+    -- Quiver/Ammo bags (Hunter only, gated by showQuiverBag toggle)
+    if showQuiverBag ~= false then
+        for i, bagID in ipairs(classifiedBags.quiver or {}) do
+            table.insert(bagsToShow, {bagID = bagID, needsSpacing = (i == 1), isQuiverBag = true})
+        end
+        for i, bagID in ipairs(classifiedBags.ammo or {}) do
+            table.insert(bagsToShow, {bagID = bagID, needsSpacing = (i == 1), isQuiverBag = true})
+        end
     end
 
     -- Keyring (if shown)
@@ -410,17 +411,20 @@ local EXPANSION_HEADER_HEIGHT = 22  -- Height of expansion tier separator header
 -- Collect items for category view (skips empty slots but counts them)
 -- Returns array of {bagID, slot, itemData}, emptyCount, firstEmptySlot, soulEmptyCount, firstSoulEmptySlot
 -- forceSoulVisible: if true, overrides hideSoulItems setting (used by bank view)
-function LayoutEngine:CollectItemsForCategoryView(bagsToShow, bags, isViewingCached, forceSoulVisible)
+function LayoutEngine:CollectItemsForCategoryView(bagsToShow, bags, isViewingCached, forceSoulVisible, forceQuiverVisible)
     local items = {}
     local emptyCount = 0
     local firstEmptySlot = nil  -- {bagID, slot} of first empty slot found
     local soulEmptyCount = 0
     local firstSoulEmptySlot = nil  -- {bagID, slot} of first soul bag empty slot
+    local quiverEmptyCount = 0
+    local firstQuiverEmptySlot = nil  -- {bagID, slot} of first quiver/ammo bag empty slot
 
-    -- Check if soul shard items should be hidden (category view toggle)
-    -- Bank view always shows soul items (no toggle button in bank footer)
+    -- Check if soul shard / quiver items should be hidden (category view toggles)
+    -- Bank view always shows them (no toggle button in bank footer)
     local Database = ns:GetModule("Database")
     local hideSoulItems = not forceSoulVisible and Database and Database:GetSetting("hideSoulItems")
+    local hideQuiverItems = not forceQuiverVisible and Database and Database:GetSetting("hideQuiverItems")
 
     -- Get BagClassifier for accurate bag type detection
     local BagClassifier = ns:GetModule("BagFrame.BagClassifier")
@@ -436,6 +440,16 @@ function LayoutEngine:CollectItemsForCategoryView(bagsToShow, bags, isViewingCac
             elseif BagClassifier then
                 local bagType = BagClassifier:GetBagType(bagID)
                 isSoulBag = (bagType == "soul")
+            end
+        end
+        -- Quiver/ammo bag detection mirrors soul-bag detection (Hunter equivalent)
+        local isQuiverBag = bagInfo.isQuiverBag
+        if isQuiverBag == nil then
+            if bagData and bagData.bagType then
+                isQuiverBag = (bagData.bagType == "quiver" or bagData.bagType == "ammo")
+            elseif BagClassifier then
+                local bagType = BagClassifier:GetBagType(bagID)
+                isQuiverBag = (bagType == "quiver" or bagType == "ammo")
             end
         end
 
@@ -497,13 +511,18 @@ function LayoutEngine:CollectItemsForCategoryView(bagsToShow, bags, isViewingCac
                     if isSoulBag then
                         itemData.isInSoulBag = true
                     end
-                    -- Skip soul bag items when hidden via footer toggle (empty slots still counted below)
-                    if not (isSoulBag and hideSoulItems) then
+                    -- Mark arrows/bullets from quiver/ammo bags for special display
+                    if isQuiverBag then
+                        itemData.isInQuiverBag = true
+                    end
+                    -- Skip soul/quiver bag items when hidden via footer toggle (empty slots still counted below)
+                    if not (isSoulBag and hideSoulItems) and not (isQuiverBag and hideQuiverItems) then
                         table.insert(items, {
                             bagID = bagID,
                             slot = slot,
                             itemData = itemData,
                             isInSoulBag = isSoulBag,
+                            isInQuiverBag = isQuiverBag,
                         })
                     end
                 else
@@ -511,6 +530,11 @@ function LayoutEngine:CollectItemsForCategoryView(bagsToShow, bags, isViewingCac
                         soulEmptyCount = soulEmptyCount + 1
                         if not firstSoulEmptySlot then
                             firstSoulEmptySlot = {bagID = bagID, slot = slot}
+                        end
+                    elseif isQuiverBag then
+                        quiverEmptyCount = quiverEmptyCount + 1
+                        if not firstQuiverEmptySlot then
+                            firstQuiverEmptySlot = {bagID = bagID, slot = slot}
                         end
                     else
                         emptyCount = emptyCount + 1
@@ -532,6 +556,11 @@ function LayoutEngine:CollectItemsForCategoryView(bagsToShow, bags, isViewingCac
                             if not firstSoulEmptySlot then
                                 firstSoulEmptySlot = {bagID = bagID, slot = slot}
                             end
+                        elseif isQuiverBag then
+                            quiverEmptyCount = quiverEmptyCount + 1
+                            if not firstQuiverEmptySlot then
+                                firstQuiverEmptySlot = {bagID = bagID, slot = slot}
+                            end
                         else
                             emptyCount = emptyCount + 1
                             if not firstEmptySlot then
@@ -549,8 +578,10 @@ function LayoutEngine:CollectItemsForCategoryView(bagsToShow, bags, isViewingCac
     if not isViewingCached then
         emptyCount = 0
         soulEmptyCount = 0
+        quiverEmptyCount = 0
         firstEmptySlot = nil
         firstSoulEmptySlot = nil
+        firstQuiverEmptySlot = nil
 
         -- Get BagClassifier for accurate bag type detection
         local BagClassifier = ns:GetModule("BagFrame.BagClassifier")
@@ -559,9 +590,11 @@ function LayoutEngine:CollectItemsForCategoryView(bagsToShow, bags, isViewingCac
             local bagID = bagInfo.bagID
             -- Use bagInfo.isSoulBag if set, otherwise check via BagClassifier
             local isSoulBag = bagInfo.isSoulBag
-            if isSoulBag == nil and BagClassifier then
+            local isQuiverBag = bagInfo.isQuiverBag
+            if (isSoulBag == nil or isQuiverBag == nil) and BagClassifier then
                 local bagType = BagClassifier:GetBagType(bagID)
-                isSoulBag = (bagType == "soul")
+                if isSoulBag == nil then isSoulBag = (bagType == "soul") end
+                if isQuiverBag == nil then isQuiverBag = (bagType == "quiver" or bagType == "ammo") end
             end
 
             if not bagInfo.isKeyring then  -- Keyring already uses live data above
@@ -574,6 +607,11 @@ function LayoutEngine:CollectItemsForCategoryView(bagsToShow, bags, isViewingCac
                                 soulEmptyCount = soulEmptyCount + 1
                                 if not firstSoulEmptySlot then
                                     firstSoulEmptySlot = {bagID = bagID, slot = slot}
+                                end
+                            elseif isQuiverBag then
+                                quiverEmptyCount = quiverEmptyCount + 1
+                                if not firstQuiverEmptySlot then
+                                    firstQuiverEmptySlot = {bagID = bagID, slot = slot}
                                 end
                             else
                                 emptyCount = emptyCount + 1
@@ -588,7 +626,7 @@ function LayoutEngine:CollectItemsForCategoryView(bagsToShow, bags, isViewingCac
         end
     end
 
-    return items, emptyCount, firstEmptySlot, soulEmptyCount, firstSoulEmptySlot
+    return items, emptyCount, firstEmptySlot, soulEmptyCount, firstSoulEmptySlot, quiverEmptyCount, firstQuiverEmptySlot
 end
 
 -- Build category sections from items
@@ -599,7 +637,7 @@ end
 -- soulEmptyCount: number of soul bag empty slots
 -- firstSoulEmptySlot: {bagID, slot} of first soul bag empty slot
 -- showEmptyDropTargets: when true, append drop-target sections for empty enabled categories
-function LayoutEngine:BuildCategorySections(items, isViewingCached, emptyCount, firstEmptySlot, soulEmptyCount, firstSoulEmptySlot, forceSoulVisible, showEmptyDropTargets)
+function LayoutEngine:BuildCategorySections(items, isViewingCached, emptyCount, firstEmptySlot, soulEmptyCount, firstSoulEmptySlot, forceSoulVisible, showEmptyDropTargets, quiverEmptyCount, firstQuiverEmptySlot)
     local CategoryManager = ns:GetModule("CategoryManager")
     if not CategoryManager then
         return {{ categoryId = "All", categoryName = "All Items", categoryIcon = nil, items = items }}
@@ -670,10 +708,18 @@ function LayoutEngine:BuildCategorySections(items, isViewingCached, emptyCount, 
 
     -- Categorize each item and store category order index for merged group sorting
     local soulCategoryEnabled = sectionMap["Soul"] ~= nil
+    local quiverCategoryEnabled = sectionMap["Quiver"] ~= nil
     local hideSoulItems = not forceSoulVisible and Database and Database:GetSetting("hideSoulItems")
     for _, item in ipairs(items) do
+        -- Quiver/ammo bag items go to the Quiver section when that category is enabled
+        if quiverCategoryEnabled and item.isInQuiverBag then
+            local quiverSection = sectionMap["Quiver"]
+            if quiverSection then
+                item.categoryOrderIndex = categoryOrderIndex["Quiver"] or 999
+                table.insert(quiverSection.items, item)
+            end
         -- Soul bag items go to the Soul section when that category is enabled
-        if soulCategoryEnabled and item.isInSoulBag then
+        elseif soulCategoryEnabled and item.isInSoulBag then
             -- Add soul bag items to the Soul section (unless hidden by footer toggle)
             if not hideSoulItems then
                 local soulSection = sectionMap["Soul"]
@@ -738,6 +784,28 @@ function LayoutEngine:BuildCategorySections(items, isViewingCached, emptyCount, 
             },
         }
         table.insert(soulSection.items, soulItem)
+    end
+
+    -- Add pseudo-item to "Quiver" category if there are quiver/ammo bag empty slots
+    quiverEmptyCount = quiverEmptyCount or 0
+    if quiverEmptyCount > 0 and sectionMap["Quiver"] and firstQuiverEmptySlot then
+        local quiverSection = sectionMap["Quiver"]
+        -- Create a pseudo-item representing quiver/ammo bag empty slots
+        local quiverItem = {
+            bagID = firstQuiverEmptySlot.bagID,
+            slot = firstQuiverEmptySlot.slot,
+            itemData = {
+                bagID = firstQuiverEmptySlot.bagID,
+                slot = firstQuiverEmptySlot.slot,
+                isEmptySlots = true,
+                isQuiverSlots = true,
+                emptyCount = quiverEmptyCount,
+                texture = "Interface\\AddOns\\GudaBags\\Assets\\quiver.png",
+                count = quiverEmptyCount,
+                name = "Quiver/Ammo Slots",
+            },
+        }
+        table.insert(quiverSection.items, quiverItem)
     end
 
     -- Group identical items into single slots with combined count (if setting enabled)
@@ -827,10 +895,11 @@ function LayoutEngine:BuildCategorySections(items, isViewingCached, emptyCount, 
     for _, section in ipairs(sections) do
         local def = categories.definitions[section.categoryId]
         local isCustomCategory = def and not def.isBuiltIn and not section.isGroup
-        -- Also keep Empty/Soul category if it has items (empty slots)
+        -- Also keep Empty/Soul/Quiver category if it has items (empty slots)
         local isEmptyCategory = section.categoryId == "Empty" and #section.items > 0
         local isSoulCategory = section.categoryId == "Soul" and #section.items > 0
-        if #section.items > 0 or isCustomCategory or isEmptyCategory or isSoulCategory then
+        local isQuiverCategory = section.categoryId == "Quiver" and #section.items > 0
+        if #section.items > 0 or isCustomCategory or isEmptyCategory or isSoulCategory or isQuiverCategory then
             table.insert(nonEmptySections, section)
         end
     end
@@ -865,8 +934,10 @@ function LayoutEngine:BuildCategorySections(items, isViewingCached, emptyCount, 
                 and categoryId ~= "Home"
                 and categoryId ~= "Empty"
                 and categoryId ~= "Soul"
+                and categoryId ~= "Quiver"
                 and categoryId ~= "Keyring"
-                and categoryId ~= "Soul Bag" then
+                and categoryId ~= "Soul Bag"
+                and categoryId ~= "Quiver Bag" then
 
                 local displayName = def.isBuiltIn
                     and ns.DefaultCategories:GetLocalizedName(categoryId, def.name)

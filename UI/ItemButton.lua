@@ -389,6 +389,7 @@ local function ResetButton(pool, button)
     if button.equipSetIcon then button.equipSetIcon:Hide() end
     if button.equipSetIconShadow then button.equipSetIconShadow:Hide() end
     if button.itemLevelText then button.itemLevelText:Hide() end
+    if button.chargesText then button.chargesText:Hide() end
     if button.questIcon then button.questIcon:Hide() end
     if button.questStarterIcon then button.questStarterIcon:Hide() end
     if button.craftingQualityIcon then button.craftingQualityIcon:Hide() end
@@ -417,6 +418,9 @@ local function ApplyFontSize(button, fontSize)
     if button.itemLevelText then
         button.itemLevelText:SetFont(Constants.FONTS.DEFAULT, fontSize, "OUTLINE")
     end
+    if button.chargesText then
+        button.chargesText:SetFont(Constants.FONTS.DEFAULT, fontSize, "OUTLINE")
+    end
 end
 
 -- Pre-compiled tool name patterns for fast lookup
@@ -441,6 +445,14 @@ local function IsJunkItem(itemData)
     -- Don't classify items with incomplete data as junk
     -- (GetItemInfo hasn't cached yet — name defaults to "")
     if not itemData.name or itemData.name == "" then return false end
+
+    -- User-marked junk overrides quality and profession-tool protection.
+    if itemData.itemID then
+        local Database = ns:GetModule("Database")
+        if Database and Database:IsItemMarkedJunk(itemData.itemID) then
+            return true
+        end
+    end
 
     -- Profession tools are never junk
     if IsTool(itemData.name) then
@@ -872,6 +884,15 @@ local function CreateButton(parent)
     itemLevelText:Hide()
     button.itemLevelText = itemLevelText
 
+    -- Charges text (bottom-right corner, e.g. "x5" for Wizard Oil)
+    local chargesText = button:CreateFontString(nil, "OVERLAY", nil)
+    chargesText:SetFont(Constants.FONTS.DEFAULT, 12, "OUTLINE")
+    chargesText:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", 0, 1)
+    chargesText:SetJustifyH("RIGHT")
+    chargesText:SetTextColor(1, 0.82, 0)
+    chargesText:Hide()
+    button.chargesText = chargesText
+
     -- Quest starter icon (top left corner) - exclamation mark for quest starter items
     -- Use a frame container to ensure it draws above the border
     local questStarterFrame = CreateFrame("Frame", nil, button)
@@ -1041,6 +1062,8 @@ local function CreateButton(parent)
 
         -- Check if this is a Soul category pseudo-item
         local isSoulCategory = btn.categoryId == "Soul" or (btn.itemData and btn.itemData.isSoulSlots)
+        -- Check if this is a Quiver category pseudo-item (Hunter equivalent of Soul)
+        local isQuiverCategory = btn.categoryId == "Quiver" or (btn.itemData and btn.itemData.isQuiverSlots)
 
         -- Determine if this button belongs to the bank or player bags
         -- by checking the current bagID on the button
@@ -1067,11 +1090,14 @@ local function CreateButton(parent)
                 -- Check bag type using BagClassifier
                 local bagType = BagClassifier and BagClassifier:GetBagType(bagID) or "regular"
                 local isSoulBag = (bagType == "soul")
+                local isQuiverBag = (bagType == "quiver" or bagType == "ammo")
 
                 -- Match bag type to category
                 local shouldSearchThisBag = false
                 if isSoulCategory then
                     shouldSearchThisBag = isSoulBag
+                elseif isQuiverCategory then
+                    shouldSearchThisBag = isQuiverBag
                 else
                     -- Empty category: regular bags only (backpack/main bank or regular bag type)
                     shouldSearchThisBag = (bagID == 0) or (bagID == Constants.BANK_MAIN_BAG) or (bagType == "regular")
@@ -1646,6 +1672,7 @@ local function GetCachedSettings()
             markUnusableItems = Database:GetSetting("markUnusableItems"),
             markEquipmentSets = Database:GetSetting("markEquipmentSets"),
             showItemLevel = Database:GetSetting("showItemLevel"),
+            showCharges = Database:GetSetting("showCharges"),
         }
         cachedSettingsFrame = currentFrame
     end
@@ -1773,6 +1800,30 @@ local function ApplyMasqueAfterSizing(button)
     end
 end
 
+-- Resize a pool button. If Masque has already skinned it, unregister first so
+-- ApplyMasqueAfterSizing's next AddButton re-skins at the new size. Mirrors
+-- TrackedBar:UpdateSize — Masque caches region geometry at AddButton time
+-- and Group:ReSkin does not refresh it.
+local function EnsureButtonSize(button, size)
+    if button.currentSize == size then return end
+
+    if button._masqueApplied then
+        local MasqueModule = ns:GetModule("Masque")
+        if MasqueModule and MasqueModule:IsActive() then
+            MasqueModule:RemoveButton(button)
+        end
+        button._masqueApplied = false
+    end
+
+    button:SetSize(size, size)
+    if button.wrapper then
+        button.wrapper:SetSize(size, size)
+    end
+    button.currentSize = size
+
+    UpdateSlotBackgroundSize(button, size)
+end
+
 function ItemButton:SetItem(button, itemData, size, isReadOnly)
     -- Re-suppress any new child frames the template may have created
     if button._suppressNewChildren then
@@ -1812,14 +1863,7 @@ function ItemButton:SetItem(button, itemData, size, isReadOnly)
     local settings = GetCachedSettings()
     size = size or settings.iconSize
 
-    -- Only resize if size actually changed
-    if button.currentSize ~= size then
-        button:SetSize(size, size)
-        button.wrapper:SetSize(size, size)
-        button.currentSize = size
-
-        UpdateSlotBackgroundSize(button, size)
-    end
+    EnsureButtonSize(button, size)
 
     -- Register with Masque after sizing (deferred from Acquire to avoid icon anchor issues)
     ApplyMasqueAfterSizing(button)
@@ -1846,6 +1890,7 @@ function ItemButton:SetItem(button, itemData, size, isReadOnly)
         button.junkOverlay:Hide()
         button.lockOverlay:Hide()
         if button.itemLevelText then button.itemLevelText:Hide() end
+        if button.chargesText then button.chargesText:Hide() end
         if button.cooldown then CooldownFrame_Set(button.cooldown, 0, 0, false) end
 
         -- Mark this button as empty slot handler
@@ -1881,6 +1926,7 @@ function ItemButton:SetItem(button, itemData, size, isReadOnly)
         button.junkOverlay:Hide()
         button.lockOverlay:Hide()
         if button.itemLevelText then button.itemLevelText:Hide() end
+        if button.chargesText then button.chargesText:Hide() end
         if button.cooldown then CooldownFrame_Set(button.cooldown, 0, 0, false) end
 
         -- Animated glow border
@@ -2119,6 +2165,23 @@ function ItemButton:SetItem(button, itemData, size, isReadOnly)
             end
         end
 
+        -- Charges display (Wizard Oil, Sharpening Stones, etc.)
+        if button.chargesText then
+            local charges = nil
+            if settings.showCharges and not isReadOnly then
+                local TooltipScanner = ns:GetModule("TooltipScanner")
+                if TooltipScanner then
+                    charges = TooltipScanner:GetCharges(itemData.bagID, itemData.slot)
+                end
+            end
+            if charges and charges > 0 then
+                button.chargesText:SetText("x" .. charges)
+                button.chargesText:Show()
+            else
+                button.chargesText:Hide()
+            end
+        end
+
         -- Pin icon (bottom-right corner)
         ItemButton:UpdatePinIcon(button)
         -- Favorite star (top-right corner)
@@ -2180,6 +2243,15 @@ function ItemButton:SetItem(button, itemData, size, isReadOnly)
         end
         if button.itemLevelText then
             button.itemLevelText:Hide()
+        end
+        if button.chargesText then
+            button.chargesText:Hide()
+        end
+        if button.userLockIcon then
+            button.userLockIcon:Hide()
+        end
+        if button.userLockIconStroke then
+            button.userLockIconStroke:Hide()
         end
         if button.cooldown then
             CooldownFrame_Set(button.cooldown, 0, 0, false)
@@ -2282,14 +2354,7 @@ function ItemButton:SetEmpty(button, bagID, slot, size, isReadOnly, isGuildBank)
     local settings = GetCachedSettings()
     size = size or settings.iconSize
 
-    -- Only resize if size actually changed
-    if button.currentSize ~= size then
-        button:SetSize(size, size)
-        button.wrapper:SetSize(size, size)
-        button.currentSize = size
-
-        UpdateSlotBackgroundSize(button, size)
-    end
+    EnsureButtonSize(button, size)
 
     -- Register with Masque after sizing (deferred from Acquire to avoid icon anchor issues)
     ApplyMasqueAfterSizing(button)
@@ -2333,6 +2398,15 @@ function ItemButton:SetEmpty(button, bagID, slot, size, isReadOnly, isGuildBank)
     end
     if button.itemLevelText then
         button.itemLevelText:Hide()
+    end
+    if button.chargesText then
+        button.chargesText:Hide()
+    end
+    if button.userLockIcon then
+        button.userLockIcon:Hide()
+    end
+    if button.userLockIconStroke then
+        button.userLockIconStroke:Hide()
     end
     if button.cooldown then
         CooldownFrame_Set(button.cooldown, 0, 0, false)
@@ -2645,7 +2719,7 @@ if Events then
             or key == "grayoutJunk" or key == "equipmentBorders"
             or key == "otherBorders" or key == "markUnusableItems"
             or key == "markEquipmentSets"
-            or key == "showItemLevel" then
+            or key == "showItemLevel" or key == "showCharges" then
             ItemButton:InvalidateSettingsCache()
         end
     end, ItemButton)

@@ -143,6 +143,18 @@ end
 -- Button Creation
 -------------------------------------------------
 
+-- Region map for Masque, used at both initial registration and on live resize
+-- (UpdateSize re-registers each button at its new size to re-apply the skin).
+local function GetMasqueRegions(button)
+    return {
+        Icon = button.icon,
+        Cooldown = button.cooldown,
+        Normal = button:GetNormalTexture(),
+        Count = button.count,
+        Highlight = button.highlight,
+    }
+end
+
 local function CreateItemButton(parent, name, isMain)
     local buttonSize = GetButtonSize()
 
@@ -279,13 +291,7 @@ local function CreateItemButton(parent, name, isMain)
 
     -- Register with Masque if active (reuse masqueActive from above)
     if masqueActive then
-        MasqueModule:AddButton(button, "Quest Items", {
-            Icon = button.icon,
-            Cooldown = button.cooldown,
-            Normal = button:GetNormalTexture(),
-            Count = button.count,
-            Highlight = button.highlight,
-        })
+        MasqueModule:AddButton(button, "Quest Items", GetMasqueRegions(button))
     end
 
     return button
@@ -885,6 +891,9 @@ function QuestBar:UpdateSize()
     local buttonSize = GetButtonSize()
     local shadowSize = math.max(4, math.floor(buttonSize * 0.18))
 
+    local MasqueModule = ns:GetModule("Masque")
+    local masqueActive = MasqueModule and MasqueModule:IsActive()
+
     -- Helper to resize inner shadow on a button
     local function ResizeInnerShadow(button)
         if not button.innerShadow then return end
@@ -914,22 +923,31 @@ function QuestBar:UpdateSize()
         end
     end
 
-    if mainButton then
-        mainButton:SetSize(buttonSize, buttonSize)
-        ReanchorChildren(mainButton)
-        ResizeInnerShadow(mainButton)
-    end
-
-    for i, button in ipairs(gridButtons) do
+    -- Unregister Masque BEFORE resize so AddButton re-skins at the new size.
+    -- Mirrors TrackedBar:UpdateSize — Group:ReSkin alone preserves stale region
+    -- geometry from the original registration.
+    local function ResizeButton(button)
+        if masqueActive then
+            MasqueModule:RemoveButton(button)
+        end
         button:SetSize(buttonSize, buttonSize)
         ReanchorChildren(button)
         ResizeInnerShadow(button)
+        if masqueActive then
+            MasqueModule:AddButton(button, "Quest Items", GetMasqueRegions(button))
+        end
+    end
+
+    if mainButton then
+        ResizeButton(mainButton)
+    end
+
+    for _, button in ipairs(gridButtons) do
+        ResizeButton(button)
     end
 
     for i, button in ipairs(flyoutButtons) do
-        button:SetSize(buttonSize, buttonSize)
-        ReanchorChildren(button)
-        ResizeInnerShadow(button)
+        ResizeButton(button)
         button:ClearAllPoints()
         button:SetPoint("TOP", flyout, "TOP", 0, -PADDING - (i - 1) * (buttonSize + GetButtonSpacing()))
     end

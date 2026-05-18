@@ -66,9 +66,10 @@ function GuildBankFooter:Init(parent)
         GameTooltip:SetText(L["GUILD_BANK_WITHDRAW"] or "Withdraw Money")
         if GuildBankScanner and GuildBankScanner:IsGuildBankOpen() then
             local withdrawLimit = GetGuildBankWithdrawMoney and GetGuildBankWithdrawMoney() or 0
-            -- Check for negative values (unlimited) - some versions return -1, others return MIN_INT64
-            -- Also check for extremely large values (e.g. 1844674407370955) that indicate unlimited
-            if withdrawLimit < 0 or withdrawLimit >= 10000000000000 then
+            -- Some Classic builds return MIN_INT64 for "unlimited", which can wrap to a
+            -- huge positive in Lua arithmetic and overflow %d formatting. Treat negative
+            -- or absurdly-large values as unlimited.
+            if withdrawLimit < 0 or withdrawLimit > 1e11 then
                 GameTooltip:AddLine(L["GUILD_BANK_WITHDRAW_UNLIMITED"] or "Unlimited withdrawals", 1, 1, 1, true)
             elseif withdrawLimit > 0 then
                 local gold = math.floor(withdrawLimit / 10000)
@@ -1102,34 +1103,11 @@ function GuildBankFooter:UpdateWithdrawInfo()
             -- Check if player can actually withdraw money
             local canWithdraw = CanWithdrawGuildBankMoney and CanWithdrawGuildBankMoney() or false
 
-            -- Negative values mean unlimited withdrawal rights (some versions return -1, others MIN_INT64)
-            if withdrawLimit < 0 then
-                -- Unlimited rights - show actual guild money available
-                if guildMoney > 0 then
-                    local GOLD_ICON = "|TInterface\\MoneyFrame\\UI-GoldIcon:12|t"
-                    local SILVER_ICON = "|TInterface\\MoneyFrame\\UI-SilverIcon:12|t"
-                    local COPPER_ICON = "|TInterface\\MoneyFrame\\UI-CopperIcon:12|t"
-
-                    local gold = math.floor(guildMoney / 10000)
-                    local silver = math.floor((guildMoney % 10000) / 100)
-                    local copper = guildMoney % 100
-
-                    local moneyStr = ""
-                    if gold > 0 then
-                        moneyStr = gold .. GOLD_ICON
-                    end
-                    if silver > 0 then
-                        if moneyStr ~= "" then moneyStr = moneyStr .. " " end
-                        moneyStr = moneyStr .. silver .. SILVER_ICON
-                    end
-                    if copper > 0 or moneyStr == "" then
-                        if moneyStr ~= "" then moneyStr = moneyStr .. " " end
-                        moneyStr = moneyStr .. copper .. COPPER_ICON
-                    end
-                    frame.moneyWithdrawInfo:SetText("Available: |cff00ff00Unlimited|r (" .. moneyStr .. ")")
-                else
-                    frame.moneyWithdrawInfo:SetText("Available: |cff00ff00Unlimited|r (0)")
-                end
+            -- Negative or absurdly-large values mean unlimited withdrawal rights
+            -- (some Classic builds return MIN_INT64 which wraps to a huge positive in arithmetic)
+            if withdrawLimit < 0 or withdrawLimit > 1e11 then
+                -- Unlimited rights - total bank balance is already shown in the top-right
+                frame.moneyWithdrawInfo:SetText("Available: |cff00ff00Unlimited|r")
             else
                 -- Has a positive limit - cap at actual guild money
                 local withdrawMoney = math.min(withdrawLimit, guildMoney)

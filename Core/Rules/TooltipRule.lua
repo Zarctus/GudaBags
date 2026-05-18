@@ -77,6 +77,16 @@ RuleEngine:RegisterEvaluator("isJunk", function(ruleValue, itemData, context)
         return false == ruleValue
     end
 
+    -- User-marked junk overrides quality, profession-tool protection, and
+    -- special-properties checks. Mark state is per-character (CharDB), so
+    -- only honored when not viewing another character's bags.
+    if not context.isOtherChar and itemData.itemID then
+        local Database = ns:GetModule("Database")
+        if Database and Database:IsItemMarkedJunk(itemData.itemID) then
+            return true == ruleValue
+        end
+    end
+
     -- For other characters, only check quality
     if context.isOtherChar then
         return (itemData.quality == 0) == ruleValue

@@ -36,6 +36,9 @@ local buttonsByBag = {}   -- Key: bagID -> { slot -> button } for fast bag-speci
 local cachedItemData = {} -- Key: "bagID:slot" -> previous itemID (for comparison)
 local cachedItemCount = {} -- Key: "bagID:slot" -> previous count (for stack updates)
 local cachedItemCategory = {} -- Key: "bagID:slot" -> previous categoryId (for category view)
+-- cachedItemCharges values: number (charges remaining), false (scanned, no charges), nil (unknown)
+-- The `false` sentinel lets reused-button refresh skip GetCharges for non-charge items.
+local cachedItemCharges = {} -- Key: "bagID:slot" -> previous charges value
 local layoutCached = false -- True when layout is cached and can do incremental updates
 
 -- Category View: Item-key-based button tracking for efficient reuse
@@ -83,6 +86,55 @@ local function TableCount(tbl)
         count = count + 1
     end
     return count
+end
+
+-- Lazily resolved (TooltipScanner registers its module at file load; ns:GetModule
+-- once per addon load is fine, but we cache it to avoid repeated lookups in
+-- per-button hot paths).
+local _tooltipScannerCached
+local function GetTooltipScanner()
+    if _tooltipScannerCached == nil then
+        _tooltipScannerCached = ns:GetModule("TooltipScanner") or false
+    end
+    return _tooltipScannerCached or nil
+end
+
+-- Populate cachedItemCharges for a slot whose button was just (re)rendered via
+-- ItemButton:SetItem. Stores number, false (scanned/no charges), or nil (cleared).
+local function CacheChargesForSlot(slotKey, bagID, slot)
+    if not Database:GetSetting("showCharges") then
+        cachedItemCharges[slotKey] = nil
+        return
+    end
+    local TS = GetTooltipScanner()
+    if not TS then
+        cachedItemCharges[slotKey] = nil
+        return
+    end
+    cachedItemCharges[slotKey] = TS:GetCharges(bagID, slot) or false
+end
+
+-- Refresh the chargesText overlay on a button whose item didn't change identity
+-- but may have had its charge count decrement (Wizard Oil, Sharpening Stone, etc.).
+-- Short-circuits if the slot is known to have no charges, so this is free for
+-- non-charge items in dirty bags.
+local function RefreshChargesForReusedButton(button, bagID, slot, slotKey)
+    local cachedCharges = cachedItemCharges[slotKey]
+    if cachedCharges == false then return end
+    if not Database:GetSetting("showCharges") then return end
+    local TS = GetTooltipScanner()
+    if not TS then return end
+    local newCharges = TS:GetCharges(bagID, slot) or false
+    if newCharges == cachedCharges then return end
+    cachedItemCharges[slotKey] = newCharges
+    if button.chargesText then
+        if type(newCharges) == "number" and newCharges > 0 then
+            button.chargesText:SetText("x" .. newCharges)
+            button.chargesText:Show()
+        else
+            button.chargesText:Hide()
+        end
+    end
 end
 
 -- Forward declarations
@@ -140,6 +192,50 @@ function BagFrame:HandleContainerDrop()
 
     -- If no empty slot found, clear cursor
     ClearCursor()
+end
+
+-- Locate the cursor item's source slot by scanning for the locked slot.
+-- Returns bagID, slot, source ("bag"|"bank") or nil if not found.
+function BagFrame:GetCursorBagSlot()
+    -- Player bags
+    for bagID = 0, NUM_BAG_SLOTS do
+        local numSlots = C_Container.GetContainerNumSlots(bagID)
+        for slot = 1, numSlots do
+            local itemInfo = C_Container.GetContainerItemInfo(bagID, slot)
+            if itemInfo and itemInfo.isLocked then
+                return bagID, slot, "bag"
+            end
+        end
+    end
+
+    -- Bank slots
+    local bankBags = {}
+    if Constants.CHARACTER_BANK_TAB_IDS and #Constants.CHARACTER_BANK_TAB_IDS > 0 then
+        for _, tabID in ipairs(Constants.CHARACTER_BANK_TAB_IDS) do
+            table.insert(bankBags, tabID)
+        end
+    end
+    if Constants.WARBAND_BANK_TAB_IDS and #Constants.WARBAND_BANK_TAB_IDS > 0 then
+        for _, tabID in ipairs(Constants.WARBAND_BANK_TAB_IDS) do
+            table.insert(bankBags, tabID)
+        end
+    end
+    if #bankBags == 0 and Constants.BANK_BAG_IDS and #Constants.BANK_BAG_IDS > 0 then
+        for _, bagID in ipairs(Constants.BANK_BAG_IDS) do
+            table.insert(bankBags, bagID)
+        end
+    end
+    for _, bagID in ipairs(bankBags) do
+        local numSlots = C_Container.GetContainerNumSlots(bagID)
+        if numSlots and numSlots > 0 then
+            for slot = 1, numSlots do
+                local itemInfo = C_Container.GetContainerItemInfo(bagID, slot)
+                if itemInfo and itemInfo.isLocked then
+                    return bagID, slot, "bank"
+                end
+            end
+        end
+    end
 end
 
 -- Separate container for secure item buttons - NOT a child of the bag frame
@@ -272,6 +368,11 @@ local function CreateBagFrame()
         if Characters then
             Characters:Hide()
         end
+
+        local ProfessionButton = ns:GetModule("Footer.ProfessionButton")
+        if ProfessionButton and ProfessionButton.HideAllInstantly then
+            ProfessionButton:HideAllInstantly()
+        end
     end)
 
     -- Enable container as drop zone for empty space
@@ -293,6 +394,9 @@ local function CreateBagFrame()
         BagFrame:Refresh()
     end)
     Footer:SetSoulBagCallback(function(isVisible)
+        BagFrame:Refresh()
+    end)
+    Footer:SetQuiverBagCallback(function(isVisible)
         BagFrame:Refresh()
     end)
     Footer:SetBagVisibilityCallback(function()
@@ -362,6 +466,7 @@ function BagFrame:Refresh()
     buttonsByBag = {}
     cachedItemData = {}
     cachedItemCount = {}
+    cachedItemCharges = {}
     cachedItemCategory = {}
     -- Note: buttonsByItemKey preserved for category view reuse (unless view type changed)
     buttonPositions = {}
@@ -436,7 +541,8 @@ function BagFrame:Refresh()
     -- Build display order
     local showKeyring = Footer:IsKeyringVisible()
     local showSoulBag = Footer:IsSoulBagVisible()
-    local bagsToShow = LayoutEngine:BuildDisplayOrder(classifiedBags, showKeyring, bags, showSoulBag)
+    local showQuiverBag = Footer:IsQuiverBagVisible()
+    local bagsToShow = LayoutEngine:BuildDisplayOrder(classifiedBags, showKeyring, bags, showSoulBag, showQuiverBag)
 
     -- Filter out hidden bags in single/split view mode (not when viewing cached character)
     if (viewType == "single" or viewType == "split") and not isViewingCached then
@@ -522,6 +628,7 @@ function BagFrame:RefreshSingleView(bags, bagsToShow, settings, hasSearch, isVie
             -- Cache item data for incremental updates
             cachedItemData[slotKey] = slotInfo.itemData.itemID
             cachedItemCount[slotKey] = slotInfo.itemData.count
+            CacheChargesForSlot(slotKey, slotInfo.bagID, slotInfo.slot)
         else
             ItemButton:SetEmpty(button, slotInfo.bagID, slotInfo.slot, iconSize, isViewingCached)
             if hasSearch then
@@ -531,6 +638,7 @@ function BagFrame:RefreshSingleView(bags, bagsToShow, settings, hasSearch, isVie
             end
             cachedItemData[slotKey] = nil
             cachedItemCount[slotKey] = nil
+            cachedItemCharges[slotKey] = nil
         end
 
         -- Position the wrapper frame
@@ -612,6 +720,7 @@ function BagFrame:RefreshSplitView(bags, bagsToShow, settings, hasSearch, isView
                 end
                 cachedItemData[slotKey] = itemData.itemID
                 cachedItemCount[slotKey] = itemData.count
+                CacheChargesForSlot(slotKey, bagID, slot)
             else
                 ItemButton:SetEmpty(button, bagID, slot, iconSize, isViewingCached)
                 if hasSearch then
@@ -621,6 +730,7 @@ function BagFrame:RefreshSplitView(bags, bagsToShow, settings, hasSearch, isView
                 end
                 cachedItemData[slotKey] = nil
                 cachedItemCount[slotKey] = nil
+                cachedItemCharges[slotKey] = nil
             end
 
             local col = (slot - 1) % sectionColumns
@@ -648,7 +758,7 @@ function BagFrame:RefreshCategoryView(bags, bagsToShow, settings, hasSearch, isV
     local iconSize = settings.iconSize
 
     -- Collect items and count empty slots (including soul bag slots)
-    local items, emptyCount, firstEmptySlot, soulEmptyCount, firstSoulEmptySlot = LayoutEngine:CollectItemsForCategoryView(bagsToShow, bags, isViewingCached)
+    local items, emptyCount, firstEmptySlot, soulEmptyCount, firstSoulEmptySlot, quiverEmptyCount, firstQuiverEmptySlot = LayoutEngine:CollectItemsForCategoryView(bagsToShow, bags, isViewingCached)
 
     -- Note: Search filtering removed - now uses alpha dimming like Single View
     -- Items stay in layout, non-matching items are dimmed to 0.3 alpha
@@ -708,6 +818,7 @@ function BagFrame:RefreshCategoryView(bags, bagsToShow, settings, hasSearch, isV
     buttonsByBag = {}
     cachedItemData = {}
     cachedItemCount = {}
+    cachedItemCharges = {}
     cachedItemCategory = {}
     buttonsByItemKey = {}
     buttonPositions = {}
@@ -716,7 +827,7 @@ function BagFrame:RefreshCategoryView(bags, bagsToShow, settings, hasSearch, isV
 
     -- Build category sections (include empty slot count for "Empty" and "Soul" categories)
     -- When dragging an item, also show empty categories as drop targets
-    local sections = LayoutEngine:BuildCategorySections(items, isViewingCached, emptyCount, firstEmptySlot, soulEmptyCount, firstSoulEmptySlot, nil, isDraggingItem)
+    local sections = LayoutEngine:BuildCategorySections(items, isViewingCached, emptyCount, firstEmptySlot, soulEmptyCount, firstSoulEmptySlot, nil, isDraggingItem, quiverEmptyCount, firstQuiverEmptySlot)
 
     -- Calculate frame size
     local frameWidth, frameHeight = LayoutEngine:CalculateCategoryFrameSize(sections, settings)
@@ -962,7 +1073,15 @@ function BagFrame:RefreshCategoryView(bags, bagsToShow, settings, hasSearch, isV
             local pseudoKey = "DropTarget:" .. itemInfo.categoryId
             pseudoItemButtons[pseudoKey] = button
         elseif itemData.isEmptySlots then
-            local pseudoKey = (itemData.isSoulSlots and "Soul:" or "Empty:") .. itemInfo.categoryId
+            local prefix
+            if itemData.isSoulSlots then
+                prefix = "Soul:"
+            elseif itemData.isQuiverSlots then
+                prefix = "Quiver:"
+            else
+                prefix = "Empty:"
+            end
+            local pseudoKey = prefix .. itemInfo.categoryId
             pseudoItemButtons[pseudoKey] = button
         else
             -- Store button by slot key for incremental updates (legacy)
@@ -970,6 +1089,7 @@ function BagFrame:RefreshCategoryView(bags, bagsToShow, settings, hasSearch, isV
             cachedItemData[slotKey] = itemData.itemID
             cachedItemCount[slotKey] = itemData.count
             cachedItemCategory[slotKey] = itemInfo.categoryId
+            CacheChargesForSlot(slotKey, itemData.bagID, itemData.slot)
 
             -- Store by bagID for fast bag-specific lookups
             local bagID = itemData.bagID
@@ -1121,6 +1241,7 @@ function BagFrame:Hide()
         buttonsByBag = {}
         cachedItemData = {}
         cachedItemCount = {}
+        cachedItemCharges = {}
         cachedItemCategory = {}
         -- Category view item-key tracking
         buttonsByItemKey = {}
@@ -1137,6 +1258,10 @@ function BagFrame:Hide()
         if dragCheckTicker then
             dragCheckTicker:Cancel()
             dragCheckTicker = nil
+        end
+        local DragFlyoutBar = ns:GetModule("DragFlyoutBar")
+        if DragFlyoutBar then
+            DragFlyoutBar:OnDragEnd()
         end
     end
 end
@@ -1212,32 +1337,40 @@ function BagFrame:IncrementalUpdate(dirtyBags)
         local currentItemsBySlot = {}  -- slotKey -> {itemData, itemKey, category}
         local totalCurrentItems = 0
 
-        -- Check soul bag status for category override (must match BuildCategorySections logic)
+        -- Check soul/quiver bag status for category override (must match BuildCategorySections logic)
         local BagClassifier = ns:GetModule("BagFrame.BagClassifier")
         local Database = ns:GetModule("Database")
         local hideSoulItems = Database and Database:GetSetting("hideSoulItems")
+        local hideQuiverItems = Database and Database:GetSetting("hideQuiverItems")
         local soulCategoryEnabled = false
+        local quiverCategoryEnabled = false
         if CategoryManager then
             local cats = CategoryManager:GetCategories()
             local soulDef = cats and cats.definitions and cats.definitions["Soul"]
             soulCategoryEnabled = soulDef and soulDef.enabled
+            local quiverDef = cats and cats.definitions and cats.definitions["Quiver"]
+            quiverCategoryEnabled = quiverDef and quiverDef.enabled
         end
 
         local bagsToShow = Constants.BAG_IDS  -- Player bags
         for _, bagID in ipairs(bagsToShow) do
             local bagData = bags[bagID]
             if bagData and bagData.slots then
-                -- Detect soul bags for category override
+                -- Detect soul/quiver bags for category override
                 local bagType = BagClassifier and BagClassifier:GetBagType(bagID) or "regular"
                 local isSoulBag = (bagType == "soul")
+                local isQuiverBag = (bagType == "quiver" or bagType == "ammo")
 
                 for slot, itemData in pairs(bagData.slots) do
                     if itemData then
                         local itemKey = GetItemKey(itemData)
                         local slotKey = GetSlotKey(bagID, slot)
-                        -- Soul bag items use "Soul" category override (same as BuildCategorySections)
+                        -- Quiver/ammo and Soul bag items use their pseudo-category overrides
+                        -- (same as BuildCategorySections)
                         local category
-                        if soulCategoryEnabled and isSoulBag and not hideSoulItems then
+                        if quiverCategoryEnabled and isQuiverBag and not hideQuiverItems then
+                            category = "Quiver"
+                        elseif soulCategoryEnabled and isSoulBag and not hideSoulItems then
                             category = "Soul"
                         else
                             category = CategoryManager and CategoryManager:CategorizeItem(itemData, bagID, slot, false) or "Miscellaneous"
@@ -1311,14 +1444,17 @@ function BagFrame:IncrementalUpdate(dirtyBags)
         local BagClassifier = ns:GetModule("BagFrame.BagClassifier")
         local emptyCount = 0
         local soulEmptyCount = 0
+        local quiverEmptyCount = 0
         local firstEmptyBagID, firstEmptySlot = nil, nil
         local firstSoulBagID, firstSoulSlot = nil, nil
+        local firstQuiverBagID, firstQuiverSlot = nil, nil
 
         for bagID = 0, NUM_BAG_SLOTS do
             local numSlots = C_Container.GetContainerNumSlots(bagID)
             if numSlots and numSlots > 0 then
                 local bagType = BagClassifier and BagClassifier:GetBagType(bagID) or "regular"
                 local isSoulBag = (bagType == "soul")
+                local isQuiverBag = (bagType == "quiver" or bagType == "ammo")
                 for slot = 1, numSlots do
                     local itemInfo = C_Container.GetContainerItemInfo(bagID, slot)
                     if not itemInfo then
@@ -1326,6 +1462,11 @@ function BagFrame:IncrementalUpdate(dirtyBags)
                             soulEmptyCount = soulEmptyCount + 1
                             if not firstSoulBagID then
                                 firstSoulBagID, firstSoulSlot = bagID, slot
+                            end
+                        elseif isQuiverBag then
+                            quiverEmptyCount = quiverEmptyCount + 1
+                            if not firstQuiverBagID then
+                                firstQuiverBagID, firstQuiverSlot = bagID, slot
                             end
                         elseif bagType == "regular" or bagID == 0 then
                             emptyCount = emptyCount + 1
@@ -1338,13 +1479,48 @@ function BagFrame:IncrementalUpdate(dirtyBags)
             end
         end
 
-        -- Check if Empty category needs to appear or disappear (requires full refresh)
+        -- Check if Empty/Soul/Quiver category needs to appear or disappear (requires full refresh)
         local emptyButtonExists = FindPseudoItemButton("Empty") ~= nil
         local emptyNeedsButton = emptyCount > 0
 
         if (emptyNeedsButton and not emptyButtonExists) or (not emptyNeedsButton and emptyButtonExists) then
             ns:Debug("CategoryView REFRESH: Empty category visibility changed")
             needsFullRefresh = true
+        end
+
+        local quiverButtonExists = FindPseudoItemButton("Quiver") ~= nil
+        local quiverNeedsButton = quiverEmptyCount > 0
+        if (quiverNeedsButton and not quiverButtonExists) or (not quiverNeedsButton and quiverButtonExists) then
+            ns:Debug("CategoryView REFRESH: Quiver category visibility changed")
+            needsFullRefresh = true
+        end
+
+        -- Detect items whose category has become Soul/Quiver since the last layout.
+        -- Two cases need a full refresh:
+        --   1. Brand-new slot: an item was looted into a previously empty soul/quiver bag slot
+        --      (tracked only by the pseudo button before).
+        --   2. Re-classified slot: BagClassifier returned "regular" on first render (live
+        --      bagFamily not yet ready), the slot was placed under "Reagent"/"Miscellaneous"
+        --      etc., then on a later BAG_UPDATE the bag is correctly classified as soul/quiver.
+        --      Without this check the section would stay empty until a manual view toggle.
+        if not needsFullRefresh and lastCategoryLayout then
+            local prevSlotCategory = {}
+            for _, prevItem in ipairs(lastCategoryLayout) do
+                if prevItem.slotKey then
+                    prevSlotCategory[prevItem.slotKey] = prevItem.categoryId
+                end
+            end
+            for slotKey, currentSlot in pairs(currentItemsBySlot) do
+                if currentSlot.category == "Soul" or currentSlot.category == "Quiver" then
+                    local prev = prevSlotCategory[slotKey]
+                    if prev == nil or prev ~= currentSlot.category then
+                        ns:Debug("CategoryView REFRESH: slot", slotKey,
+                            "category changed", tostring(prev), "->", currentSlot.category)
+                        needsFullRefresh = true
+                        break
+                    end
+                end
+            end
         end
 
         -- Update pseudo-item counters and slot references directly (if no full refresh needed)
@@ -1378,6 +1554,20 @@ function BagFrame:IncrementalUpdate(dirtyBags)
                             soulBtn.wrapper:SetID(firstSoulBagID)
                             soulBtn:SetID(firstSoulSlot)
                         end
+                    end
+                end
+            end
+            local quiverBtn = FindPseudoItemButton("Quiver")
+            if quiverBtn then
+                SetItemButtonCount(quiverBtn, quiverEmptyCount)
+                if quiverBtn.itemData then
+                    quiverBtn.itemData.emptyCount = quiverEmptyCount
+                    quiverBtn.itemData.count = quiverEmptyCount
+                    if firstQuiverBagID then
+                        quiverBtn.itemData.bagID = firstQuiverBagID
+                        quiverBtn.itemData.slot = firstQuiverSlot
+                        quiverBtn.wrapper:SetID(firstQuiverBagID)
+                        quiverBtn:SetID(firstQuiverSlot)
                     end
                 end
             end
@@ -1436,6 +1626,7 @@ function BagFrame:IncrementalUpdate(dirtyBags)
                             ItemButton:SetEmpty(button, bID, sID, iconSize, false)
                             cachedItemData[slotKey] = nil
                             cachedItemCount[slotKey] = nil
+                            cachedItemCharges[slotKey] = nil
                         end
                     end
                 end
@@ -1453,6 +1644,7 @@ function BagFrame:IncrementalUpdate(dirtyBags)
                                     ItemButton:SetEmpty(button, bID, sID, iconSize, false)
                                     cachedItemData[slotKey] = nil
                                     cachedItemCount[slotKey] = nil
+                                    cachedItemCharges[slotKey] = nil
                                 end
                                 break
                             end
@@ -1503,6 +1695,9 @@ function BagFrame:IncrementalUpdate(dirtyBags)
                         cachedItemCount[slotKey] = newItemData.count
                         countUpdates = countUpdates + 1
                     end
+                    -- Item identity unchanged but charges may have decremented
+                    -- (Wizard Oil, Sharpening Stone, scrolls, etc.)
+                    RefreshChargesForReusedButton(button, newItemData.bagID, newItemData.slot, slotKey)
                     buttonsReused = buttonsReused + 1
                 elseif oldItemID == nil then
                     -- Ghost slot getting an item back - update it
@@ -1510,6 +1705,7 @@ function BagFrame:IncrementalUpdate(dirtyBags)
                     cachedItemData[slotKey] = newItemID
                     cachedItemCount[slotKey] = newItemData.count
                     cachedItemCategory[slotKey] = currentSlot.category
+                    CacheChargesForSlot(slotKey, newItemData.bagID, newItemData.slot)
                     ghostsReused = ghostsReused + 1
 
                     if hasSearch then
@@ -1523,6 +1719,7 @@ function BagFrame:IncrementalUpdate(dirtyBags)
                     cachedItemData[slotKey] = newItemID
                     cachedItemCount[slotKey] = newItemData.count
                     cachedItemCategory[slotKey] = currentSlot.category
+                    CacheChargesForSlot(slotKey, newItemData.bagID, newItemData.slot)
                     buttonsUpdated = buttonsUpdated + 1
 
                     if hasSearch then
@@ -1543,6 +1740,7 @@ function BagFrame:IncrementalUpdate(dirtyBags)
                         ItemButton:SetEmpty(button, bagID, slot, iconSize, false)
                         cachedItemData[slotKey] = nil
                         cachedItemCount[slotKey] = nil
+                        cachedItemCharges[slotKey] = nil
                         if hasSearch then
                             ItemButton:SetSearchState(button, false)
                         else
@@ -1571,6 +1769,7 @@ function BagFrame:IncrementalUpdate(dirtyBags)
                                 ItemButton:SetEmpty(button, bagID, slot, iconSize, false)
                                 cachedItemData[slotKey] = nil
                                 cachedItemCount[slotKey] = nil
+                                cachedItemCharges[slotKey] = nil
                                 if hasSearch then
                                     ItemButton:SetSearchState(button, false)
                                 else
@@ -1612,6 +1811,7 @@ function BagFrame:IncrementalUpdate(dirtyBags)
                         ItemButton:SetItem(button, newItemData, iconSize, false)
                         cachedItemData[slotKey] = newItemID
                         cachedItemCount[slotKey] = newItemData.count
+                        CacheChargesForSlot(slotKey, bagID, slot)
                         if hasSearch then
                             ItemButton:SetSearchState(button, SearchBar:ItemMatchesFilters(frame, newItemData))
                         else
@@ -1621,6 +1821,7 @@ function BagFrame:IncrementalUpdate(dirtyBags)
                         ItemButton:SetEmpty(button, bagID, slot, iconSize, false)
                         cachedItemData[slotKey] = nil
                         cachedItemCount[slotKey] = nil
+                        cachedItemCharges[slotKey] = nil
                         if hasSearch then
                             ItemButton:SetSearchState(button, false)
                         else
@@ -1634,6 +1835,8 @@ function BagFrame:IncrementalUpdate(dirtyBags)
                         SetItemButtonCount(button, newItemData.count)
                         cachedItemCount[slotKey] = newItemData.count
                     end
+                    -- Item identity unchanged but charges may have decremented
+                    RefreshChargesForReusedButton(button, bagID, slot, slotKey)
                 end
             end
         end
@@ -1655,6 +1858,7 @@ function BagFrame:IncrementalUpdate(dirtyBags)
                             ItemButton:SetItem(button, newItemData, iconSize, false)
                             cachedItemData[slotKey] = newItemID
                             cachedItemCount[slotKey] = newItemData.count
+                            CacheChargesForSlot(slotKey, bagID, slot)
                             if hasSearch then
                                 ItemButton:SetSearchState(button, SearchBar:ItemMatchesFilters(frame, newItemData))
                             else
@@ -1664,6 +1868,7 @@ function BagFrame:IncrementalUpdate(dirtyBags)
                             ItemButton:SetEmpty(button, bagID, slot, iconSize, false)
                             cachedItemData[slotKey] = nil
                             cachedItemCount[slotKey] = nil
+                            cachedItemCharges[slotKey] = nil
                             if hasSearch then
                                 ItemButton:SetSearchState(button, false)
                             else
@@ -1677,6 +1882,8 @@ function BagFrame:IncrementalUpdate(dirtyBags)
                             SetItemButtonCount(button, newItemData.count)
                             cachedItemCount[slotKey] = newItemData.count
                         end
+                        -- Item identity unchanged but charges may have decremented
+                        RefreshChargesForReusedButton(button, bagID, slot, slotKey)
                     end
                 end
             end
@@ -1688,6 +1895,41 @@ function BagFrame:IncrementalUpdate(dirtyBags)
     local totalSlots, freeSlots = BagScanner:GetTotalSlots()
     Footer:UpdateSlotInfo(totalSlots - freeSlots, totalSlots, regularTotal, regularFree, specialBags)
     Footer:Update()
+end
+
+-- Targeted charges-only refresh — walks already-rendered buttons and updates
+-- chargesText for any slot whose charges differ from cache. Skips slots known
+-- to have no charges (cache value `false`), so this is free for non-charge items.
+-- Triggered by UNIT_SPELLCAST_SUCCEEDED for actions like applying Wizard Oil
+-- where BAG_UPDATE may not fire reliably for charge-only state changes.
+function BagFrame:RefreshChargesOnly()
+    if not frame or not frame:IsShown() then return end
+    if viewingCharacter then return end
+    if not Database:GetSetting("showCharges") then return end
+    local TS = GetTooltipScanner()
+    if not TS then return end
+
+    for slotKey, button in pairs(buttonsBySlot) do
+        if not button.isEmptySlotButton and button.itemData and button.itemData.bagID then
+            local cachedCharges = cachedItemCharges[slotKey]
+            if cachedCharges ~= false then
+                local bagID = button.itemData.bagID
+                local slot = button.itemData.slot
+                local newCharges = TS:GetCharges(bagID, slot) or false
+                if newCharges ~= cachedCharges then
+                    cachedItemCharges[slotKey] = newCharges
+                    if button.chargesText then
+                        if type(newCharges) == "number" and newCharges > 0 then
+                            button.chargesText:SetText("x" .. newCharges)
+                            button.chargesText:Show()
+                        else
+                            button.chargesText:Hide()
+                        end
+                    end
+                end
+            end
+        end
+    end
 end
 
 -- dirtyBags: table of {bagID = true} for bags that were updated
@@ -1957,6 +2199,7 @@ function BagFrame:RestackAndClean()
                     buttonsByBag = {}
                     cachedItemData = {}
                     cachedItemCount = {}
+                    cachedItemCharges = {}
                     cachedItemCategory = {}
                     buttonsByItemKey = {}
                     buttonPositions = {}
@@ -1992,6 +2235,7 @@ function BagFrame:Clean()
     buttonsByBag = {}
     cachedItemData = {}
     cachedItemCount = {}
+    cachedItemCharges = {}
     cachedItemCategory = {}
     buttonsByItemKey = {}
     buttonPositions = {}
@@ -2063,6 +2307,25 @@ Events:Register("PLAYER_MONEY", function()
     end
 end, BagFrame)
 
+-- Refresh charge counters after the player casts something. Applying Wizard
+-- Oil, Sharpening Stones, scrolls, etc. fires UNIT_SPELLCAST_SUCCEEDED but
+-- does not always fire BAG_UPDATE for the charge-only state change. The 50ms
+-- delay lets the local item record settle before the tooltip is re-scanned.
+-- Heavy combat fires this event many times per second; the pending flag
+-- coalesces all casts in a 50ms window into a single refresh pass.
+local chargesRefreshPending = false
+Events:Register("UNIT_SPELLCAST_SUCCEEDED", function(event, unit)
+    if unit ~= "player" then return end
+    if not frame or not frame:IsShown() then return end
+    if viewingCharacter then return end
+    if chargesRefreshPending then return end
+    chargesRefreshPending = true
+    C_Timer.After(0.05, function()
+        chargesRefreshPending = false
+        BagFrame:RefreshChargesOnly()
+    end)
+end, BagFrame)
+
 -- Update item lock state (when picking up/putting down items)
 Events:Register("ITEM_LOCK_CHANGED", function(event, bagID, slotID)
     -- Skip when viewing cached character - lock state is for current character only
@@ -2071,44 +2334,61 @@ Events:Register("ITEM_LOCK_CHANGED", function(event, bagID, slotID)
         ItemButton:UpdateLockForItem(bagID, slotID)
     end
 
-    -- Detect drag start for showing empty category drop targets
+    -- Detect drag start for showing the flyout drop bar (all views) and the
+    -- empty-category drop targets (category view only).
     -- Deferred by one frame to distinguish equip operations (cursor clears within
     -- the same frame) from actual user drags (cursor persists across frames).
     -- Without this, right-click equip triggers false drag detection because the
     -- WoW client briefly puts the item on the cursor during the internal swap,
     -- causing two full Refresh() calls that destroy ghost slots.
     if frame and frame:IsShown() and not viewingCharacter and not isDraggingItem then
-        local viewType = Database:GetSetting("bagViewType") or "single"
-        if viewType == "category" then
-            C_Timer.After(0, function()
-                if isDraggingItem then return end
-                if not frame or not frame:IsShown() then return end
-                if viewingCharacter then return end
-                -- Ignore lock events while the sort engine is moving items
-                local SortEngine = ns:GetModule("SortEngine")
-                if SortEngine and (SortEngine:IsSorting() or SortEngine:IsRestacking()) then
-                    return
+        C_Timer.After(0, function()
+            if isDraggingItem then return end
+            if not frame or not frame:IsShown() then return end
+            if viewingCharacter then return end
+            -- Ignore lock events while the sort engine is moving items
+            local SortEngine = ns:GetModule("SortEngine")
+            if SortEngine and (SortEngine:IsSorting() or SortEngine:IsRestacking()) then
+                return
+            end
+            local cursorType, cursorItemID = GetCursorInfo()
+            if cursorType == "item" then
+                isDraggingItem = true
+
+                local sourceBag, sourceSlot, source = BagFrame:GetCursorBagSlot()
+
+                local DragFlyoutBar = ns:GetModule("DragFlyoutBar")
+                if DragFlyoutBar then
+                    DragFlyoutBar:OnDragStart(cursorItemID, sourceBag, sourceSlot, source)
                 end
-                local cursorType = GetCursorInfo()
-                if cursorType == "item" then
-                    isDraggingItem = true
+
+                local viewType = Database:GetSetting("bagViewType") or "single"
+                if viewType == "category" then
                     BagFrame:Refresh()
-                    -- Poll for cursor clear (item dropped/cancelled)
-                    dragCheckTicker = C_Timer.NewTicker(0.1, function()
-                        if not CursorHasItem() then
-                            isDraggingItem = false
-                            if dragCheckTicker then
-                                dragCheckTicker:Cancel()
-                                dragCheckTicker = nil
-                            end
-                            if frame and frame:IsShown() then
+                end
+
+                -- Poll for cursor clear (item dropped/cancelled)
+                dragCheckTicker = C_Timer.NewTicker(0.1, function()
+                    if not CursorHasItem() then
+                        isDraggingItem = false
+                        if dragCheckTicker then
+                            dragCheckTicker:Cancel()
+                            dragCheckTicker = nil
+                        end
+                        local DragFlyoutBar = ns:GetModule("DragFlyoutBar")
+                        if DragFlyoutBar then
+                            DragFlyoutBar:OnDragEnd()
+                        end
+                        if frame and frame:IsShown() then
+                            local viewType = Database:GetSetting("bagViewType") or "single"
+                            if viewType == "category" then
                                 BagFrame:Refresh()
                             end
                         end
-                    end)
-                end
-            end)
-        end
+                    end
+                end)
+            end
+        end)
     end
 end, BagFrame)
 
@@ -2152,9 +2432,18 @@ Events:Register("MAIL_CLOSED", RefreshForInteractionWindow, BagFrame)
 Events:Register("MERCHANT_SHOW", RefreshForInteractionWindow, BagFrame)
 Events:Register("MERCHANT_CLOSED", RefreshForInteractionWindow, BagFrame)
 
--- Auto-vendor gray items at merchant
+-- Auto-vendor items the category system classifies as "Junk".
+-- Asks CategoryManager for the resolved category (which respects user
+-- itemOverrides), so items the user manually moved to Junk get sold and items
+-- they moved out of Junk are preserved — independent of the item's quality.
 local function AutoVendorJunk()
     if not Database:GetSetting("autoVendorJunk") then return end
+
+    local CategoryManager = ns:GetModule("CategoryManager")
+    if not CategoryManager then return end
+
+    local BagScanner = ns:GetModule("BagScanner")
+    local cachedBags = BagScanner and BagScanner:GetCachedBags() or {}
 
     local totalPrice = 0
     local itemsSold = 0
@@ -2163,12 +2452,30 @@ local function AutoVendorJunk()
         local numSlots = C_Container.GetContainerNumSlots(bagID)
         for slot = 1, numSlots do
             local itemInfo = C_Container.GetContainerItemInfo(bagID, slot)
-            if itemInfo and itemInfo.quality == 0 then
-                local _, _, _, _, _, _, _, _, _, _, sellPrice = GetItemInfo(itemInfo.hyperlink)
-                if sellPrice and sellPrice > 0 then
-                    C_Container.UseContainerItem(bagID, slot)
-                    totalPrice = totalPrice + sellPrice * itemInfo.stackCount
-                    itemsSold = itemsSold + 1
+            if itemInfo and not Database:IsItemLocked(itemInfo.itemID)
+                and not (autoLockSets and EquipSets and EquipSets:IsInSet(itemInfo.itemID)) then
+                -- Prefer the scanner's full itemData (rich fields for rule
+                -- evaluation); fall back to a minimal inline build if the
+                -- cache is missing or stale for this slot. itemOverrides
+                -- only need itemID, so the fallback is enough for the
+                -- user-assignment path even before the scanner catches up.
+                local cachedSlots = cachedBags[bagID] and cachedBags[bagID].slots
+                local itemData = cachedSlots and cachedSlots[slot]
+                if not itemData or itemData.itemID ~= itemInfo.itemID then
+                    itemData = {
+                        itemID = itemInfo.itemID,
+                        quality = itemInfo.quality,
+                        hyperlink = itemInfo.hyperlink,
+                    }
+                end
+
+                if CategoryManager:CategorizeItem(itemData, bagID, slot, false) == "Junk" then
+                    local _, _, _, _, _, _, _, _, _, _, sellPrice = GetItemInfo(itemInfo.hyperlink)
+                    if sellPrice and sellPrice > 0 then
+                        C_Container.UseContainerItem(bagID, slot)
+                        totalPrice = totalPrice + sellPrice * itemInfo.stackCount
+                        itemsSold = itemsSold + 1
+                    end
                 end
             end
         end

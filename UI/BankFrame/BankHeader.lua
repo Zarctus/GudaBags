@@ -7,6 +7,7 @@ local Constants = ns.Constants
 local L = ns.L
 local Database = ns:GetModule("Database")
 local HeaderButtonVisibility = ns:GetModule("HeaderButtonVisibility")
+local HeaderViewControls = ns:GetModule("HeaderViewControls")
 local IconButton = ns:GetModule("IconButton")
 local ItemButton = ns:GetModule("ItemButton")
 local SearchToggleButton = ns:GetModule("SearchToggleButton")
@@ -162,6 +163,15 @@ local function CreateHeader(parent)
         lastRightButton = sortButton
     end
 
+    local viewCycleButton, recentToggleButton = HeaderViewControls:Attach(titleBar, {
+        viewSettingKey = "bankViewType",
+        ownerPrefix    = "BankHeader",
+        anchorButton   = lastRightButton,
+    })
+    titleBar.viewCycleButton = viewCycleButton
+    titleBar.recentToggleButton = recentToggleButton
+    lastRightButton = recentToggleButton
+
     -- Search toggle button (shown when "Always Show Search Bar" is off)
     local searchButton = SearchToggleButton:Create(titleBar, {
         targetModule = "BankFrame",
@@ -216,10 +226,11 @@ function BankHeader:SetBackdropAlpha(alpha)
     end
     HeaderButtonVisibility:ApplyState(frame.charactersButton)
     HeaderButtonVisibility:ApplyState(frame.sortButton)
+    HeaderViewControls:ApplyVisibility(frame.viewCycleButton, frame.recentToggleButton, "bankViewType")
 
     local leftButtons = HeaderButtonVisibility:Filter({ frame.charactersButton })
     local rightButtons = HeaderButtonVisibility:Filter({
-        frame.settingsButton, frame.sortButton, frame.searchButton
+        frame.settingsButton, frame.sortButton, frame.viewCycleButton, frame.recentToggleButton, frame.searchButton
     })
 
     Theme:ApplyHeaderButtons(
@@ -232,6 +243,11 @@ end
 
 -- Re-apply layout when any header button setting flips.
 HeaderButtonVisibility:Watch(BankHeader, function()
+    if frame then BankHeader:SetBackdropAlpha(lastAlpha) end
+end)
+
+-- Recent toggle is gated by bankViewType too — re-lay out when the view cycles.
+HeaderViewControls:WatchViewType("bankViewType", "BankHeader", function()
     if frame then BankHeader:SetBackdropAlpha(lastAlpha) end
 end)
 

@@ -453,6 +453,9 @@ end
 
 -- Pinned slots set, loaded once per sort pass
 local currentPinnedSlots = {}
+-- User-marked junk set, loaded once per sort pass. Kept outside sortKeyCache
+-- so toggling a mark at runtime takes effect without invalidating the cache.
+local currentMarkedJunk = {}
 
 local function SnapshotSlots(bagIDs)
     local slotMap = {}  -- key: bagID*1000+slot → entry (or nil for empty)
@@ -460,6 +463,7 @@ local function SnapshotSlots(bagIDs)
     local sequence = 0
     local whiteItemsJunk = Database:GetSetting("whiteItemsJunk") or false
     currentPinnedSlots = Database:GetPinnedSlotSet()
+    currentMarkedJunk = Database:GetMarkedJunkSet()
 
     for _, bagID in ipairs(bagIDs) do
         local numSlots = C_Container_GetContainerNumSlots(bagID)
@@ -545,6 +549,11 @@ local function SnapshotSlots(bagIDs)
                 sequence = sequence + 1
                 local key = bagID * 1000 + slot
                 local isPinned = currentPinnedSlots[key] or false
+                -- User-mark override: applied here (not in sk cache) so toggles
+                -- take effect on the next sort without cache invalidation.
+                local userMarkedJunk = currentMarkedJunk[itemID] or false
+                local effectiveIsJunk = sk.isJunk or userMarkedJunk
+                local effectiveSortedClassID = userMarkedJunk and 100 or sk.sortedClassID
                 local entry = {
                     bagID = bagID,
                     slot = slot,
@@ -555,11 +564,11 @@ local function SnapshotSlots(bagIDs)
                     isPinned = isPinned,
                     -- Inline sort keys (no separate table per item)
                     priority = sk.priority,
-                    sortedClassID = sk.sortedClassID,
+                    sortedClassID = effectiveSortedClassID,
                     sortedSubClassID = sk.sortedSubClassID,
                     sortedEquipSlot = sk.sortedEquipSlot,
                     isEquippable = sk.isEquippable,
-                    isJunk = sk.isJunk,
+                    isJunk = effectiveIsJunk,
                     invertedQuality = sk.invertedQuality,
                     invertedItemLevel = sk.invertedItemLevel,
                     invertedItemID = sk.invertedItemID,

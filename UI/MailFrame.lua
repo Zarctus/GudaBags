@@ -7,6 +7,7 @@ local Constants = ns.Constants
 local L = ns.L
 local Database = ns:GetModule("Database")
 local Events = ns:GetModule("Events")
+local Font = ns:GetModule("Font")
 local Theme = ns:GetModule("Theme")
 local Utils = ns:GetModule("Utils")
 
@@ -481,10 +482,27 @@ function MailFrame:Toggle()
 end
 
 function MailFrame:Show()
+    -- Free the bank/guild-bank retained buttons (they don't coexist with mail, so this
+    -- returns their share of the shared ItemButton pool; no-op if open / not holding).
+    --
+    -- Do NOT release the bags' held buttons: the bags auto-open *together* with mail,
+    -- so tearing down their persisted layout would force a full cold re-render right as
+    -- they reopen. Leaving them held lets the bag auto-open take its fast-reopen path.
+    -- In-combat pool pressure is handled by PLAYER_REGEN_DISABLED.
+    local BankFrameModule = ns:GetModule("BankFrame")
+    if BankFrameModule and BankFrameModule.ReleaseHeld then
+        BankFrameModule:ReleaseHeld()
+    end
+    local GuildBankFrameModule = ns:GetModule("GuildBankFrame")
+    if GuildBankFrameModule and GuildBankFrameModule.ReleaseHeld then
+        GuildBankFrameModule:ReleaseHeld()
+    end
+
     if not frame then
         frame = CreateMailFrame()
         Database:RestoreFramePosition(frame, "mailFrame")
         UpdateFrameAppearance()
+        Font:RegisterFrame(frame)
     end
 
     frame:Show()
@@ -589,6 +607,9 @@ function MailFrame:Refresh()
     else
         MailFooter:HideBackButton()
     end
+
+    -- Apply the selected font to any rows/text created during this refresh.
+    Font:ApplyToRegions(frame)
 end
 
 function MailFrame:ViewCharacter(fullName, charData)

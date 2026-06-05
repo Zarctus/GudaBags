@@ -5,8 +5,67 @@ ns:RegisterModule("ItemButton", ItemButton)
 
 local Constants = ns.Constants
 local Database = ns:GetModule("Database")
+local Font = ns:GetModule("Font")
 local Tooltip = ns:GetModule("Tooltip")
 local Utils = ns:GetModule("Utils")
+
+-------------------------------------------------
+-- Upgrade arrow (Pawn / SimpleItemLevel compatibility)
+-- Drawn on our own buttons using whichever advisor addon is present. Pawn
+-- takes priority; SimpleItemLevel is the fallback. Pawn's verdict is cached,
+-- budgeted, and invalidated by the Compatibility.Pawn module.
+-------------------------------------------------
+
+-- Pawn shows the green arrow on bags by reusing Blizzard's built-in bag
+-- UpgradeIcon ("bags-greenarrow" atlas) -- so we use that to match Pawn. On
+-- clients without that atlas, fall back to Pawn's own arrow texture.
+local PAWN_ARROW_ATLAS = (C_Texture and C_Texture.GetAtlasInfo
+    and C_Texture.GetAtlasInfo("bags-greenarrow")) and "bags-greenarrow" or nil
+local PAWN_ARROW_TEXTURE = "Interface\\AddOns\\Pawn\\Textures\\UpgradeArrow"
+
+local PawnCompat  -- resolved lazily to avoid load-order coupling
+
+-- Which addon says this item is an upgrade? Returns "pawn", "sil", or nil.
+-- Pawn takes priority. classID 2 = Weapon, 4 = Armor (itemType is localized).
+local function GetUpgradeArrowSource(itemData, isReadOnly)
+    if ns.suspectDisabled and ns.suspectDisabled.upgrade then return nil end
+    if isReadOnly or not itemData or not itemData.link then return nil end
+    if not (itemData.classID == 2 or itemData.classID == 4) then return nil end
+
+    PawnCompat = PawnCompat or ns:GetModule("Compatibility.Pawn")
+    if PawnCompat and PawnCompat:IsAvailable() then
+        -- nil ("not sure yet") is handled inside the module, which refreshes
+        -- the arrows once it resolves -- so treat anything but true as no arrow.
+        return PawnCompat:GetUpgradeStatus(itemData.link) == true and "pawn" or nil
+    end
+
+    local sil = _G.SimpleItemLevel
+    if sil and sil.API and sil.API.ItemIsUpgrade then
+        return sil.API.ItemIsUpgrade(itemData.link) == true and "sil" or nil
+    end
+    return nil
+end
+
+-- Apply or clear the upgrade arrow on a button based on its current item.
+-- Reads button.itemData / button.isReadOnly (both set in SetItem), so it can
+-- also be called standalone by RefreshUpgradeArrows.
+local function ApplyUpgradeArrow(button)
+    if not button.upgradeArrow then return end
+    local source = GetUpgradeArrowSource(button.itemData, button.isReadOnly)
+    if source == "pawn" then
+        if PAWN_ARROW_ATLAS then
+            button.upgradeArrow:SetAtlas(PAWN_ARROW_ATLAS)
+        else
+            button.upgradeArrow:SetTexture(PAWN_ARROW_TEXTURE)
+        end
+        button.upgradeArrow:Show()
+    elseif source == "sil" then
+        button.upgradeArrow:SetAtlas("poi-door-arrow-up")
+        button.upgradeArrow:Show()
+    else
+        button.upgradeArrow:Hide()
+    end
+end
 
 -- No-op: UIErrorsFrame hooking was removed to prevent taint propagation
 -- that would break Blizzard's secure unit frame code (maxHealth comparisons, etc.)
@@ -346,6 +405,7 @@ local function ResetButton(pool, button)
     local masqueActive = MasqueModule and MasqueModule:IsActive()
     if masqueActive then MasqueModule:RemoveButton(button) end
 
+    button._pooledActive = false  -- O(1) active flag (see ItemButton:Release)
     button:SetShown(false)  -- Use SetShown to avoid taint during combat
     button.wrapper:SetShown(false)
     button.wrapper:ClearAllPoints()
@@ -390,6 +450,8 @@ local function ResetButton(pool, button)
     if button.equipSetIconShadow then button.equipSetIconShadow:Hide() end
     if button.itemLevelText then button.itemLevelText:Hide() end
     if button.chargesText then button.chargesText:Hide() end
+    if button.boeText then button.boeText:Hide() end
+    if button.upgradeArrow then button.upgradeArrow:Hide() end
     if button.questIcon then button.questIcon:Hide() end
     if button.questStarterIcon then button.questStarterIcon:Hide() end
     if button.craftingQualityIcon then button.craftingQualityIcon:Hide() end
@@ -410,16 +472,16 @@ end
 local function ApplyFontSize(button, fontSize)
     fontSize = fontSize or Database:GetSetting("iconFontSize")
     if button.Count then
-        button.Count:SetFont(Constants.FONTS.DEFAULT, fontSize, "OUTLINE")
+        Font:Apply(button.Count, fontSize, "OUTLINE")
         button.Count:ClearAllPoints()
         button.Count:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", 0, 1)
         button.Count:SetJustifyH("RIGHT")
     end
     if button.itemLevelText then
-        button.itemLevelText:SetFont(Constants.FONTS.DEFAULT, fontSize, "OUTLINE")
+        Font:Apply(button.itemLevelText, fontSize, "OUTLINE")
     end
     if button.chargesText then
-        button.chargesText:SetFont(Constants.FONTS.DEFAULT, fontSize, "OUTLINE")
+        Font:Apply(button.chargesText, fontSize, "OUTLINE")
     end
 end
 
@@ -494,6 +556,9 @@ local function IsJunkItem(itemData)
 end
 
 local function CreateButton(parent)
+    -- Count newly-created secure buttons. A high count during a bank open means the
+    -- pool was too small (PreWarm) and the freeze is secure-frame creation, not render.
+    ns:ProfileBump("CreateButton.count")
     buttonIndex = buttonIndex + 1
     local name = "GudaBagsItemButton" .. buttonIndex
 
@@ -686,6 +751,8 @@ local function CreateButton(parent)
     if button.cooldown then button.cooldown:SetFrameLevel(btnLvl + Constants.FRAME_LEVELS.COOLDOWN) end
     if button.questStarterIcon then button.questStarterIcon:SetFrameLevel(btnLvl + Constants.FRAME_LEVELS.QUEST_ICON) end
     if button.questIcon then button.questIcon:SetFrameLevel(btnLvl + Constants.FRAME_LEVELS.QUEST_ICON) end
+    if button.userLockFrame then button.userLockFrame:SetFrameLevel(btnLvl + Constants.FRAME_LEVELS.BORDER + 2) end
+    if button.craftingQualityFrame then button.craftingQualityFrame:SetFrameLevel(btnLvl + Constants.FRAME_LEVELS.BORDER + 1) end
 
     -- Reset hit rect to cover the full button (template might shrink it)
     button:SetHitRectInsets(0, 0, 0, 0)
@@ -795,29 +862,50 @@ local function CreateButton(parent)
     junkIcon:Hide()
     button.junkIcon = junkIcon
 
-    -- Crafting quality icon (top-left corner, Retail only)
-    local craftingQualityIcon = button:CreateTexture(nil, "OVERLAY", nil, 3)
+    -- Crafting quality icon (top-left corner, Retail only).
+    -- Wrapped in its own frame at frame-level BORDER+1 so the quality icon
+    -- draws ABOVE the quality border (button.border is a frame at BORDER —
+    -- a texture on the button itself would always be hidden behind it).
+    local craftingQualityFrame = CreateFrame("Frame", nil, button)
+    craftingQualityFrame:SetAllPoints(button)
+    craftingQualityFrame:SetFrameLevel(button:GetFrameLevel() + Constants.FRAME_LEVELS.BORDER + 1)
+    local craftingQualityIcon = craftingQualityFrame:CreateTexture(nil, "OVERLAY", nil, 3)
     craftingQualityIcon:SetSize(34, 34)
     craftingQualityIcon:SetPoint("TOPLEFT", button, "TOPLEFT", -5, 5)
     craftingQualityIcon:Hide()
+    button.craftingQualityFrame = craftingQualityFrame
     button.craftingQualityIcon = craftingQualityIcon
 
-    -- Tracked/favorite icon shadow (for darker stroke effect)
+    -- Tracked/favorite icon shadow (for darker stroke effect, drawn behind the icon)
     local trackedIconShadow = button:CreateTexture(nil, "OVERLAY", nil, 2)
     trackedIconShadow:SetSize(14, 14)
-    trackedIconShadow:SetPoint("TOPRIGHT", button, "TOPRIGHT", 0, 0)
+    trackedIconShadow:SetPoint("CENTER", button, "CENTER", 0, 0)
     trackedIconShadow:SetTexture("Interface\\AddOns\\GudaBags\\Assets\\fav.png")
     trackedIconShadow:SetVertexColor(0, 0, 0, 1)
     trackedIconShadow:Hide()
     button.trackedIconShadow = trackedIconShadow
 
-    -- Tracked/favorite icon (top right corner)
+    -- Tracked/favorite icon (center of slot, freed from top-right so the
+    -- item-level text can take that corner — leaves TOPLEFT free for SimpleItemLevel).
     local trackedIcon = button:CreateTexture(nil, "OVERLAY", nil, 3)
     trackedIcon:SetSize(12, 12)
-    trackedIcon:SetPoint("TOPRIGHT", button, "TOPRIGHT", -1, -1)
+    trackedIcon:SetPoint("CENTER", button, "CENTER", 0, 0)
     trackedIcon:SetTexture("Interface\\AddOns\\GudaBags\\Assets\\fav.png")
     trackedIcon:Hide()
     button.trackedIcon = trackedIcon
+
+    -- Upgrade arrow (top-left). Rendered by us using whichever advisor addon is
+    -- present -- Pawn first, then SimpleItemLevel (see GetUpgradeArrowSource).
+    -- The texture is swapped per source in SetItem (Pawn's green arrow vs the
+    -- gold poi-door-arrow-up atlas); the atlas below is just the default.
+    -- Anchored at TOPLEFT (freed by moving our iLvl to TOPRIGHT).
+    -- Stays hidden when neither addon is installed (gate in SetItem).
+    local upgradeArrow = button:CreateTexture(nil, "OVERLAY", nil, 4)
+    upgradeArrow:SetSize(12, 12)
+    upgradeArrow:SetPoint("TOPLEFT", button, "TOPLEFT", 2, -2)
+    upgradeArrow:SetAtlas("poi-door-arrow-up")
+    upgradeArrow:Hide()
+    button.upgradeArrow = upgradeArrow
 
     -- Equipment set icon shadow (bottom-left corner)
     local equipSetIconShadow = button:CreateTexture(nil, "OVERLAY", nil, 2)
@@ -876,22 +964,35 @@ local function CreateButton(parent)
     button.userLockIcon = userLockIcon
     button.userLockFrame = userLockFrame
 
-    -- Item level text (top-left corner)
+    -- Item level text (top-right corner). Top-left is reserved for SimpleItemLevel
+    -- when that addon is loaded (it places its iLvl there by default).
     local itemLevelText = button:CreateFontString(nil, "OVERLAY", nil)
-    itemLevelText:SetFont(Constants.FONTS.DEFAULT, 12, "OUTLINE")
-    itemLevelText:SetPoint("TOPLEFT", button, "TOPLEFT", 2, -2)
-    itemLevelText:SetJustifyH("LEFT")
+    Font:Apply(itemLevelText, 12, "OUTLINE")
+    itemLevelText:SetPoint("TOPRIGHT", button, "TOPRIGHT", -2, -2)
+    itemLevelText:SetJustifyH("RIGHT")
     itemLevelText:Hide()
     button.itemLevelText = itemLevelText
 
     -- Charges text (bottom-right corner, e.g. "x5" for Wizard Oil)
     local chargesText = button:CreateFontString(nil, "OVERLAY", nil)
-    chargesText:SetFont(Constants.FONTS.DEFAULT, 12, "OUTLINE")
+    Font:Apply(chargesText, 12, "OUTLINE")
     chargesText:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", 0, 1)
     chargesText:SetJustifyH("RIGHT")
     chargesText:SetTextColor(1, 0.82, 0)
     chargesText:Hide()
     button.chargesText = chargesText
+
+    -- BoE label (bottom-left corner, drawn above equipment-set and pin icons
+    -- which sit on the same corner — sublayer 6 puts it above those
+    -- sublayer 2-5 icons. OUTLINE keeps it readable when stacked on top of them.)
+    -- Color is set per-item in SetItem() based on item quality.
+    local boeText = button:CreateFontString(nil, "OVERLAY", nil, 6)
+    Font:Apply(boeText, 10, "OUTLINE")
+    boeText:SetPoint("BOTTOMLEFT", button, "BOTTOMLEFT", 1, 1)
+    boeText:SetJustifyH("LEFT")
+    boeText:SetText("BoE")
+    boeText:Hide()
+    button.boeText = boeText
 
     -- Quest starter icon (top left corner) - exclamation mark for quest starter items
     -- Use a frame container to ensure it draws above the border
@@ -1557,6 +1658,7 @@ function ItemButton:Acquire(parent)
     end
 
     local button = buttonPool:Acquire()
+    button._pooledActive = true  -- O(1) active flag (see ItemButton:Release)
     button.wrapper:SetParent(parent)
     button.wrapper:SetShown(true)  -- Use SetShown to avoid taint during combat
     button:SetShown(true)
@@ -1574,18 +1676,15 @@ end
 function ItemButton:Release(button)
     if not buttonPool then return end
 
-    -- Check if button is active before releasing (avoid double-release error)
-    local isActive = false
-    for activeButton in buttonPool:EnumerateActive() do
-        if activeButton == button then
-            isActive = true
-            break
-        end
-    end
-    if not isActive then return end
+    -- Guard against double-release. This used to linearly scan EnumerateActive()
+    -- on every call: O(active) per release, so releasing N buttons was O(N*active)
+    -- — quadratic, and the pool is shared across bags/bank/guild bank/mail (can be
+    -- ~600 active). An O(1) flag (set in Acquire, cleared in ResetButton) replaces it.
+    if not button or not button._pooledActive then return end
 
-    -- Minimal cleanup - visual reset happens in SetItem (lazy cleanup)
-    button.currentSize = nil
+    -- Keep button.currentSize intact: a pooled button reused at the same icon size
+    -- can then skip the redundant SetSize/Masque re-register in EnsureButtonSize.
+    -- (EnsureButtonSize still resizes correctly when the size actually differs.)
 
     -- Release to pool (ResetButton callback handles hide/clear/anchors)
     buttonPool:Release(button)
@@ -1638,6 +1737,51 @@ function ItemButton:PreWarm(parent, count)
 
 end
 
+-- Background pool growth: secure-frame creation is the bulk of the first big open
+-- (e.g. a warband bank's All-Tabs view needs ~550 buttons but PreWarm only makes
+-- ~200, so ~350 are created on the spot — a visible freeze). This grows the pool to
+-- `target` in small batches across idle frames AFTER login, so by the time the bank
+-- opens the buttons already exist. Out of combat only (secure frames can't be created
+-- in combat); it pauses during combat and resumes after. Holds the batch acquired
+-- until `target` is reached, then releases all back to the pool as free buttons.
+local bgGrowTicker = nil
+function ItemButton:BackgroundGrowPool(parent, target, perTick, interval)
+    if bgGrowTicker then return end  -- already running / done
+    if not buttonPool then
+        buttonPool = CreateObjectPool(function() return CreateButton(parent) end, ResetButton)
+    end
+    target = target or 750
+    perTick = perTick or 15
+    local held = {}
+    local function finish(ticker)
+        for _, b in ipairs(held) do buttonPool:Release(b) end
+        held = {}
+        ticker:Cancel()
+        bgGrowTicker = nil
+    end
+    bgGrowTicker = C_Timer.NewTicker(interval or 0.05, function(ticker)
+        -- Don't create secure frames in combat; resume on the next tick after combat.
+        if InCombatLockdown() then return end
+        -- If a real consumer (bag/bank/guild bank) acquired buttons, it's already
+        -- growing the pool itself — release our batch and stop so we don't compete.
+        if buttonPool.GetNumActive and buttonPool:GetNumActive() > #held then
+            finish(ticker)
+            return
+        end
+        for _ = 1, perTick do
+            if #held >= target then
+                finish(ticker)
+                return
+            end
+            local b = buttonPool:Acquire()  -- reuses free first, then creates new
+            b.wrapper:SetParent(parent)
+            b:SetShown(false)
+            b.wrapper:SetShown(false)
+            held[#held + 1] = b
+        end
+    end)
+end
+
 -- Check if a cooldown is just the GCD (matches global cooldown start/duration)
 local function IsGlobalCooldown(start, duration)
     -- 12.0.0+: GetSpellCooldown is removed, use C_Spell.GetSpellCooldown
@@ -1673,6 +1817,7 @@ local function GetCachedSettings()
             markEquipmentSets = Database:GetSetting("markEquipmentSets"),
             showItemLevel = Database:GetSetting("showItemLevel"),
             showCharges = Database:GetSetting("showCharges"),
+            showBoeLabel = Database:GetSetting("showBoeLabel"),
         }
         cachedSettingsFrame = currentFrame
     end
@@ -1785,6 +1930,7 @@ end
 -- Register button with Masque after sizing is complete, then reapply icon anchoring
 -- Masque overrides icon anchors as part of skinning, so we must re-anchor after registration
 local function ApplyMasqueAfterSizing(button)
+    if ns.suspectDisabled and ns.suspectDisabled.masque then return end
     if button._masqueApplied then return end
     local MasqueModule = ns:GetModule("Masque")
     if not MasqueModule or not MasqueModule:IsActive() or not button.owner then return end
@@ -1830,6 +1976,7 @@ function ItemButton:SetItem(button, itemData, size, isReadOnly)
         button:_suppressNewChildren()
     end
 
+    ns:ProfileBump("SetItem.calls")
     -- Hide Blizzard template's built-in textures (they may re-show from events)
     if button.IconBorder then button.IconBorder:Hide() end
     if button.IconOverlay then button.IconOverlay:Hide() end
@@ -1846,6 +1993,11 @@ function ItemButton:SetItem(button, itemData, size, isReadOnly)
     -- Reset visual state from previous item (lazy cleanup)
     -- These elements might not be explicitly set below
     button:SetAlpha(1)
+    -- Clear pseudo-slot flags: a recycled Empty/DropTarget pseudo button reused for
+    -- a real item must not keep them (recycle skips ResetButton). The pseudo branches
+    -- below re-set isEmptySlotButton when applicable.
+    button.isEmptySlotButton = nil
+    button.isDropTargetButton = nil
     if button.trackedIcon then button.trackedIcon:Hide() end
     if button.trackedIconShadow then button.trackedIconShadow:Hide() end
     if button.equipSetIcon then button.equipSetIcon:Hide() end
@@ -1863,10 +2015,12 @@ function ItemButton:SetItem(button, itemData, size, isReadOnly)
     local settings = GetCachedSettings()
     size = size or settings.iconSize
 
+    ns:ProfileStart("setitem.masque")
     EnsureButtonSize(button, size)
 
     -- Register with Masque after sizing (deferred from Acquire to avoid icon anchor issues)
     ApplyMasqueAfterSizing(button)
+    ns:ProfileStop("setitem.masque")
 
     button.slotBackground:SetVertexColor(0.5, 0.5, 0.5, settings.bgAlpha)
 
@@ -1891,6 +2045,8 @@ function ItemButton:SetItem(button, itemData, size, isReadOnly)
         button.lockOverlay:Hide()
         if button.itemLevelText then button.itemLevelText:Hide() end
         if button.chargesText then button.chargesText:Hide() end
+        if button.boeText then button.boeText:Hide() end
+        if button.upgradeArrow then button.upgradeArrow:Hide() end
         if button.cooldown then CooldownFrame_Set(button.cooldown, 0, 0, false) end
 
         -- Mark this button as empty slot handler
@@ -1902,6 +2058,14 @@ function ItemButton:SetItem(button, itemData, size, isReadOnly)
         if not InCombatLockdown() then
             button.wrapper:SetID(itemData.bagID)
             button:SetID(itemData.slot)
+        end
+
+        -- Refresh tooltip in place if user is hovering this pseudo-slot
+        -- (e.g. another bag-update changed the empty count).
+        -- Skip while an item is on the cursor (see note at the normal-item path).
+        if GameTooltip:IsOwned(button) and not InCombatLockdown() and not GetCursorInfo() then
+            local onEnter = button:GetScript("OnEnter")
+            if onEnter then onEnter(button) end
         end
 
         return
@@ -1927,6 +2091,8 @@ function ItemButton:SetItem(button, itemData, size, isReadOnly)
         button.lockOverlay:Hide()
         if button.itemLevelText then button.itemLevelText:Hide() end
         if button.chargesText then button.chargesText:Hide() end
+        if button.boeText then button.boeText:Hide() end
+        if button.upgradeArrow then button.upgradeArrow:Hide() end
         if button.cooldown then CooldownFrame_Set(button.cooldown, 0, 0, false) end
 
         -- Animated glow border
@@ -1937,6 +2103,13 @@ function ItemButton:SetItem(button, itemData, size, isReadOnly)
         button.isDropTargetButton = true
         button.wrapper:SetID(0)
         button:SetID(0)
+
+        -- Refresh tooltip in place if user is hovering this drop-target slot.
+        -- Skip while an item is on the cursor (see note at the normal-item path).
+        if GameTooltip:IsOwned(button) and not InCombatLockdown() and not GetCursorInfo() then
+            local onEnter = button:GetScript("OnEnter")
+            if onEnter then onEnter(button) end
+        end
 
         return
     end
@@ -1987,10 +2160,25 @@ function ItemButton:SetItem(button, itemData, size, isReadOnly)
             showBorder = settings.otherBorders
         end
 
-        -- Helper to show inner shadow with color
+        -- Helper to show inner shadow with color. The 4 gradient textures only
+        -- depend on the color, so cache the last-applied color on the button and skip
+        -- the 4 SetGradient calls when it's unchanged AND the glow is still shown.
+        -- The IsShown() check makes this robust against the other code paths that hide
+        -- innerShadow directly (ResetButton/SetEmpty/pseudo) without touching them.
         local function ShowInnerShadow(color)
+            if ns.suspectDisabled and ns.suspectDisabled.glow then
+                if button.innerShadow then
+                    for _, tex in pairs(button.innerShadow) do tex:Hide() end
+                end
+                return
+            end
             if button.innerShadow then
                 local r, g, b = color[1], color[2], color[3]
+                if button._glowR == r and button._glowG == g and button._glowB == b
+                    and button.innerShadow.top:IsShown() then
+                    return  -- already showing this exact glow — nothing to rebuild
+                end
+                button._glowR, button._glowG, button._glowB = r, g, b
                 button.innerShadow.top:SetGradient("VERTICAL", CreateColor(r, g, b, 0), CreateColor(r, g, b, 0.5))
                 button.innerShadow.bottom:SetGradient("VERTICAL", CreateColor(r, g, b, 0.5), CreateColor(r, g, b, 0))
                 button.innerShadow.left:SetGradient("HORIZONTAL", CreateColor(r, g, b, 0.5), CreateColor(r, g, b, 0))
@@ -2004,6 +2192,7 @@ function ItemButton:SetItem(button, itemData, size, isReadOnly)
             end
         end
 
+        ns:ProfileStart("setitem.glow")
         if showQuestIndicator then
             local questColor = itemData.isQuestStarter and Constants.COLORS.QUEST_STARTER or Constants.COLORS.QUEST
             button.border:SetVertexColor(questColor[1], questColor[2], questColor[3], 1)
@@ -2023,8 +2212,26 @@ function ItemButton:SetItem(button, itemData, size, isReadOnly)
             button.border:Hide()
             HideInnerShadow()
         end
+        ns:ProfileStop("setitem.glow")
 
-        if itemData.locked then
+        -- The scanner snapshots `locked` at scan time, which during an equip-swap
+        -- can capture the item while it is transiently locked. When the snapshot
+        -- claims locked, verify against the live API for real container items so a
+        -- stale lock doesn't leave the slot greyed. Guild-bank and cached/read-only
+        -- views keep the snapshot value (the live container API doesn't apply).
+        local isLocked = itemData.locked
+        if isLocked and not isReadOnly and not itemData.isGuildBank
+            and itemData.bagID and itemData.slot then
+            local liveInfo = C_Container.GetContainerItemInfo(itemData.bagID, itemData.slot)
+            if liveInfo then
+                isLocked = liveInfo.isLocked or false
+                -- Write back so the (shared) scanner snapshot stops reporting a
+                -- stale lock and future refreshes skip this live re-check.
+                itemData.locked = isLocked
+            end
+        end
+
+        if isLocked then
             button.lockOverlay:Show()
             SetItemButtonDesaturated(button, true)
         else
@@ -2033,6 +2240,7 @@ function ItemButton:SetItem(button, itemData, size, isReadOnly)
         end
 
         -- Update cooldown (skip GCD to avoid spinning every item on wand/ability use)
+        ns:ProfileStart("si.cooldown")
         local isOnCooldown = false
         if button.cooldown and not isReadOnly then
             local start, duration, enable = C_Container.GetContainerItemCooldown(itemData.bagID, itemData.slot)
@@ -2045,6 +2253,7 @@ function ItemButton:SetItem(button, itemData, size, isReadOnly)
         elseif button.cooldown then
             CooldownFrame_Set(button.cooldown, 0, 0, false)
         end
+        ns:ProfileStop("si.cooldown")
 
         if settings.markUnusableItems and itemData.isUsable == false and not isOnCooldown then
             button.unusableOverlay:Show()
@@ -2076,12 +2285,16 @@ function ItemButton:SetItem(button, itemData, size, isReadOnly)
             end
         end
 
-        -- Crafting quality icon (Retail profession items)
+        -- Crafting quality icon (Retail profession items).
+        -- itemData.craftingQualityAtlas is the exact bag-overlay atlas extracted
+        -- from the item link (see Data/ItemScanner.lua GetCraftingQualityAtlas) —
+        -- this guarantees the icon matches the tooltip, including War Within's
+        -- new "Professions-Icon-Quality-12-Tier{N}" family.
         if button.craftingQualityIcon then
-            if itemData.craftingQuality and itemData.craftingQuality > 0 then
+            if itemData.craftingQualityAtlas then
                 local cqSize = math.max(20, math.floor(size * 0.54))
                 button.craftingQualityIcon:SetSize(cqSize, cqSize)
-                button.craftingQualityIcon:SetAtlas("Professions-Icon-Quality-Tier" .. itemData.craftingQuality, false)
+                button.craftingQualityIcon:SetAtlas(itemData.craftingQualityAtlas, false)
                 button.craftingQualityIcon:Show()
             else
                 button.craftingQualityIcon:Hide()
@@ -2154,11 +2367,19 @@ function ItemButton:SetItem(button, itemData, size, isReadOnly)
             end
         end
 
-        -- Item level display (Weapon classID=2, Armor classID=4)
+        -- Item level display (Weapon classID=2, Armor classID=4).
+        -- Text color matches the quality border so iLvl is visually grouped with
+        -- the other quality indicators (border, BoE label) on the same icon.
         if button.itemLevelText then
             local isEquip = itemData.classID and (itemData.classID == 2 or itemData.classID == 4)
             if settings.showItemLevel and isEquip and itemData.itemLevel and itemData.itemLevel > 0 and (itemData.quality or 0) > 0 then
                 button.itemLevelText:SetText(itemData.itemLevel)
+                local c = Constants.QUALITY_COLORS[itemData.quality]
+                if c then
+                    button.itemLevelText:SetTextColor(c[1], c[2], c[3], 1)
+                else
+                    button.itemLevelText:SetTextColor(1, 1, 1, 1)
+                end
                 button.itemLevelText:Show()
             else
                 button.itemLevelText:Hide()
@@ -2166,6 +2387,7 @@ function ItemButton:SetItem(button, itemData, size, isReadOnly)
         end
 
         -- Charges display (Wizard Oil, Sharpening Stones, etc.)
+        ns:ProfileStart("si.charges")
         if button.chargesText then
             local charges = nil
             if settings.showCharges and not isReadOnly then
@@ -2181,6 +2403,43 @@ function ItemButton:SetItem(button, itemData, size, isReadOnly)
                 button.chargesText:Hide()
             end
         end
+        ns:ProfileStop("si.charges")
+
+        -- BoE label (bottom-left corner). Only on unbound BoE weapons/armor;
+        -- TooltipScanner:IsBindOnEquip excludes soulbound, BoP, and non-gear.
+        -- The itemType pre-check skips the tooltip scan for the common case
+        -- (consumables, reagents, etc.) so this stays cheap.
+        ns:ProfileStart("si.boe")
+        if button.boeText then
+            local showBoe = settings.showBoeLabel
+                and not isReadOnly
+                and (itemData.itemType == "Weapon" or itemData.itemType == "Armor")
+                and (itemData.quality or 0) > 0
+                and itemData.bagID and itemData.slot
+            if showBoe then
+                local TooltipScanner = ns:GetModule("TooltipScanner")
+                if TooltipScanner and TooltipScanner:IsBindOnEquip(itemData.bagID, itemData.slot, itemData) then
+                    local c = Constants.QUALITY_COLORS[itemData.quality]
+                    if c then
+                        button.boeText:SetTextColor(c[1], c[2], c[3], 1)
+                    else
+                        button.boeText:SetTextColor(1, 1, 1, 1)
+                    end
+                    button.boeText:Show()
+                else
+                    button.boeText:Hide()
+                end
+            else
+                button.boeText:Hide()
+            end
+        end
+        ns:ProfileStop("si.boe")
+
+        -- Upgrade arrow: Pawn (preferred) or SimpleItemLevel, when installed.
+        -- Invisible without either addon. See ApplyUpgradeArrow above.
+        ns:ProfileStart("si.upgrade")
+        ApplyUpgradeArrow(button)
+        ns:ProfileStop("si.upgrade")
 
         -- Pin icon (bottom-right corner)
         ItemButton:UpdatePinIcon(button)
@@ -2247,6 +2506,12 @@ function ItemButton:SetItem(button, itemData, size, isReadOnly)
         if button.chargesText then
             button.chargesText:Hide()
         end
+        if button.boeText then
+            button.boeText:Hide()
+        end
+        if button.upgradeArrow then
+            button.upgradeArrow:Hide()
+        end
         if button.userLockIcon then
             button.userLockIcon:Hide()
         end
@@ -2256,6 +2521,37 @@ function ItemButton:SetItem(button, itemData, size, isReadOnly)
         if button.cooldown then
             CooldownFrame_Set(button.cooldown, 0, 0, false)
         end
+    end
+
+    -- If the tooltip is currently hovering over this button, the user just saw
+    -- the OLD item's tooltip. Re-run our OnEnter so they see the NEW item
+    -- without having to move the mouse off and back on. (Blizzard's stock
+    -- ContainerFrameItemButton_OnUpdate does this automatically, but our
+    -- custom OnUpdate only listens for shift-key changes.) Combat-gated to
+    -- match Blizzard's stock pattern.
+    --
+    -- Skip the replay while an item is on the cursor: our OnEnter calls
+    -- Blizzard's ContainerFrameItemButton_OnEnter -> CursorUpdate, which
+    -- desaturates a slot when the held cursor item can't drop there. During a
+    -- right-click equip-swap WoW briefly parks the swapped item on the cursor
+    -- (see UI/BagFrame.lua), so replaying OnEnter then would leave the slot
+    -- greyed until the next mouse-over. Our custom OnUpdate never re-saturates
+    -- it. Replaying only with an empty cursor is safe and still refreshes the
+    -- tooltip.
+    if GameTooltip:IsOwned(button) and not InCombatLockdown() and not GetCursorInfo() then
+        local onEnter = button:GetScript("OnEnter")
+        if onEnter then onEnter(button) end
+    end
+
+    -- Fire the public hook so third-party addons (e.g. SimpleItemLevel) can
+    -- decorate this button. Only for real items in a real bag/slot — skip
+    -- pseudo-items, cached/read-only views, and guild-bank synthetic IDs.
+    if not isReadOnly
+        and itemData and itemData.bagID and itemData.slot
+        and not itemData.isGuildBank
+        and not itemData.isEmptySlots
+        and not itemData.isDropTarget then
+        ns:FireItemButtonUpdate(button, itemData.bagID, itemData.slot)
     end
 end
 
@@ -2319,6 +2615,7 @@ function ItemButton:SetEmpty(button, bagID, slot, size, isReadOnly, isGuildBank)
         button:_suppressNewChildren()
     end
 
+    ns:ProfileBump("SetEmpty.calls")
     -- Hide Blizzard template's built-in textures (they may re-show from events)
     if button.IconBorder then button.IconBorder:Hide() end
     if button.IconOverlay then button.IconOverlay:Hide() end
@@ -2401,6 +2698,12 @@ function ItemButton:SetEmpty(button, bagID, slot, size, isReadOnly, isGuildBank)
     end
     if button.chargesText then
         button.chargesText:Hide()
+    end
+    if button.boeText then
+        button.boeText:Hide()
+    end
+    if button.upgradeArrow then
+        button.upgradeArrow:Hide()
     end
     if button.userLockIcon then
         button.userLockIcon:Hide()
@@ -2652,6 +2955,8 @@ function ItemButton:SyncFrameLevels(owner)
             if button.cooldown then button.cooldown:SetFrameLevel(btnLvl + Constants.FRAME_LEVELS.COOLDOWN) end
             if button.questStarterIcon then button.questStarterIcon:SetFrameLevel(btnLvl + Constants.FRAME_LEVELS.QUEST_ICON) end
             if button.questIcon then button.questIcon:SetFrameLevel(btnLvl + Constants.FRAME_LEVELS.QUEST_ICON) end
+            if button.userLockFrame then button.userLockFrame:SetFrameLevel(btnLvl + Constants.FRAME_LEVELS.BORDER + 2) end
+            if button.craftingQualityFrame then button.craftingQualityFrame:SetFrameLevel(btnLvl + Constants.FRAME_LEVELS.BORDER + 1) end
         end
     end
 end
@@ -2690,6 +2995,18 @@ function ItemButton:UpdateLockForItem(bagID, slotID)
     end
 end
 
+-- Re-evaluate just the upgrade arrow on every active button. Called by the
+-- Pawn compat module when its data resolves or is invalidated (spec/scale/gear
+-- change) -- far cheaper than a full bag refresh and avoids flicker.
+function ItemButton:RefreshUpgradeArrows()
+    if not buttonPool then return end
+    for button in buttonPool:EnumerateActive() do
+        if button.upgradeArrow and button.itemData then
+            ApplyUpgradeArrow(button)
+        end
+    end
+end
+
 -- Update cooldowns on all active buttons when BAG_UPDATE_COOLDOWN fires
 -- Without this, cooldowns (e.g. Hearthstone) only update during full bag refresh
 local Events = ns:GetModule("Events")
@@ -2719,7 +3036,8 @@ if Events then
             or key == "grayoutJunk" or key == "equipmentBorders"
             or key == "otherBorders" or key == "markUnusableItems"
             or key == "markEquipmentSets"
-            or key == "showItemLevel" or key == "showCharges" then
+            or key == "showItemLevel" or key == "showCharges"
+            or key == "showBoeLabel" then
             ItemButton:InvalidateSettingsCache()
         end
     end, ItemButton)

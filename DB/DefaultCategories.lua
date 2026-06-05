@@ -382,8 +382,10 @@ DefaultCategories.DEFINITIONS = {
         icon = "Interface\\Icons\\INV_Pick_02",
         rules = {
             { type = "isProfessionTool", value = true },
+            -- Tools the heuristic misses (e.g. Zapthrottle Mote Extractor).
+            { type = "itemID", value = {23821} },
         },
-        matchMode = "all",
+        matchMode = "any",
         priority = 60,
         enabled = true,
         isBuiltIn = true,

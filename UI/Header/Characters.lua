@@ -4,6 +4,7 @@ local Characters = {}
 ns:RegisterModule("Header.Characters", Characters)
 
 local Database = ns:GetModule("Database")
+local Font = ns:GetModule("Font")
 
 local frame = nil
 local onCharacterSelected = nil
@@ -83,12 +84,14 @@ local function CreateRow(parent, index)
 
     -- Character name (left)
     local nameText = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    Font:Override(nameText)
     nameText:SetPoint("LEFT", row, "LEFT", 4, 0)
     nameText:SetJustifyH("LEFT")
     row.nameText = nameText
 
     -- Level text (small, after name)
     local levelText = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    Font:Override(levelText)
     levelText:SetPoint("LEFT", nameText, "RIGHT", 2, 0)
     levelText:SetTextColor(0.6, 0.6, 0.6)
     row.levelText = levelText

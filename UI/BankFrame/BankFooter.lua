@@ -4,6 +4,7 @@ local BankFooter = {}
 ns:RegisterModule("BankFrame.BankFooter", BankFooter)
 
 local Constants = ns.Constants
+local Font = ns:GetModule("Font")
 
 local frame = nil
 local backButton = nil
@@ -1514,8 +1515,8 @@ function BankFooter:SetNarrowMode(isNarrow)
                 if coinBtn then
                     local text = coinBtn:GetFontString()
                     if text then
-                        local fontName, _, fontFlags = text:GetFont()
-                        text:SetFont(fontName, 12, fontFlags)
+                        local _, _, fontFlags = text:GetFont()
+                        Font:Apply(text, 12, fontFlags)
                     end
                 end
             end
@@ -1544,8 +1545,8 @@ function BankFooter:SetNarrowMode(isNarrow)
                 if coinBtn then
                     local text = coinBtn:GetFontString()
                     if text then
-                        local fontName, _, fontFlags = text:GetFont()
-                        text:SetFont(fontName, 14, fontFlags)
+                        local _, _, fontFlags = text:GetFont()
+                        Font:Apply(text, 14, fontFlags)
                     end
                 end
             end

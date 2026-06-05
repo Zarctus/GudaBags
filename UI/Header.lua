@@ -6,6 +6,7 @@ ns:RegisterModule("Header", Header)
 local Constants = ns.Constants
 local L = ns.L
 local Database = ns:GetModule("Database")
+local Font = ns:GetModule("Font")
 local HeaderButtonVisibility = ns:GetModule("HeaderButtonVisibility")
 local HeaderViewControls = ns:GetModule("HeaderViewControls")
 local IconButton = ns:GetModule("IconButton")
@@ -232,6 +233,7 @@ local function CreateHeader(parent)
     -- Center title with character name
     local playerName = UnitName("player")
     local title = titleBar:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    Font:Override(title)
     title:SetPoint("CENTER", titleBar, "CENTER", 0, 0)
     title:SetText(playerName .. L["TITLE_BAGS"])
     title:SetTextColor(1, 0.82, 0)
@@ -468,8 +470,8 @@ function Header:SetNarrowMode(isCompact)
     if isCompact then
         -- Smaller title font
         if titleBar.title then
-            local font, _, flags = titleBar.title:GetFont()
-            if font then titleBar.title:SetFont(font, 10, flags) end
+            local _, _, flags = titleBar.title:GetFont()
+            Font:Apply(titleBar.title, 10, flags)
         end
 
         -- Hide individual nav buttons
@@ -546,8 +548,8 @@ function Header:SetNarrowMode(isCompact)
     else
         -- Restore title font
         if titleBar.title then
-            local font, _, flags = titleBar.title:GetFont()
-            if font then titleBar.title:SetFont(font, 12, flags) end
+            local _, _, flags = titleBar.title:GetFont()
+            Font:Apply(titleBar.title, 12, flags)
         end
 
         -- Hide menu button

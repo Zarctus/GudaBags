@@ -7,6 +7,7 @@ local Constants = ns.Constants
 local L = ns.L
 local Database = ns:GetModule("Database")
 local Events = ns:GetModule("Events")
+local Font = ns:GetModule("Font")
 local BagScanner = ns:GetModule("BagScanner")
 local ItemButton = ns:GetModule("ItemButton")
 local Footer = ns:GetModule("Footer")
@@ -29,6 +30,25 @@ local viewingCharacter = nil -- nil = current character, or fullName string
 -- ContainerFrameItemButtonTemplate is a secure template that cannot be created during combat
 local pendingAction = nil  -- "show", "toggle", or nil
 local combatLockdownRegistered = false
+
+-- Smart auto-open/auto-close state (see SmartAutoOpen / SmartAutoClose below)
+local bagsAutoOpened = false   -- Did the addon open the bags for the current interaction?
+local inInteraction  = false   -- True between any interaction-open and its matching close
+
+-- Persist-across-close: instead of tearing down all buttons on Hide and fully
+-- rebuilding on the next Show (~110ms/cycle, the rapid open/close stutter), we
+-- keep the buttons + layout and just hide the frame. A reopen with nothing
+-- changed is then near-instant. The retained layout is released (ReleaseHeld)
+-- when it goes stale: inventory/settings changed while hidden, or another frame
+-- that shares the ItemButton pool (bank/guild bank/mail) opens.
+local heldHidden = false        -- frame is hidden but buttons/layout retained
+local dirtyWhileHidden = false  -- bags/settings changed since being hidden
+
+-- Cached container anchor (UpdateFrameAppearance). Re-anchoring the container
+-- moves the reference point for all ~190 child buttons, forcing a full relayout on
+-- the next frame:Show(). We skip the SetPoint when the computed anchor is unchanged.
+local lastContainerTop = nil
+local lastContainerBottom = nil
 
 -- Layout caching for incremental updates (Single View)
 local buttonsBySlot = {}  -- Key: "bagID:slot" -> button reference
@@ -147,7 +167,7 @@ local RegisterCombatEndCallback
 ns:GetModule("SearchBarToggle"):Apply(BagFrame, {
     getFrame = function() return frame end,
     onChanged = function()
-        UpdateFrameAppearance()
+        UpdateFrameAppearance(true)  -- Refresh below restyles buttons
         BagFrame:Refresh()
     end,
 })
@@ -357,6 +377,10 @@ local function CreateBagFrame()
     f:HookScript("OnShow", function() secureButtonContainer:Show() end)
     f:HookScript("OnHide", function()
         secureButtonContainer:Hide()
+        -- Any close (X button, B key, /script CloseAllBags, ProfileManager, etc.)
+        -- clears the addon's auto-opened claim so the next interaction-close won't
+        -- close bags the user has manually reopened.
+        bagsAutoOpened = false
         -- Clear search bar text and filters
         SearchBar:Clear(f)
         -- Reset to current character when bag closes
@@ -425,6 +449,7 @@ local function CreateBagFrame()
     -- Note: Responsive narrow mode is handled in Refresh() which pre-calculates
     -- expected frame width and applies narrow mode before sizing
 
+    Font:RegisterFrame(f)
     return f
 end
 
@@ -437,6 +462,8 @@ end
 function BagFrame:Refresh()
     if not frame then return end
     local refreshStart = debugprofilestop()
+
+    ns:ProfileStart("Refresh")
 
     local viewType = Database:GetSetting("bagViewType") or "single"
 
@@ -536,13 +563,17 @@ function BagFrame:Refresh()
     }
 
     -- Classify bags by type
+    ns:ProfileStart("Refresh.classify")
     local classifiedBags = BagClassifier:ClassifyBags(bags, isViewingCached)
+    ns:ProfileStop("Refresh.classify")
 
     -- Build display order
     local showKeyring = Footer:IsKeyringVisible()
     local showSoulBag = Footer:IsSoulBagVisible()
     local showQuiverBag = Footer:IsQuiverBagVisible()
+    ns:ProfileStart("Refresh.buildorder")
     local bagsToShow = LayoutEngine:BuildDisplayOrder(classifiedBags, showKeyring, bags, showSoulBag, showQuiverBag)
+    ns:ProfileStop("Refresh.buildorder")
 
     -- Filter out hidden bags in single/split view mode (not when viewing cached character)
     if (viewType == "single" or viewType == "split") and not isViewingCached then
@@ -559,6 +590,7 @@ function BagFrame:Refresh()
         end
     end
 
+    ns:ProfileStart("Refresh.render")
     if viewType == "category" then
         self:RefreshCategoryView(bags, bagsToShow, settings, hasSearch, isViewingCached)
     elseif viewType == "split" then
@@ -566,6 +598,7 @@ function BagFrame:Refresh()
     else
         self:RefreshSingleView(bags, bagsToShow, settings, hasSearch, isViewingCached)
     end
+    ns:ProfileStop("Refresh.render")
 
     -- Update slot info (show regular bags only, special bags in tooltip)
     if isViewingCached then
@@ -595,6 +628,13 @@ function BagFrame:Refresh()
     -- Track refresh performance
     ns.perfStats.lastRefreshTime = debugprofilestop() - refreshStart
     ns.perfStats.refreshCount = ns.perfStats.refreshCount + 1
+
+    -- Font: no per-render sweep needed. The frame is registered once via
+    -- Font:RegisterFrame; item buttons (Font:Apply) and headers (Font:Override)
+    -- self-register on create, and a font-family change re-sweeps via ReapplyAll.
+    -- Re-walking every bag button here cost ~tens of ms per Refresh for nothing.
+
+    ns:ProfileStop("Refresh")
 end
 
 function BagFrame:RefreshSingleView(bags, bagsToShow, settings, hasSearch, isViewingCached)
@@ -615,11 +655,15 @@ function BagFrame:RefreshSingleView(bags, bagsToShow, settings, hasSearch, isVie
 
     -- Render buttons
     for i, slotInfo in ipairs(allSlots) do
+        ns:ProfileStart("render.acquire")
         local button = ItemButton:Acquire(frame.container)
+        ns:ProfileStop("render.acquire")
         local slotKey = slotInfo.bagID .. ":" .. slotInfo.slot
 
         if slotInfo.itemData then
+            ns:ProfileStart("render.setitem")
             ItemButton:SetItem(button, slotInfo.itemData, iconSize, isViewingCached)
+            ns:ProfileStop("render.setitem")
             if hasSearch then
                 ItemButton:SetSearchState(button, SearchBar:ItemMatchesFilters(frame, slotInfo.itemData))
             else
@@ -630,7 +674,9 @@ function BagFrame:RefreshSingleView(bags, bagsToShow, settings, hasSearch, isVie
             cachedItemCount[slotKey] = slotInfo.itemData.count
             CacheChargesForSlot(slotKey, slotInfo.bagID, slotInfo.slot)
         else
+            ns:ProfileStart("render.setempty")
             ItemButton:SetEmpty(button, slotInfo.bagID, slotInfo.slot, iconSize, isViewingCached)
+            ns:ProfileStop("render.setempty")
             if hasSearch then
                 ItemButton:SetSearchState(button, false)
             else
@@ -689,11 +735,11 @@ function BagFrame:RefreshSplitView(bags, bagsToShow, settings, hasSearch, isView
         end
         header.text:SetText(section.displayInfo.name or "")
 
-        local fontFile, _, fontFlags = header.text:GetFont()
+        local _, _, fontFlags = header.text:GetFont()
         if iconSize < Constants.CATEGORY_ICON_SIZE_THRESHOLD then
-            header.text:SetFont(fontFile, Constants.CATEGORY_FONT_SMALL, fontFlags)
+            Font:Apply(header.text, Constants.CATEGORY_FONT_SMALL, fontFlags)
         else
-            header.text:SetFont(fontFile, Constants.CATEGORY_FONT_LARGE, fontFlags)
+            Font:Apply(header.text, Constants.CATEGORY_FONT_LARGE, fontFlags)
         end
 
         header.line:Show()
@@ -849,11 +895,11 @@ function BagFrame:RefreshCategoryView(bags, bagsToShow, settings, hasSearch, isV
         header.text:SetPoint("LEFT", header, "LEFT", 0, 0)
 
         -- Adjust font size based on icon size
-        local fontFile = header.text:GetFont()
+        local _, _, fontFlags = header.text:GetFont()
         if iconSize < Constants.CATEGORY_ICON_SIZE_THRESHOLD then
-            header.text:SetFont(fontFile, Constants.CATEGORY_FONT_SMALL, "")
+            Font:Apply(header.text, Constants.CATEGORY_FONT_SMALL, fontFlags)
         else
-            header.text:SetFont(fontFile, Constants.CATEGORY_FONT_LARGE, "")
+            Font:Apply(header.text, Constants.CATEGORY_FONT_LARGE, fontFlags)
         end
 
         -- Responsive text truncation based on available width
@@ -1181,21 +1227,51 @@ function BagFrame:Toggle()
         Database:RestoreFramePosition(frame, "frame", "BOTTOMRIGHT", "BOTTOMRIGHT", -5, 5)
     end
 
+    ns:ProfileStart("Toggle")
     if frame:IsShown() then
-        self:Hide()  -- Use BagFrame:Hide() to properly release buttons
+        self:Hide()  -- keeps buttons for a fast reopen (see Hide)
     else
-        BagScanner:ScanAllBags()
-        -- Clean up stale Recent items (items no longer in bags)
-        -- If items were removed, force full button release to prevent texture artifacts
-        local RecentItems = ns:GetModule("RecentItems")
-        if RecentItems and RecentItems:CleanupStale() then
-            ItemButton:ReleaseAll(frame.container)
-            buttonsByItemKey = {}
-        end
-        self:Refresh()
-        UpdateFrameAppearance()
-        frame:Show()
+        self:Show()  -- takes the fast-reopen path when nothing changed
     end
+    ns:ProfileStop("Toggle")
+end
+
+-- True when the frame is hidden but still holding a valid, unchanged layout, so
+-- it can be re-shown without a scan/rebuild. Requires layoutCached (any layout
+-- invalidation clears it) and no changes accumulated while hidden.
+function BagFrame:CanFastReopen()
+    return heldHidden
+        and layoutCached
+        and not dirtyWhileHidden
+        and not viewingCharacter
+        and frame and not frame:IsShown()
+end
+
+-- Tear down the retained (held-while-hidden) layout: release buttons back to the
+-- shared pool and clear layout caches. No-op when the frame is shown or not held,
+-- so it is safe to call from other pool consumers (bank/guild bank/mail) on open.
+function BagFrame:ReleaseHeld()
+    if not heldHidden then return end
+    heldHidden = false
+    dirtyWhileHidden = false
+    if not frame then return end
+    ItemButton:ReleaseAll(frame.container)
+    ReleaseAllCategoryHeaders()
+    buttonsBySlot = {}
+    buttonsByBag = {}
+    cachedItemData = {}
+    cachedItemCount = {}
+    cachedItemCharges = {}
+    cachedItemCategory = {}
+    buttonsByItemKey = {}
+    buttonPositions = {}
+    categoryViewItems = {}
+    lastCategoryLayout = nil
+    lastTotalItemCount = 0
+    pseudoItemButtons = {}
+    itemButtons = {}
+    layoutCached = false
+    lastLayoutSettings = nil
 end
 
 function BagFrame:Show()
@@ -1203,6 +1279,26 @@ function BagFrame:Show()
         frame = CreateBagFrame()
         Database:RestoreFramePosition(frame, "frame", "BOTTOMRIGHT", "BOTTOMRIGHT", -5, 5)
     end
+
+    -- Fast reopen: the retained layout is still valid — just show it. This is the
+    -- common rapid open/close case and skips the full scan + button rebuild.
+    if self:CanFastReopen() then
+        heldHidden = false
+        -- Lightweight appearance pass: reconciles search-bar/container/footer state
+        -- (cheap, ~4ms) while skipping the per-button restyle loops (already styled).
+        ns:ProfileStart("fast.appearance")
+        UpdateFrameAppearance(true)
+        ns:ProfileStop("fast.appearance")
+        ns:ProfileStart("fast.show")
+        frame:Show()
+        ns:ProfileStop("fast.show")
+        return
+    end
+
+    -- Full path: drop any stale retained buttons, then rescan and rebuild.
+    self:ReleaseHeld()
+    heldHidden = false
+    dirtyWhileHidden = false
 
     BagScanner:ScanAllBags()
     -- Clean up Recent items: both expired (time-based) and stale (no longer in bags)
@@ -1219,51 +1315,46 @@ function BagFrame:Show()
         buttonsByItemKey = {}
     end
     self:Refresh()
-    UpdateFrameAppearance()
+    UpdateFrameAppearance(true)  -- Refresh already styled every button
     frame:Show()
 end
 
 function BagFrame:Hide()
-    if frame then
-        frame:Hide()
-        -- Reset transient search toggle so next open starts collapsed
-        self:ResetSearchToggle()
-        -- Reset to current character when closing
-        if viewingCharacter then
-            viewingCharacter = nil
-            Header:SetViewingCharacter(nil, nil)
-        end
-        -- Release ALL buttons (item buttons and pseudo-item buttons) to prevent stacking
-        ItemButton:ReleaseAll(frame.container)
-        ReleaseAllCategoryHeaders()
-        -- Clear layout cache so next open does full refresh
-        buttonsBySlot = {}
-        buttonsByBag = {}
-        cachedItemData = {}
-        cachedItemCount = {}
-        cachedItemCharges = {}
-        cachedItemCategory = {}
-        -- Category view item-key tracking
-        buttonsByItemKey = {}
-        buttonPositions = {}
-        categoryViewItems = {}
-        lastCategoryLayout = nil
-        lastTotalItemCount = 0
-        pseudoItemButtons = {}
-        itemButtons = {}
-        layoutCached = false
-        lastLayoutSettings = nil
-        -- Cancel drag state tracking
-        isDraggingItem = false
-        if dragCheckTicker then
-            dragCheckTicker:Cancel()
-            dragCheckTicker = nil
-        end
-        local DragFlyoutBar = ns:GetModule("DragFlyoutBar")
-        if DragFlyoutBar then
-            DragFlyoutBar:OnDragEnd()
-        end
+    if not frame then return end
+    ns:ProfileStart("Hide")
+
+    -- Capture state BEFORE frame:Hide(): the frame's OnHide hook clears the search
+    -- and resets viewingCharacter, both of which would make a retained layout stale.
+    -- A retained layout is only valid for the current character with no active search.
+    local canHold = layoutCached
+        and not viewingCharacter
+        and not SearchBar:HasActiveFilters(frame)
+
+    frame:Hide()
+    -- Reset transient search toggle so next open starts collapsed
+    self:ResetSearchToggle()
+
+    -- Cancel drag state tracking
+    isDraggingItem = false
+    if dragCheckTicker then
+        dragCheckTicker:Cancel()
+        dragCheckTicker = nil
     end
+    local DragFlyoutBar = ns:GetModule("DragFlyoutBar")
+    if DragFlyoutBar then
+        DragFlyoutBar:OnDragEnd()
+    end
+
+    heldHidden = true
+    if canHold then
+        -- Keep buttons + layout so the next open is near-instant. Released later
+        -- by ReleaseHeld if anything changes while hidden (see CanFastReopen).
+        dirtyWhileHidden = false
+    else
+        -- Stale/invalid layout — tear it down so the next open rebuilds cleanly.
+        self:ReleaseHeld()
+    end
+    ns:ProfileStop("Hide")
 end
 
 function BagFrame:IsShown()
@@ -1286,7 +1377,7 @@ function BagFrame:ViewCharacter(fullName, charData)
     viewingCharacter = fullName
     Header:SetViewingCharacter(fullName, charData)
 
-    UpdateFrameAppearance()
+    UpdateFrameAppearance(true)  -- Refresh below restyles buttons
     self:Refresh()
 end
 
@@ -1686,8 +1777,12 @@ function BagFrame:IncrementalUpdate(dirtyBags)
                 -- Slot has an item now
                 local newItemData = currentSlot.itemData
                 local newItemID = newItemData.itemID
+                -- Same itemID can still be a different instance (ilvl/bonus swap);
+                -- compare the displayed link so a same-name/different-ilvl swap
+                -- isn't treated as "unchanged".
+                local linkChanged = button.itemData and newItemData.link ~= button.itemData.link
 
-                if oldItemID == newItemID then
+                if oldItemID == newItemID and not linkChanged then
                     -- Same item - just check count
                     local oldCount = cachedItemCount[slotKey]
                     if oldCount ~= newItemData.count then
@@ -1805,8 +1900,12 @@ function BagFrame:IncrementalUpdate(dirtyBags)
                 local newItemData = bagData and bagData.slots and bagData.slots[slot]
                 local oldItemID = cachedItemData[slotKey]
                 local newItemID = newItemData and newItemData.itemID or nil
+                -- Same itemID can still be a different instance (ilvl/bonus swap);
+                -- compare the displayed link too so an equip-swap of same-name,
+                -- different-ilvl items repaints instead of being skipped.
+                local linkChanged = newItemData and button.itemData and newItemData.link ~= button.itemData.link
 
-                if oldItemID ~= newItemID then
+                if oldItemID ~= newItemID or linkChanged then
                     if newItemData then
                         ItemButton:SetItem(button, newItemData, iconSize, false)
                         cachedItemData[slotKey] = newItemID
@@ -1851,8 +1950,13 @@ function BagFrame:IncrementalUpdate(dirtyBags)
                     local newItemData = bagData and bagData.slots and bagData.slots[slot]
                     local oldItemID = cachedItemData[slotKey]
                     local newItemID = newItemData and newItemData.itemID or nil
+                    -- Same itemID can still be a different instance (ilvl/bonus
+                    -- swap); compare the displayed link too so an equip-swap of
+                    -- same-name, different-ilvl items repaints instead of being
+                    -- skipped as "unchanged".
+                    local linkChanged = newItemData and button.itemData and newItemData.link ~= button.itemData.link
 
-                    if oldItemID ~= newItemID then
+                    if oldItemID ~= newItemID or linkChanged then
                         -- Item actually changed - update button
                         if newItemData then
                             ItemButton:SetItem(button, newItemData, iconSize, false)
@@ -1935,6 +2039,10 @@ end
 -- dirtyBags: table of {bagID = true} for bags that were updated
 ns.OnBagsUpdated = function(dirtyBags)
     ns:Debug("OnBagsUpdated called, frame shown:", frame and frame:IsShown() or false)
+    -- Inventory changed while holding a hidden layout — invalidate the fast reopen.
+    if heldHidden and not (frame and frame:IsShown()) then
+        dirtyWhileHidden = true
+    end
     -- Only auto-refresh when viewing current character
     if not viewingCharacter then
         if frame and frame:IsShown() then
@@ -1999,7 +2107,12 @@ ns.OnBagsUpdated = function(dirtyBags)
     end
 end
 
-UpdateFrameAppearance = function()
+-- skipButtonRestyle: when true, skip the per-button theme/font/alpha loops. These
+-- iterate every active button and are redundant on a normal open — a full rebuild
+-- already styles each button in Acquire/SetItem, and a fast reopen retains styling.
+-- Only the appearance/hoverBagline SETTING_CHANGED paths (which don't rebuild) need
+-- the restyle, so they call this without the flag.
+UpdateFrameAppearance = function(skipButtonRestyle)
     if not frame then return end
 
     local isViewingCached = viewingCharacter ~= nil
@@ -2026,25 +2139,32 @@ UpdateFrameAppearance = function()
 
     Header:SetBackdropAlpha(bgAlpha)
 
-    -- Update slot background alpha (item icons stay fully visible)
-    ItemButton:UpdateSlotAlpha(bgAlpha)
-    ItemButton:ApplyThemeTextures()
+    -- Per-button restyle (skipped on the hot open paths — see note above)
+    if not skipButtonRestyle then
+        -- Update slot background alpha (item icons stay fully visible)
+        ItemButton:UpdateSlotAlpha(bgAlpha)
+        ItemButton:ApplyThemeTextures()
+    end
 
     -- Update footer button theme colors
     local Footer = ns:GetModule("Footer")
     if Footer then Footer:UpdateTheme() end
 
-    -- Update icon font size and tracked bar
-    ItemButton:UpdateFontSize()
-    local TrackedBar = ns:GetModule("TrackedBar")
-    if TrackedBar then
-        TrackedBar:UpdateFontSize()
-        TrackedBar:UpdateSize()
-    end
-    local QuestBar = ns:GetModule("QuestBar")
-    if QuestBar then
-        QuestBar:UpdateFontSize()
-        QuestBar:UpdateSize()
+    -- Update icon font size and the Tracked/Quest bars. These bars self-update via
+    -- their own SETTING_CHANGED handlers, so refreshing them here is only needed
+    -- when an appearance setting actually changed (skipButtonRestyle = false).
+    if not skipButtonRestyle then
+        ItemButton:UpdateFontSize()
+        local TrackedBar = ns:GetModule("TrackedBar")
+        if TrackedBar then
+            TrackedBar:UpdateFontSize()
+            TrackedBar:UpdateSize()
+        end
+        local QuestBar = ns:GetModule("QuestBar")
+        if QuestBar then
+            QuestBar:UpdateFontSize()
+            QuestBar:UpdateSize()
+        end
     end
 
     -- Show/Hide search bar (always hide for cached views)
@@ -2054,15 +2174,23 @@ UpdateFrameAppearance = function()
     local dynamicFooterHeight = Footer:GetHeight()
     local footerHeight = (not showFooter and not isViewingCached) and Constants.FRAME.PADDING or (dynamicFooterHeight + Constants.FRAME.PADDING + 6)
 
-    frame.container:ClearAllPoints()
+    local topOffset
     if showSearchBar then
         SearchBar:Show(frame)
-        frame.container:SetPoint("TOPLEFT", frame, "TOPLEFT", Constants.FRAME.PADDING, -(Header:GetHeight() + SearchBar:GetTotalHeight(frame) + Constants.FRAME.PADDING + 6))
+        topOffset = -(Header:GetHeight() + SearchBar:GetTotalHeight(frame) + Constants.FRAME.PADDING + 6)
     else
         SearchBar:Hide(frame)
-        frame.container:SetPoint("TOPLEFT", frame, "TOPLEFT", Constants.FRAME.PADDING, -(Header:GetHeight() + Constants.FRAME.PADDING + 2))
+        topOffset = -(Header:GetHeight() + Constants.FRAME.PADDING + 2)
     end
-    frame.container:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -Constants.FRAME.PADDING, footerHeight)
+    -- Only re-anchor when the offsets actually changed — an identical SetPoint still
+    -- dirties layout and forces frame:Show() to relayout every child button.
+    if lastContainerTop ~= topOffset or lastContainerBottom ~= footerHeight then
+        frame.container:ClearAllPoints()
+        frame.container:SetPoint("TOPLEFT", frame, "TOPLEFT", Constants.FRAME.PADDING, topOffset)
+        frame.container:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -Constants.FRAME.PADDING, footerHeight)
+        lastContainerTop = topOffset
+        lastContainerBottom = footerHeight
+    end
 
     -- Footer visibility (always show money for cached views)
     if isViewingCached then
@@ -2139,6 +2267,12 @@ local function OnSettingChanged(event, key, value)
         return
     end
 
+    -- A setting changed while holding a hidden layout invalidates the fast reopen
+    -- (size/columns/view/appearance won't have been applied to the retained buttons).
+    if heldHidden and not (frame and frame:IsShown()) then
+        dirtyWhileHidden = true
+    end
+
     if not frame or not frame:IsShown() then return end
 
     -- When changing view type while viewing another character, reset to current character
@@ -2150,7 +2284,7 @@ local function OnSettingChanged(event, key, value)
     if appearanceSettings[key] then
         UpdateFrameAppearance()
     elseif resizeSettings[key] then
-        UpdateFrameAppearance()
+        UpdateFrameAppearance(true)  -- Refresh below restyles buttons
         BagFrame:Refresh()
     elseif key == "hoverBagline" then
         -- Refresh footer layout for hover bagline mode (preserves cached view state)
@@ -2326,12 +2460,165 @@ Events:Register("UNIT_SPELLCAST_SUCCEEDED", function(event, unit)
     end)
 end, BagFrame)
 
+-- Lock self-heal watcher.
+--
+-- On retail, equipping/swapping an item briefly locks its bag slot, but the
+-- *unlock* often does NOT emit ITEM_LOCK_CHANGED for that slot (verified: the
+-- slot unlocks ~0.25-0.5s later with no event). Because GudaBags drives the
+-- lock visual from events (its custom OnUpdate doesn't poll isLocked like
+-- Blizzard's stock button), the slot stays desaturated until the next full
+-- refresh (bag toggle). When a slot locks, briefly poll it until it unlocks,
+-- then reconcile the visual against the live API.
+local lockWatchActive = {}
+local function ReconcileSlot(bagID, slotID)
+    if not (frame and frame:IsShown() and not viewingCharacter) then return end
+    local BagScanner = ns:GetModule("BagScanner")
+    if BagScanner then
+        BagScanner:ScanDirtyBags({ [bagID] = true })
+        if ns.OnBagsUpdated then ns.OnBagsUpdated({ [bagID] = true }) end
+    end
+    -- IncrementalUpdate skips SetItem when the itemID is unchanged, so repaint
+    -- the lock visual explicitly for the same-item case.
+    ItemButton:UpdateLockForItem(bagID, slotID)
+end
+
+local function StartLockWatch(bagID, slotID)
+    -- Sorting/restacking lock many slots rapidly and have their own completion
+    -- handling; don't spawn watchers for those.
+    local SortEngine = ns:GetModule("SortEngine")
+    if SortEngine and (SortEngine:IsSorting() or SortEngine:IsRestacking()) then return end
+
+    local key = bagID .. ":" .. slotID
+    if lockWatchActive[key] then return end
+    lockWatchActive[key] = true
+
+    local ticks = 0
+    local stableTicks = 0
+    local startInfo = C_Container.GetContainerItemInfo(bagID, slotID)
+    local lastItem = startInfo and startInfo.itemID
+    local lastLocked = startInfo and startInfo.isLocked or false
+    local lastLink = startInfo and startInfo.hyperlink
+
+    C_Timer.NewTicker(0.2, function(self)
+        ticks = ticks + 1
+        local info = C_Container.GetContainerItemInfo(bagID, slotID)
+        local item = info and info.itemID
+        local locked = info and info.isLocked or false
+        local link = info and info.hyperlink
+
+        -- Treat a link change as a change too: a same-itemID/different-ilvl
+        -- equip-swap keeps the itemID but changes the link.
+        local changed = (item ~= lastItem) or (locked ~= lastLocked) or (link ~= lastLink)
+        if changed then
+            lastItem, lastLocked, lastLink = item, locked, link
+            stableTicks = 0
+            -- Reconcile the UI to whatever the API now reports (covers both the
+            -- silent unlock and a late content swap that fired no BAG_UPDATE).
+            ReconcileSlot(bagID, slotID)
+        else
+            stableTicks = stableTicks + 1
+        end
+
+        -- Stop once the slot has been unlocked and unchanged for ~0.6s, or after
+        -- a generous timeout (slow servers can take seconds to settle a swap).
+        if (not locked and stableTicks >= 3) or ticks >= 75 then
+            lockWatchActive[key] = nil
+            self:Cancel()
+        end
+    end)
+end
+
+-- GET_ITEM_INFO_RECEIVED fires once per itemID as async item data finishes
+-- loading. When an item arrives, its tooltip scan (isUsable, isQuestItem,
+-- hasSpecialProperties) becomes reliable; repaint any open buttons that show
+-- it so the false-positive red overlay clears.
+local pendingItemRefresh = {}
+local itemRefreshTimer
+local itemRefreshDeferred = false
+
+local function ApplyItemInfoRefresh()
+    itemRefreshTimer = nil
+    if not (frame and frame:IsShown()) or viewingCharacter then
+        wipe(pendingItemRefresh)
+        return
+    end
+    if InCombatLockdown() then
+        -- PLAYER_REGEN_ENABLED already triggers a Refresh of open bags
+        -- (see RegisterCombatEndCallback). Let it pick this up.
+        itemRefreshDeferred = true
+        return
+    end
+    itemRefreshDeferred = false
+
+    local ItemScanner = ns:GetModule("ItemScanner")
+    if not ItemScanner then
+        wipe(pendingItemRefresh)
+        return
+    end
+
+    local iconSize = Database:GetSetting("iconSize")
+    local hasSearch = SearchBar:HasActiveFilters(frame)
+    local bags = BagScanner:GetCachedBags() or {}
+    local repainted = 0
+    for _, button in ipairs(itemButtons) do
+        local oldData = button.itemData
+        if oldData and oldData.itemID and pendingItemRefresh[oldData.itemID]
+            and oldData.bagID and oldData.slot then
+            local newData = ItemScanner:ScanSlot(oldData.bagID, oldData.slot)
+            if newData and newData.itemID == oldData.itemID then
+                local bagData = bags[oldData.bagID]
+                if bagData and bagData.slots then
+                    bagData.slots[oldData.slot] = newData
+                end
+                ItemButton:SetItem(button, newData, iconSize, false)
+                if hasSearch then
+                    ItemButton:SetSearchState(button, SearchBar:ItemMatchesFilters(frame, newData))
+                else
+                    ItemButton:ClearSearchState(button)
+                end
+                repainted = repainted + 1
+            end
+        end
+    end
+    wipe(pendingItemRefresh)
+    if repainted > 0 then
+        ns:Debug("BagFrame: GET_ITEM_INFO_RECEIVED repainted", repainted, "buttons")
+    end
+end
+
+local function ScheduleItemRefresh()
+    if itemRefreshTimer then return end
+    itemRefreshTimer = C_Timer.NewTimer(0.15, ApplyItemInfoRefresh)
+end
+
+Events:Register("GET_ITEM_INFO_RECEIVED", function(_, itemID, success)
+    if not success or not itemID then return end
+    if not (frame and frame:IsShown()) or viewingCharacter then return end
+    pendingItemRefresh[itemID] = true
+    ScheduleItemRefresh()
+end, BagFrame)
+
+-- Drain any deferred-during-combat refresh once combat ends. (PLAYER_REGEN_ENABLED
+-- already does a broader Refresh, but only if pendingAction is set; piggyback so
+-- the targeted repaint still runs when bags were already open during combat.)
+Events:Register("PLAYER_REGEN_ENABLED", function()
+    if itemRefreshDeferred and next(pendingItemRefresh) then
+        ScheduleItemRefresh()
+    end
+end, "BagFrame.ItemInfoRefresh")
+
 -- Update item lock state (when picking up/putting down items)
 Events:Register("ITEM_LOCK_CHANGED", function(event, bagID, slotID)
     -- Skip when viewing cached character - lock state is for current character only
     if viewingCharacter then return end
     if frame and frame:IsShown() and bagID and slotID then
         ItemButton:UpdateLockForItem(bagID, slotID)
+        -- Only watch when this is a lock (not an unlock); the unlock is what we
+        -- may never be told about. No point watching while bags are closed.
+        local info = C_Container.GetContainerItemInfo(bagID, slotID)
+        if info and info.isLocked then
+            StartLockWatch(bagID, slotID)
+        end
     end
 
     -- Detect drag start for showing the flyout drop bar (all views) and the
@@ -2418,6 +2705,14 @@ local function RefreshForInteractionWindow()
             BagFrame:Refresh()
         end
     end
+end
+
+-- Public entry point so external interaction modules (e.g. GuildBankFrame) route
+-- through the same view-aware logic: only category view needs a re-render to
+-- unstack/restack grouped items. In single view there is no grouping, so skipping
+-- the refresh avoids a pointless ~80ms full bag render on every open/close.
+function BagFrame:RefreshForInteraction()
+    RefreshForInteractionWindow()
 end
 
 -- Trade window
@@ -2508,33 +2803,76 @@ Events:Register("MERCHANT_SHOW", AutoRepair, "AutoRepair")
 Events:Register("AUCTION_HOUSE_SHOW", RefreshForInteractionWindow, BagFrame)
 Events:Register("AUCTION_HOUSE_CLOSED", RefreshForInteractionWindow, BagFrame)
 
--- Auto open/close bags on interaction windows
--- Blizzard calls OpenAllBags/CloseAllBags internally when interactions start/end.
--- We use a suppression flag so our overrides can block those calls when the setting is disabled.
--- The flag is set on the interaction event and cleared next frame.
-local suppressAutoOpen = false
-local suppressAutoClose = false
+-- Auto open/close bags on interaction windows.
+--
+--   * If the addon opened the bags for an interaction, it closes them when the
+--     interaction ends.
+--   * If the user already had the bags open (or opens them mid-interaction with
+--     B / X), the addon leaves them alone — bagsAutoOpened is cleared by the
+--     frame's OnHide hook the moment the user closes the bags.
+--
+-- Blizzard's stock MailFrame/MerchantFrame/etc. OnEvent runs BEFORE our handler
+-- in the same event dispatch. We rely on two cooperating pieces:
+--   * The OpenAllBags / OpenBag / OpenBackpack overrides (further down) capture
+--     frame:IsShown() BEFORE calling Show, so they can reliably tell whether
+--     Blizzard's auto-call actually opened the bags (wasShown=false) or the
+--     user had them open already (wasShown=true). They set bagsAutoOpened only
+--     in the former case.
+--   * inInteraction is set by SmartAutoOpen and cleared by SmartAutoClose, so
+--     Blizzard's CloseAllBags during MAIL_CLOSED short-circuits and defers to
+--     SmartAutoClose's "did the addon open this?" check.
+
+local function SmartAutoOpen()
+    inInteraction = true
+    if not Database:GetSetting("autoOpenBags") then return end
+
+    -- If Blizzard's MailFrame/MerchantFrame/etc. already called OpenAllBags in
+    -- this same event dispatch, our override has already shown the bag and
+    -- (if it was previously closed) set bagsAutoOpened. Nothing left to do.
+    -- Otherwise (e.g. Blizzard's "Open Bags Automatically" option is off, or
+    -- this is the bank/guild-bank path that doesn't call OpenAllBags), open
+    -- the bag ourselves and claim it.
+    if not frame or not frame:IsShown() then
+        BagFrame:Show()
+        bagsAutoOpened = true
+    end
+end
+
+local function SmartAutoClose()
+    if bagsAutoOpened and Database:GetSetting("autoCloseBags") then
+        BagFrame:Hide()  -- OnHide hook clears bagsAutoOpened
+    end
+    -- Defer the inInteraction clear by one frame so the gate in CloseAllBags /
+    -- CloseBag / CloseBackpack stays effective for ALL of Blizzard's interaction
+    -- handlers in the current event dispatch, regardless of whether they run
+    -- before or after this handler. The order between Blizzard's MerchantFrame
+    -- (and MailFrame, etc.) OnEvent and our addon's eventFrame OnEvent is not
+    -- guaranteed. Without this defer, when our handler wins the race,
+    -- Blizzard's subsequent CloseAllBags (called from *_OnHide) would see
+    -- inInteraction=false and forcibly hide the bags — breaking the
+    -- "user-opened bags stay open" and "autoCloseBags=off" guarantees.
+    C_Timer.After(0, function() inInteraction = false end)
+end
+
+-- Public hooks so GuildBankFrame (and any other future external interaction
+-- module) can route through the same smart-open/close logic.
+function BagFrame:OnAutoInteractionOpen()  SmartAutoOpen()  end
+function BagFrame:OnAutoInteractionClose() SmartAutoClose() end
 
 local function OnInteractionOpen()
-    if Database:GetSetting("autoOpenBags") then
-        -- Explicitly open bags (Retail doesn't always call OpenAllBags)
-        BagFrame:Show()
-        -- Keep bags at base level so the interaction frame stays on top
-        C_Timer.After(0, function()
-            if frame and frame:IsShown() then
-                frame:SetFrameLevel(Constants.FRAME_LEVELS.BASE)
-                Theme:SyncBlizzardBgLevel(frame)
-                if frame.container then
-                    frame.container:SetFrameLevel(Constants.FRAME_LEVELS.BASE + Constants.FRAME_LEVELS.CONTAINER)
-                    ItemButton:SyncFrameLevels(frame.container)
-                end
+    SmartAutoOpen()
+    -- Keep bags at base level so the interaction frame stays on top (whether
+    -- the addon or the user opened the bags).
+    C_Timer.After(0, function()
+        if frame and frame:IsShown() then
+            frame:SetFrameLevel(Constants.FRAME_LEVELS.BASE)
+            Theme:SyncBlizzardBgLevel(frame)
+            if frame.container then
+                frame.container:SetFrameLevel(Constants.FRAME_LEVELS.BASE + Constants.FRAME_LEVELS.CONTAINER)
+                ItemButton:SyncFrameLevels(frame.container)
             end
-        end)
-    end
-    -- Always suppress Blizzard's OpenAllBags to prevent double-open
-    suppressAutoOpen = true
-    C_Timer.After(0, function() suppressAutoOpen = false end)
-
+        end
+    end)
     -- Deferred refresh to unstack grouped items — interaction frame needs a frame to be fully shown
     -- so IsInteractionWindowOpen() can detect it
     C_Timer.After(0.05, function()
@@ -2545,14 +2883,7 @@ local function OnInteractionOpen()
 end
 
 local function OnInteractionClose()
-    if Database:GetSetting("autoCloseBags") then
-        -- Explicitly close bags (Retail doesn't always call CloseAllBags)
-        BagFrame:Hide()
-    end
-    -- Always suppress Blizzard's CloseAllBags to prevent unintended close
-    suppressAutoClose = true
-    C_Timer.After(0, function() suppressAutoClose = false end)
-
+    SmartAutoClose()
     -- Deferred refresh to re-enable grouping after interaction window fully closes
     C_Timer.After(0.05, function()
         if frame and frame:IsShown() then
@@ -2562,47 +2893,35 @@ local function OnInteractionClose()
 end
 
 local function OnBankOpen()
-    if Database:GetSetting("autoOpenBags") then
-        -- Explicitly open bags (Retail bank UI doesn't call OpenAllBags)
-        BagFrame:Show()
-        -- Keep bags at base level so bank frame stays on top
-        C_Timer.After(0, function()
-            if frame and frame:IsShown() then
-                frame:SetFrameLevel(Constants.FRAME_LEVELS.BASE)
-                Theme:SyncBlizzardBgLevel(frame)
-                if frame.container then
-                    frame.container:SetFrameLevel(Constants.FRAME_LEVELS.BASE + Constants.FRAME_LEVELS.CONTAINER)
-                    ItemButton:SyncFrameLevels(frame.container)
+    SmartAutoOpen()
+    -- Keep bags at base level and raise the bank frame above them (whether the
+    -- addon or the user opened the bags).
+    C_Timer.After(0, function()
+        if frame and frame:IsShown() then
+            frame:SetFrameLevel(Constants.FRAME_LEVELS.BASE)
+            Theme:SyncBlizzardBgLevel(frame)
+            if frame.container then
+                frame.container:SetFrameLevel(Constants.FRAME_LEVELS.BASE + Constants.FRAME_LEVELS.CONTAINER)
+                ItemButton:SyncFrameLevels(frame.container)
+            end
+        end
+        local BankFrameModule = ns:GetModule("BankFrame")
+        if BankFrameModule then
+            local bankFrame = BankFrameModule:GetFrame()
+            if bankFrame then
+                bankFrame:SetFrameLevel(Constants.FRAME_LEVELS.RAISED)
+                Theme:SyncBlizzardBgLevel(bankFrame)
+                if bankFrame.container then
+                    bankFrame.container:SetFrameLevel(Constants.FRAME_LEVELS.RAISED + Constants.FRAME_LEVELS.CONTAINER)
+                    ItemButton:SyncFrameLevels(bankFrame.container)
                 end
             end
-            -- Raise bank frame
-            local BankFrameModule = ns:GetModule("BankFrame")
-            if BankFrameModule then
-                local bankFrame = BankFrameModule:GetFrame()
-                if bankFrame then
-                    bankFrame:SetFrameLevel(Constants.FRAME_LEVELS.RAISED)
-                    Theme:SyncBlizzardBgLevel(bankFrame)
-                    if bankFrame.container then
-                        bankFrame.container:SetFrameLevel(Constants.FRAME_LEVELS.RAISED + Constants.FRAME_LEVELS.CONTAINER)
-                        ItemButton:SyncFrameLevels(bankFrame.container)
-                    end
-                end
-            end
-        end)
-    end
-    -- Always suppress Blizzard's OpenAllBags to prevent double-open
-    suppressAutoOpen = true
-    C_Timer.After(0, function() suppressAutoOpen = false end)
+        end
+    end)
 end
 
 local function OnBankClose()
-    if Database:GetSetting("autoCloseBags") then
-        -- Explicitly close bags (Retail bank UI doesn't call CloseAllBags)
-        BagFrame:Hide()
-    end
-    -- Always suppress Blizzard's CloseAllBags to prevent unintended close
-    suppressAutoClose = true
-    C_Timer.After(0, function() suppressAutoClose = false end)
+    SmartAutoClose()
 end
 
 Events:Register("TRADE_SHOW", OnInteractionOpen, "AutoOpenBags_Trade")
@@ -2657,11 +2976,16 @@ Events:OnPlayerLogin(function()
     -- Register GudaBags frame for ESC-to-close and proper frame management
     tinsert(UISpecialFrames, "GudaBagsBagFrame")
 
-    -------------------------------------------------
-    -- CRITICAL: Override default bag functions FIRST
-    -- This must happen before any frame-hiding code to guarantee
-    -- bag overrides are active even if something below errors.
-    -------------------------------------------------
+
+    -- After login settles, grow the button pool in the background to cover a large
+    -- bank's All-Tabs view (bags ~190 + bank ~550). Secure-frame creation is the bulk
+    -- of the first big open's freeze; doing it across idle frames here makes the first
+    -- bank open cheap. Aborts itself if a frame opens first; pauses during combat.
+    C_Timer.After(3, function()
+        if frame then ItemButton:BackgroundGrowPool(frame.container, 750) end
+    end)
+
+    -- Override default bag functions to use GudaBags
     ToggleBackpack = function()
         BagFrame:Toggle()
     end
@@ -2670,29 +2994,61 @@ Events:OnPlayerLogin(function()
         BagFrame:Toggle()
     end
 
-    OpenAllBags = function()
-        if not suppressAutoOpen then BagFrame:Show() end
+    -- OpenAllBags / OpenBag / OpenBackpack:
+    --   Pass through to GudaBags so macros calling these still work, but gate
+    --   by autoOpenBags so Blizzard's MailFrame/MerchantFrame internal calls
+    --   respect the user's auto-open setting.
+    --
+    --   If the bags are already shown, return early WITHOUT calling Show. This
+    --   is critical: Blizzard's MailFrame calls OpenAllBags on every
+    --   MAIL_INBOX_UPDATE (and similar refresh events) during a mail session,
+    --   so this override fires repeatedly. Calling frame:Show() on an
+    --   already-shown frame can trigger a spurious OnHide → OnShow cycle on
+    --   Classic Anniversary, which our OnHide hook interprets as the user
+    --   closing bags — clearing bagsAutoOpened and breaking the smart-close
+    --   path at MAIL_CLOSED. The guard makes repeat calls a true no-op.
+    --
+    --   First-call semantics: if wasShown == false, this is the one true
+    --   addon-driven open for this interaction. Mark bagsAutoOpened = true so
+    --   SmartAutoClose knows to close them when the interaction ends.
+    local function DoBlizzardOpen()
+        if not Database:GetSetting("autoOpenBags") then return end
+        if frame and frame:IsShown() then return end
+        BagFrame:Show()
+        bagsAutoOpened = true
     end
+    OpenAllBags  = DoBlizzardOpen
+    OpenBag      = function(bagID) DoBlizzardOpen() end
+    OpenBackpack = DoBlizzardOpen
 
-    CloseAllBags = function()
-        if not suppressAutoClose then BagFrame:Hide() end
+    -- CloseAllBags / CloseBag / CloseBackpack:
+    --   Short-circuit while inInteraction is true. Blizzard's stock interaction
+    --   handlers (MailFrame_OnEvent etc.) call CloseAllBags BEFORE our own
+    --   handler runs in the same event dispatch — letting it through would
+    --   close bags before SmartAutoClose can apply the "did the addon open
+    --   them?" check. Macros calling these outside an interaction still close
+    --   the bags normally.
+    local function DoBlizzardClose()
+        if inInteraction then
+            -- Inside an active interaction (mail/vendor/AH/etc.). Blizzard's stock
+            -- *_OnHide handler is calling CloseAllBags as part of its close path.
+            -- Treat this as the canonical interaction-close signal and apply our
+            -- smart close, then let MAIL_CLOSED / MERCHANT_CLOSED / etc. fire
+            -- afterwards (where SmartAutoClose is idempotent — bagsAutoOpened will
+            -- already be false from this call's Hide → OnHide hook).
+            --
+            -- Why we can't just rely on the event: in Classic Anniversary,
+            -- MAIL_CLOSED is not dispatched to addon event frames (or fires too
+            -- late), so the only reliable close signal for mail is Blizzard's
+            -- CloseAllBags call here.
+            SmartAutoClose()
+            return
+        end
+        BagFrame:Hide()
     end
-
-    OpenBag = function(bagID)
-        if not suppressAutoOpen then BagFrame:Show() end
-    end
-
-    CloseBag = function(bagID)
-        if not suppressAutoClose then BagFrame:Hide() end
-    end
-
-    OpenBackpack = function()
-        if not suppressAutoOpen then BagFrame:Show() end
-    end
-
-    CloseBackpack = function()
-        if not suppressAutoClose then BagFrame:Hide() end
-    end
+    CloseAllBags  = DoBlizzardClose
+    CloseBag      = function(bagID) DoBlizzardClose() end
+    CloseBackpack = DoBlizzardClose
 
     ToggleAllBags = function()
         BagFrame:Toggle()

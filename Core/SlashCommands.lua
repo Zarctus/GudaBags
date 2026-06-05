@@ -61,6 +61,39 @@ commandHandlers["debug"] = function()
     ns:Print(L["CMD_DEBUG_MODE"], ns.debugMode and L["CMD_ON"] or L["CMD_OFF"])
 end
 
+-- Profiler: toggle high-res phase timing
+commandHandlers["profile"] = function()
+    ns.profileMode = not ns.profileMode
+    ns:Print("Profiler: " .. (ns.profileMode and "|cff00ff00ON|r" or "|cffff0000OFF|r")
+        .. " — exercise the bags/bank, then /guda profiledump")
+    if ns.profileMode then
+        ns:ProfileReset()
+    end
+end
+
+-- Profiler: print accumulated timings
+commandHandlers["profiledump"] = function()
+    ns:ProfileDump()
+end
+
+-- Profiler: clear accumulated timings
+commandHandlers["profilereset"] = function()
+    ns:ProfileReset()
+    ns:Print("Profiler stats reset.")
+end
+
+-- A/B suspect toggles: list current state
+local SUSPECTS = { "tooltipscan", "glow", "masque", "upgrade", "grouping" }
+commandHandlers["toggle"] = function()
+    ns:Print("Suspect toggles (disable a subsystem to isolate cost):")
+    for _, name in ipairs(SUSPECTS) do
+        local disabled = ns.suspectDisabled[name]
+        ns:Print(string.format("  %s: %s", name,
+            disabled and "|cffff0000DISABLED|r" or "|cff00ff00enabled|r"))
+    end
+    ns:Print("Usage: /guda toggle <" .. table.concat(SUSPECTS, "|") .. ">")
+end
+
 -- Debug item hover - print item data on hover
 commandHandlers["debugitem"] = function()
     ns.debugItemMode = not ns.debugItemMode
@@ -298,6 +331,10 @@ commandHandlers["help"] = function()
     ns:Print("  /guda debugitem - Toggle item data on hover")
     ns:Print("  /guda locale [code|reset] - Test locale")
     ns:Print("  /guda status - Show expansion/feature detection")
+    ns:Print("  /guda profile - Toggle performance profiler")
+    ns:Print("  /guda profiledump - Print profiler timings")
+    ns:Print("  /guda profilereset - Clear profiler timings")
+    ns:Print("  /guda toggle <name> - A/B toggle a subsystem (tooltipscan|glow|masque|upgrade|grouping)")
 end
 
 -------------------------------------------------
@@ -352,6 +389,33 @@ patternHandlers["^profile%s+delete%s+(.+)$"] = function(name)
         ns:Print(string.format(L["PROFILE_DELETED"], name))
     else
         ns:Print(string.format(L["PROFILE_NOT_FOUND"], name))
+    end
+end
+
+-- Toggle a named suspect subsystem on/off for A/B profiling
+patternHandlers["^toggle%s+(%a+)$"] = function(name)
+    name = name:lower()
+    local valid = false
+    for _, s in ipairs(SUSPECTS) do
+        if s == name then valid = true break end
+    end
+    if not valid then
+        ns:Print("Unknown suspect '" .. name .. "'. Valid: " .. table.concat(SUSPECTS, ", "))
+        return
+    end
+    ns.suspectDisabled[name] = not ns.suspectDisabled[name]
+    ns:Print(string.format("Suspect '%s' is now %s", name,
+        ns.suspectDisabled[name] and "|cffff0000DISABLED|r" or "|cff00ff00enabled|r"))
+
+    -- Clear caches and force a full rebuild so the toggle takes effect immediately.
+    local ItemScanner = ns:GetModule("ItemScanner")
+    if ItemScanner and ItemScanner.ClearTooltipCache then
+        ItemScanner:ClearTooltipCache()
+    end
+    local BagFrame = GetBagFrame()
+    if BagFrame and BagFrame.IsShown and BagFrame:IsShown() then
+        GetBagScanner():ScanAllBags()
+        BagFrame:Refresh()
     end
 end
 

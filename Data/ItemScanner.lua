@@ -99,7 +99,20 @@ local function ScanTooltipForItem(bagID, slot, itemType, itemID, itemLink, itemQ
     local cacheKey = GetCacheKey(itemLink, itemID)
     local cached = GetCachedTooltipResult(cacheKey)
     if cached then
+        ns:ProfileBump("tooltip.hit")
         return cached.isUsable, cached.isQuestItem, cached.isQuestStarter, cached.hasSpecialProperties, cached.hasDuration
+    end
+
+    -- Item data not yet round-tripped from the server: the tooltip would be
+    -- incomplete and red-coloured "Requires …" / loading text would falsely
+    -- mark the item unusable. Defer the scan and don't cache. The bag/bank
+    -- frames re-scan affected slots when GET_ITEM_INFO_RECEIVED arrives.
+    if itemID and C_Item and C_Item.IsItemDataCachedByID
+        and not C_Item.IsItemDataCachedByID(itemID) then
+        if C_Item.RequestLoadItemDataByID then
+            C_Item.RequestLoadItemDataByID(itemID)
+        end
+        return true, false, false, false, false
     end
 
     local isUsable = true
@@ -129,6 +142,17 @@ local function ScanTooltipForItem(bagID, slot, itemType, itemID, itemLink, itemQ
         isQuestItem = true
     end
 
+    -- A/B suspect toggle: skip the (potentially expensive) tooltip render+parse
+    -- entirely so the profiler can attribute its cost. Returns the pre-scan flags
+    -- (quest-type/custom-quest detection above still applies); result is NOT cached
+    -- so re-enabling restores full detection on the next scan.
+    if ns.suspectDisabled and ns.suspectDisabled.tooltipscan then
+        return isUsable, isQuestItem, isQuestStarter, hasSpecialProperties, hasDuration
+    end
+
+    ns:ProfileBump("tooltip.miss")
+    ns:ProfileStart("tooltip.scan")
+
     -- On Retail, use C_TooltipInfo API to get clean tooltip data.
     -- Do NOT scan for red text to detect usability — tooltip red text is unreliable
     -- (equipment comparison, addon-injected text from TSM etc. cause false positives).
@@ -136,7 +160,7 @@ local function ScanTooltipForItem(bagID, slot, itemType, itemID, itemLink, itemQ
     if C_TooltipInfo and C_TooltipInfo.GetBagItem then
         local data = C_TooltipInfo.GetBagItem(bagID, slot)
         if data and data.lines then
-            for i, line in ipairs(data.lines) do
+            for _, line in ipairs(data.lines) do
                 local text = line.leftText
 
                 if text then
@@ -249,6 +273,8 @@ local function ScanTooltipForItem(bagID, slot, itemType, itemID, itemLink, itemQ
         end
     end
 
+    ns:ProfileStop("tooltip.scan")
+
     -- Cache the result
     SetCachedTooltipResult(cacheKey, {
         isUsable = isUsable,
@@ -261,20 +287,35 @@ local function ScanTooltipForItem(bagID, slot, itemType, itemID, itemLink, itemQ
     return isUsable, isQuestItem, isQuestStarter, hasSpecialProperties, hasDuration
 end
 
--- Get crafting quality tier (1-5) for Retail profession items, or nil
-local function GetCraftingQuality(itemLink)
+-- Get crafting quality tier (1-5) for Retail profession items, or nil.
+-- Prefer GetItemCraftedQualityByItemInfo: that's the value Blizzard's tooltip
+-- uses to draw the Professions-Icon-Quality-TierN icon — it reflects the
+-- actual crafted instance's tier encoded in the link's bonus IDs. The other
+-- API (GetItemReagentQualityByItemInfo) returns the item's role-as-reagent
+-- classification, which for crafted reagents (e.g. Arcanoweave Bolt #239198)
+-- collapses to the base tier and does NOT match the tooltip. Reagent is kept
+-- as a fallback for pure raw reagents that have no crafted tier.
+-- Get the exact bag-overlay atlas for an item's crafting-quality tier (Retail).
+--
+-- Item links on Retail embed Blizzard's quality icon as an atlas escape, e.g.
+--   |A:Professions-ChatIcon-Quality-Tier1:17:15::1|a       (Dragonflight family)
+--   |A:Professions-ChatIcon-Quality-12-Tier1:17:15::1|a    (War Within family)
+--
+-- The C_TradeSkillUI quality APIs return only a tier number (1..N) and lose
+-- the expansion family qualifier ("12-"), so building the atlas name from the
+-- tier alone produces the wrong icon for War Within items — e.g. Arcanoweave
+-- Bolt (#239198) renders as Dragonflight Tier1 copper instead of the silver-
+-- looking War Within Tier1 the tooltip shows.
+--
+-- Pulling the atlas directly out of the link and swapping ChatIcon → Icon
+-- (the larger bag-overlay variant Blizzard ships alongside each chat icon)
+-- guarantees the bag overlay always matches the tooltip, regardless of which
+-- quality family a future expansion adds.
+local function GetCraftingQualityAtlas(itemLink)
     if not itemLink or not ns.IsRetail then return nil end
-    if C_TradeSkillUI then
-        if C_TradeSkillUI.GetItemReagentQualityByItemInfo then
-            local quality = C_TradeSkillUI.GetItemReagentQualityByItemInfo(itemLink)
-            if quality then return quality end
-        end
-        if C_TradeSkillUI.GetItemCraftedQualityByItemInfo then
-            local quality = C_TradeSkillUI.GetItemCraftedQualityByItemInfo(itemLink)
-            if quality then return quality end
-        end
-    end
-    return nil
+    local chatAtlas = itemLink:match("|A:(Professions%-ChatIcon%-Quality%-[^:]+):")
+    if not chatAtlas then return nil end
+    return (chatAtlas:gsub("Professions%-ChatIcon%-Quality%-", "Professions-Icon-Quality-"))
 end
 
 -- Fast scan using cached tooltip data
@@ -318,7 +359,7 @@ function ItemScanner:ScanSlotFast(bagID, slot)
             isQuestStarter = cached.isQuestStarter,
             hasSpecialProperties = cached.hasSpecialProperties,
             hasDuration = cached.hasDuration,
-            craftingQuality = GetCraftingQuality(itemLink),
+            craftingQualityAtlas = GetCraftingQualityAtlas(itemLink),
         }
     end
 
@@ -386,7 +427,7 @@ function ItemScanner:ScanSlot(bagID, slot)
         isQuestStarter = isQuestStarter,
         hasSpecialProperties = hasSpecialProperties,
         hasDuration = hasDuration,
-        craftingQuality = GetCraftingQuality(itemLink),
+        craftingQualityAtlas = GetCraftingQualityAtlas(itemLink),
     }
 end
 
@@ -472,5 +513,18 @@ if Events then
     -- Equipment changes can affect stats and thus usability
     Events:Register("PLAYER_EQUIPMENT_CHANGED", function()
         ItemScanner:ClearTooltipCache()
+    end, ItemScanner)
+
+    -- Drop the entries we may have populated while item data was still loading
+    -- (the tooltip would have been incomplete; isUsable could be wrong).
+    Events:Register("GET_ITEM_INFO_RECEIVED", function(_, itemID, success)
+        if not success or not itemID then return end
+        local needle = "item:" .. itemID .. ":"
+        for key in pairs(tooltipCache) do
+            if type(key) == "string" and key:find(needle, 1, true) then
+                tooltipCache[key] = nil
+            end
+        end
+        tooltipCache[tostring(itemID)] = nil
     end, ItemScanner)
 end

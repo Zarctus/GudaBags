@@ -2,7 +2,7 @@
 ## Title: GudaBags
 ## Notes: Clean, unified bag management for all WoW versions
 ## Author: Vati
-## Version: 1.8.5
+## Version: 1.9.8
 ## SavedVariables: GudaBags_DB
 ## SavedVariablesPerCharacter: GudaBags_CharDB
 ## IconTexture: Interface\AddOns\GudaBags\Assets\bags.png
@@ -18,11 +18,14 @@ Core\Locales.lua
 
 # Core modules (load order matters)
 Core\Init.lua
+Core\Profiler.lua
+Core\PublicAPI.lua
 Core\Expansion.lua
 Core\Constants.lua
 Core\Utils.lua
 Core\Events.lua
 Core\Database.lua
+Core\Font.lua
 Core\ProfileManager.lua
 Core\Theme.lua
 Core\Masque.lua
@@ -33,6 +36,7 @@ Core\DataBroker.lua
 # Compatibility Layer
 Compatibility\API.lua
 Compatibility\Features.lua
+Compatibility\Pawn.lua
 
 # Category System
 DB\DefaultCategories.lua

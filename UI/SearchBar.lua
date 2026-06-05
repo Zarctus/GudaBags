@@ -7,9 +7,15 @@ local Constants = ns.Constants
 local L = ns.L
 local SearchParser = ns:GetModule("SearchParser")
 local Database = ns:GetModule("Database")
+local Font = ns:GetModule("Font")
 
 local instances = {}
 local searchOverlay = nil
+
+-- Debounce for the search-text notify. Each keystroke triggers a full bag/bank/guild
+-- bank Refresh (~tens of ms), so firing per character makes fast typing lag. Coalesce
+-- into one refresh shortly after the user stops typing. Clearing is exempt (immediate).
+local SEARCH_DEBOUNCE = 0.2
 
 -- Cached globals
 local strfind = string.find
@@ -256,6 +262,7 @@ end
 local function CreateFilterChip(chipStrip, chipDef, searchBar, filterCategory, activeColor)
     local btn = CreateFrame("Button", nil, chipStrip)
     local label = btn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    Font:Override(label)
     label:SetPoint("CENTER", 0, 0)
     label:SetText(L[chipDef.localeKey] or chipDef.key)
     btn.label = label
@@ -473,6 +480,7 @@ local function ShowTypesDropdownMenu(searchBar, anchor)
             item = CreateFrame("Button", nil, typesDropdownMenu)
             item:SetHeight(18)
             local itemLabel = item:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+            Font:Override(itemLabel)
             itemLabel:SetPoint("LEFT", 6, 0)
             item.label = itemLabel
             local itemBg = item:CreateTexture(nil, "BACKGROUND")
@@ -552,6 +560,7 @@ local function ShowTypesDropdownMenu(searchBar, anchor)
             item = CreateFrame("Button", nil, typesDropdownMenu)
             item:SetHeight(18)
             local itemLabel = item:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+            Font:Override(itemLabel)
             itemLabel:SetPoint("LEFT", 6, 0)
             item.label = itemLabel
             local itemBg = item:CreateTexture(nil, "BACKGROUND")
@@ -743,6 +752,7 @@ local function CreateChipStrip(searchBar, parent)
     typesDropdown.icon = dropIcon
     -- Label
     local dropLabel = typesDropdown:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    Font:Override(dropLabel)
     dropLabel:SetPoint("LEFT", dropIcon, "RIGHT", 3, 0)
     dropLabel:SetText((L["CHIP_TYPES_DROPDOWN"] or "Types") .. "")
     dropLabel:SetTextColor(0.55, 0.55, 0.55)
@@ -901,6 +911,7 @@ local function CreateEquipSetDropdown()
         row.icon = icon
 
         local nameText = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        Font:Override(nameText)
         nameText:SetPoint("LEFT", icon, "RIGHT", 4, 0)
         nameText:SetPoint("RIGHT", row, "RIGHT", -2, 0)
         nameText:SetJustifyH("LEFT")
@@ -1037,6 +1048,7 @@ local function CreateSearchBar(parent)
 
     -- Active set name label (shown after equip button when a set is selected)
     local activeSetText = equipSetButton:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    Font:Override(activeSetText)
     activeSetText:SetPoint("LEFT", equipSetButton, "RIGHT", 3, 0)
     activeSetText:SetTextColor(1, 0.82, 0)
     activeSetText:SetText("")
@@ -1142,10 +1154,12 @@ local function CreateSearchBar(parent)
     searchBox:SetPoint("RIGHT", transferButton, "LEFT", -4, 0)
     searchBox:SetHeight(18)
     searchBox:SetFontObject(GameFontHighlightSmall)
+    Font:Override(searchBox)
     searchBox:SetAutoFocus(false)
     searchBox:SetMaxLetters(50)
 
     local placeholder = searchBox:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+    Font:Override(placeholder)
     placeholder:SetPoint("LEFT", searchBox, "LEFT", 0, 0)
     placeholder:SetText(L["SEARCH_PLACEHOLDER"])
     searchBox.placeholder = placeholder
@@ -1169,12 +1183,12 @@ local function CreateSearchBar(parent)
         end
     end)
 
-    -- Debounce timer for search callbacks (avoid re-filtering on every keystroke)
-    local searchDebounceTimer = nil
-    local SEARCH_DEBOUNCE_DELAY = 0.15  -- 150ms
-
     searchBox:SetScript("OnTextChanged", function(self)
         local text = self:GetText()
+        -- Only notify (→ a full bag/bank Refresh) when the text actually changed.
+        -- A programmatic SetText to the same value (e.g. during a bank tab switch)
+        -- still fires OnTextChanged and was triggering a redundant second Refresh.
+        local searchChanged = text ~= searchBar.searchText
         local hasEquipSet = searchBar.filterState.equipSet ~= nil
         if text == "" and not hasEquipSet then
             placeholder:Show()
@@ -1196,23 +1210,27 @@ local function CreateSearchBar(parent)
 
         UpdateTransferButton(searchBar)
 
-        -- Debounce the expensive callback (re-filters all items)
-        if searchDebounceTimer then
-            searchDebounceTimer:Cancel()
-        end
-
-        if text == "" then
-            -- Immediate callback on clear for responsive feel
-            if searchBar.onSearchChanged then
-                searchBar.onSearchChanged(text)
+        if searchChanged and searchBar.onSearchChanged then
+            -- Cancel any pending notify; the latest keystroke supersedes it.
+            if searchBar.searchDebounceTimer then
+                searchBar.searchDebounceTimer:Cancel()
+                searchBar.searchDebounceTimer = nil
             end
-        else
-            searchDebounceTimer = C_Timer.NewTimer(SEARCH_DEBOUNCE_DELAY, function()
-                searchDebounceTimer = nil
-                if searchBar.onSearchChanged then
-                    searchBar.onSearchChanged(searchBar.searchText)
-                end
-            end)
+            if text == "" then
+                -- Clearing: refresh immediately, and leave no timer that could fire
+                -- after the frame closes (close clears the search via SetText "").
+                searchBar.onSearchChanged(text)
+            else
+                -- Typing: debounce so fast typing coalesces into a single Refresh.
+                -- Guard on parent:IsShown() so a delayed fire can't refresh a frame that
+                -- was closed during the debounce window.
+                searchBar.searchDebounceTimer = C_Timer.NewTimer(SEARCH_DEBOUNCE, function()
+                    searchBar.searchDebounceTimer = nil
+                    if searchBar.onSearchChanged and parent and parent:IsShown() then
+                        searchBar.onSearchChanged(searchBar.searchText or "")
+                    end
+                end)
+            end
         end
     end)
 

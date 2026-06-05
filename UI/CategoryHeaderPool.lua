@@ -3,6 +3,7 @@ local addonName, ns = ...
 local CategoryHeaderPool = {}
 ns:RegisterModule("CategoryHeaderPool", CategoryHeaderPool)
 
+local Font = ns:GetModule("Font")
 local LayoutEngine = nil  -- Lazy loaded to avoid circular dependency
 
 -------------------------------------------------
@@ -40,6 +41,7 @@ function CategoryHeaderPool:Acquire(parent)
         header.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
 
         header.text = header:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        Font:Override(header.text)
         header.text:SetPoint("LEFT", header.icon, "RIGHT", 4, 0)
         header.text:SetTextColor(1, 0.82, 0)
 

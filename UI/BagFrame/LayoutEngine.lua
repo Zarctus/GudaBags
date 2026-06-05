@@ -814,6 +814,10 @@ function LayoutEngine:BuildCategorySections(items, isViewingCached, emptyCount, 
     local Database = ns:GetModule("Database")
     local groupIdenticalItems = Database and Database:GetSetting("groupIdenticalItems")
     local shouldGroup = groupIdenticalItems and not IsInteractionWindowOpen()
+    -- A/B suspect toggle: disable identical-item grouping to measure its cost.
+    if ns.suspectDisabled and ns.suspectDisabled.grouping then
+        shouldGroup = false
+    end
     if shouldGroup then
         for _, section in ipairs(sections) do
             local itemsByID = {}  -- { [itemID] = { items } }

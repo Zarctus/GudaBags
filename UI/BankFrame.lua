@@ -6,6 +6,7 @@ ns:RegisterModule("BankFrame", BankFrame)
 local Constants = ns.Constants
 local Database = ns:GetModule("Database")
 local Events = ns:GetModule("Events")
+local Font = ns:GetModule("Font")
 local BankScanner = ns:GetModule("BankScanner")
 local ItemButton = ns:GetModule("ItemButton")
 local SearchBar = ns:GetModule("SearchBar")
@@ -41,6 +42,37 @@ local cachedItemCategory = {} -- Key: "bagID:slot" -> previous categoryId (for c
 local cachedItemCharges = {} -- Key: "bagID:slot" -> previous charges value
 local layoutCached = false -- True when layout is cached and can do incremental updates
 local lastLayoutSettings = nil  -- Delta tracking for layout recalculation
+
+-- In-place button reuse across a single/split refresh (tab switch, type switch).
+-- Instead of releasing every button and re-acquiring (the expensive teardown +
+-- Masque re-register churn), we keep the buttons and re-drive them via SetItem.
+-- Surplus buttons (when a tab has fewer slots) are "parked" — hidden but kept
+-- acquired — so the next refresh reuses them with no ResetButton/Masque churn on
+-- either shrink or grow. Parked buttons are fully released only on a full teardown
+-- (category view, view-type change) or on Hide.
+local bankRecycle = nil      -- array of buttons available to reuse this refresh
+local bankRecycleIdx = 0      -- how many have been handed out
+local bankParked = {}         -- hidden surplus buttons kept for reuse
+local lastRefreshViewType = nil  -- force a full release when the view type changes
+
+-- Persist-across-close: keep the rendered bank view when the banker closes so the
+-- next open is a smooth incremental update instead of a full rebuild (first open
+-- still rebuilds). Released when stale or when another pool consumer needs the
+-- shared buttons. Mirrors the bag frame's heldHidden/CanFastReopen/ReleaseHeld.
+local bankHeld = false             -- frame hidden but buttons/layout retained
+local bankDirtyWhileHidden = false -- view/settings changed since being hidden
+local lastRenderSig = nil          -- view signature (viewType:bankType:tab) last rendered
+
+-- Signature of the currently-intended view: a retained layout is only reusable
+-- when the view type, bank type (character/warband) and selected tab all match
+-- what was last rendered. On reopen the banker resets to character/All, so a fast
+-- reopen happens when the user left it in that (default) state.
+local function ComputeBankRenderSig()
+    local viewType = Database:GetSetting("bankViewType") or "single"
+    local bankType = (BankFooter and BankFooter:GetCurrentBankType()) or "character"
+    local selectedTab = (ns.IsRetail and RetailBankScanner and RetailBankScanner:GetSelectedTab()) or 0
+    return viewType .. ":" .. bankType .. ":" .. tostring(selectedTab)
+end
 
 -- Category View: Item-key-based button tracking
 local buttonsByItemKey = {}
@@ -231,7 +263,7 @@ local RegisterCombatEndCallback
 ns:GetModule("SearchBarToggle"):Apply(BankFrame, {
     getFrame = function() return frame end,
     onChanged = function()
-        UpdateFrameAppearance()
+        UpdateFrameAppearance(true)  -- Refresh below restyles buttons
         BankFrame:Refresh()
     end,
 })
@@ -474,6 +506,7 @@ local function CreateBankFrame()
         f.bottomTabBar:Hide()
     end
 
+    Font:RegisterFrame(f)
     return f
 end
 
@@ -644,8 +677,11 @@ local function CreateSideTab(parent, index, isAllTab)
             else
                 RetailBankScanner:SetSelectedTab(self.tabIndex)
             end
+            -- SetSelectedTab fires ns.OnRetailBankTabChanged which already updates the
+            -- tab selection visuals and refreshes — no direct Refresh here (it would be
+            -- a second full rebuild). UpdateSideTabSelection covers the no-op edge case
+            -- (clicking "All" while already on All, where SetSelectedTab isn't called).
             BankFrame:UpdateSideTabSelection()
-            BankFrame:Refresh()
         end
     end)
 
@@ -1426,8 +1462,211 @@ function BankFrame:RefreshPinIcons()
     end
 end
 
+function BankFrame:RefreshLockIcons()
+    for _, button in pairs(buttonsBySlot) do
+        ItemButton:UpdateUserLockIcon(button)
+    end
+end
+
+-- Acquire a button for the bank render. Reuses one from the recycle pool (a
+-- button kept/parked from the previous refresh) when available, else acquires a
+-- fresh one. SetItem/SetEmpty fully reset a reused button's visual state, so no
+-- ResetButton teardown is needed between uses. Parked buttons were hidden, so
+-- ensure the reused button is shown.
+local function AcquireBankButton()
+    if bankRecycle then
+        bankRecycleIdx = bankRecycleIdx + 1
+        local b = bankRecycle[bankRecycleIdx]
+        if b then
+            b:SetShown(true)
+            if b.wrapper then b.wrapper:SetShown(true) end
+            return b
+        end
+    end
+    ns:ProfileStart("bank.acquire")
+    local b = ItemButton:Acquire(frame.container)
+    ns:ProfileStop("bank.acquire")
+    return b
+end
+
+-- Park any recycle-pool buttons that weren't reused this refresh (the slot count
+-- shrank): hide them and keep them acquired for reuse next refresh. This avoids
+-- the ResetButton + Masque-remove cost of releasing, and the re-acquire cost when
+-- the count grows back. Called after the view builders run.
+local function ParkBankRecycleLeftovers()
+    if not bankRecycle then return end
+    for i = bankRecycleIdx + 1, #bankRecycle do
+        local b = bankRecycle[i]
+        b:SetShown(false)
+        if b.wrapper then b.wrapper:SetShown(false) end
+        bankParked[#bankParked + 1] = b
+    end
+    bankRecycle = nil
+    bankRecycleIdx = 0
+end
+
+-------------------------------------------------
+-- Progressive (per-tab) render for the All-Tabs view
+--
+-- The All-Tabs overview materialises ~hundreds of buttons; doing it in one frame
+-- is a visible hitch even with everything pre-warmed/recycled. We render whole
+-- tabs until a per-frame time budget, then place the remaining (off-screen) tabs
+-- across the next frames. Because the deferred tabs are scrolled out of view, they
+-- fill in invisibly — no per-item pop-in. Mirrors the guild bank's render driver.
+-------------------------------------------------
+local BANK_RENDER_BUDGET_MS = 8
+local bankRenderDriver = CreateFrame("Frame")
+bankRenderDriver:Hide()
+local bankRenderState = nil
+local bankRenderInFlight = false
+local bankRenderNeedsRerender = false  -- a bank update arrived mid-render; re-refresh once at finish
+
+-- Build the flat render-op list for the All-Tabs view: a header op per tab, then
+-- one op per slot, each with its precomputed Y (used to decide what's on-screen).
+local function BuildBankRenderOps(tabLayouts, iconSize, spacing, columns)
+    local ops = {}
+    for _, layout in ipairs(tabLayouts) do
+        ops[#ops + 1] = { isHeader = true, layout = layout, y = layout.headerY }
+        for i, slotInfo in ipairs(layout.section.slots) do
+            local row = math.floor((i - 1) / columns)
+            ops[#ops + 1] = {
+                slotInfo = slotInfo,
+                layout = layout,
+                i = i,
+                y = layout.slotsStartY - (row * (iconSize + spacing)),
+            }
+        end
+    end
+    return ops
+end
+
+-- Render one op (a tab header or a single slot). Per-op granularity lets the driver
+-- yield mid-tab so no single frame hitches even for large tabs.
+local function RenderOneBankOp(op, st)
+    local layout = op.layout
+    if op.isHeader then
+        local section = layout.section
+        local header = AcquireCategoryHeader(frame.container)
+        header:SetWidth(st.contentWidth)
+        header:ClearAllPoints()
+        header:SetPoint("TOPLEFT", frame.container, "TOPLEFT", 0, layout.headerY)
+        header.icon:Hide()
+        header.text:ClearAllPoints()
+        header.text:SetPoint("LEFT", header, "LEFT", 0, 0)
+        header.text:SetText(section.name)
+        local _, _, fontFlags = header.text:GetFont()
+        if st.iconSize < Constants.CATEGORY_ICON_SIZE_THRESHOLD then
+            Font:Apply(header.text, Constants.CATEGORY_FONT_SMALL, fontFlags)
+        else
+            Font:Apply(header.text, Constants.CATEGORY_FONT_LARGE, fontFlags)
+        end
+        header.line:Show()
+        header.categoryId = "Tab_" .. section.tabIndex
+        header:EnableMouse(false)
+        table.insert(categoryHeaders, header)
+        return
+    end
+
+    local slotInfo = op.slotInfo
+    local iconSize, spacing, columns = st.iconSize, st.spacing, st.columns
+    local isReadOnly, hasSearch = st.isReadOnly, st.hasSearch
+    local button = AcquireBankButton()
+    local slotKey = slotInfo.bagID .. ":" .. slotInfo.slot
+
+    if slotInfo.itemData then
+        ItemButton:SetItem(button, slotInfo.itemData, iconSize, isReadOnly)
+        if hasSearch then
+            ItemButton:SetSearchState(button, SearchBar:ItemMatchesFilters(frame, slotInfo.itemData))
+        else
+            ItemButton:ClearSearchState(button)
+        end
+        cachedItemData[slotKey] = slotInfo.itemData.itemID
+        cachedItemCount[slotKey] = slotInfo.itemData.count
+        CacheChargesForSlot(slotKey, slotInfo.bagID, slotInfo.slot)
+    else
+        ItemButton:SetEmpty(button, slotInfo.bagID, slotInfo.slot, iconSize, isReadOnly)
+        if hasSearch then
+            ItemButton:SetSearchState(button, false)
+        else
+            ItemButton:ClearSearchState(button)
+        end
+        cachedItemData[slotKey] = nil
+        cachedItemCount[slotKey] = nil
+        cachedItemCharges[slotKey] = nil
+    end
+
+    local i = op.i
+    local col = (i - 1) % columns
+    local x = col * (iconSize + spacing)
+    button.wrapper:ClearAllPoints()
+    button.wrapper:SetPoint("TOPLEFT", frame.container, "TOPLEFT", x, op.y)
+
+    buttonsBySlot[slotKey] = button
+    table.insert(itemButtons, button)
+    if not buttonsByBag[slotInfo.bagID] then
+        buttonsByBag[slotInfo.bagID] = {}
+    end
+    buttonsByBag[slotInfo.bagID][slotInfo.slot] = button
+end
+
+-- Finalize a deferred render: park leftover recycle buttons, mark layout cached.
+local function FinishBankRender()
+    bankRenderState = nil
+    bankRenderInFlight = false
+    bankRenderDriver:Hide()
+    ParkBankRecycleLeftovers()
+    layoutCached = true
+    -- Font: no per-render sweep needed. The frame is registered once via
+    -- Font:RegisterFrame; item buttons (Font:Apply) and headers (Font:Override)
+    -- self-register on create, and a font-family change re-sweeps via ReapplyAll.
+    -- Re-walking every bank button here cost ~tens of ms per render for nothing.
+    -- A bank update arrived while rendering — apply it now with one incremental pass.
+    if bankRenderNeedsRerender then
+        bankRenderNeedsRerender = false
+        if frame and frame:IsShown() and not viewingCharacter then
+            BankFrame:IncrementalUpdate(nil)
+        end
+    end
+end
+
+-- Stop an in-flight render (tab switch, view change, close). Park whatever the
+-- cancelled render didn't consume so the next refresh's recycle starts clean.
+local function CancelBankRender()
+    if not bankRenderInFlight then return end
+    bankRenderState = nil
+    bankRenderInFlight = false
+    bankRenderNeedsRerender = false  -- the upcoming full refresh supersedes it
+    bankRenderDriver:Hide()
+    ParkBankRecycleLeftovers()
+end
+
+-- Place whole tabs until the frame-time budget is spent, then yield to next frame.
+local function ProcessBankRenderChunk()
+    local st = bankRenderState
+    if not st then bankRenderDriver:Hide() return end
+    -- If combat began mid-render, finish in one frame rather than spreading secure
+    -- ops across combat frames. (The bank is only opened out of combat.)
+    local drainAll = InCombatLockdown()
+    local startT = debugprofilestop()
+    local ops = st.ops
+    local n = #ops
+    while st.cursor <= n do
+        RenderOneBankOp(ops[st.cursor], st)
+        st.cursor = st.cursor + 1
+        -- Check budget every few ops to amortise the timer call.
+        if not drainAll and (st.cursor % 8 == 0) and debugprofilestop() - startT > BANK_RENDER_BUDGET_MS then
+            return
+        end
+    end
+    FinishBankRender()
+end
+bankRenderDriver:SetScript("OnUpdate", ProcessBankRenderChunk)
+
 function BankFrame:Refresh()
     if not frame then return end
+
+    -- Stop any in-flight progressive render before rebuilding.
+    CancelBankRender()
 
     -- If purchase prompt is active, don't rebuild bank content
     if showingPurchasePrompt then
@@ -1444,7 +1683,30 @@ function BankFrame:Refresh()
         frame.scrollFrame:EnableMouseWheel(true)
     end
 
-    ItemButton:ReleaseAll(frame.container)
+    -- Teardown strategy: single/split views reuse buttons in place across a refresh
+    -- (tab/type switch) instead of releasing+re-acquiring — SetItem fully resets each
+    -- reused button and it keeps its Masque registration (no re-add churn). Category
+    -- view keeps the full release; its own buttonsByItemKey/pseudo-slot reuse path is
+    -- unchanged (RULES Rule 1). A view-type change forces a full release for a clean slate.
+    local refreshViewType = Database:GetSetting("bankViewType") or "single"
+    local viewChanged = lastRefreshViewType ~= nil and lastRefreshViewType ~= refreshViewType
+    if (refreshViewType == "single" or refreshViewType == "split") and not viewChanged then
+        -- Reuse last refresh's active buttons plus any parked (hidden) surplus.
+        -- itemButtons is reset to {} below, so mutating it here is safe.
+        bankRecycle = itemButtons
+        for i = 1, #bankParked do bankRecycle[#bankRecycle + 1] = bankParked[i] end
+        bankParked = {}
+        bankRecycleIdx = 0
+    else
+        -- Full teardown (category view or view-type change) — releases active AND
+        -- parked buttons (all owned by frame.container), so clear the parked list.
+        ns:ProfileStart("BankRefresh.releaseall")
+        ItemButton:ReleaseAll(frame.container)
+        ns:ProfileStop("BankRefresh.releaseall")
+        bankParked = {}
+        bankRecycle = nil
+    end
+    lastRefreshViewType = refreshViewType
     ReleaseAllCategoryHeaders()
     itemButtons = {}
 
@@ -1540,6 +1802,8 @@ function BankFrame:Refresh()
 
         frame:SetSize(math.max(minWidth, 250), minHeight)
         BankFooter:UpdateSlotInfo(0, 0)
+        -- No items to render: park the whole recycle pool (nothing was reused).
+        ParkBankRecycleLeftovers()
         return
     end
 
@@ -1561,10 +1825,26 @@ function BankFrame:Refresh()
     SearchBar:SetNarrowMode(frame, isCompact, isNarrow)
     BankFooter:SetNarrowMode(isNarrow)
 
-    -- Use appropriate bag IDs for classification
-    local bagIDsToUse = isWarbandView and Constants.WARBAND_BANK_TAB_IDS or Constants.BANK_BAG_IDS
-    local classifiedBags = BagClassifier:ClassifyBags(bank, isViewingCached or not isBankOpen, bagIDsToUse)
-    local bagsToShow = LayoutEngine:BuildDisplayOrder(classifiedBags, false)
+    -- The All-Tabs view (single view, tab 0, multiple tabs) builds its sections
+    -- straight from the bank containers and never uses bagsToShow — so skip the
+    -- classify + display-order pass for it (expensive on a big warband bank, and
+    -- it was the bulk of the per-tab-switch cost beyond the actual render).
+    local allTabsContainerIDs = isWarbandView and Constants.WARBAND_BANK_TAB_IDS or Constants.CHARACTER_BANK_TAB_IDS
+    local isAllTabsView = viewType ~= "category" and viewType ~= "split"
+        and ns.IsRetail and selectedTab == 0
+        and (Constants.CHARACTER_BANK_TABS_ACTIVE or isWarbandView)
+        and allTabsContainerIDs and #allTabsContainerIDs > 1
+
+    local bagsToShow
+    if isAllTabsView then
+        bagsToShow = {}  -- unused by RefreshSingleViewWithTabs
+    else
+        ns:ProfileStart("BankRefresh.classify")
+        local bagIDsToUse = isWarbandView and Constants.WARBAND_BANK_TAB_IDS or Constants.BANK_BAG_IDS
+        local classifiedBags = BagClassifier:ClassifyBags(bank, isViewingCached or not isBankOpen, bagIDsToUse)
+        bagsToShow = LayoutEngine:BuildDisplayOrder(classifiedBags, false)
+        ns:ProfileStop("BankRefresh.classify")
+    end
 
     local showSearchBar = BankFrame:IsSearchBarVisible()
     local showFilterChips = Database:GetSetting("showFilterChips")
@@ -1585,6 +1865,7 @@ function BankFrame:Refresh()
         splitColumns = splitColumns,
     }
 
+    ns:ProfileStart("BankRefresh.render")
     if viewType == "category" then
         self:RefreshCategoryView(bank, bagsToShow, settings, hasSearch, isReadOnly)
     elseif viewType == "split" then
@@ -1592,6 +1873,15 @@ function BankFrame:Refresh()
     else
         self:RefreshSingleView(bank, bagsToShow, settings, hasSearch, isReadOnly)
     end
+    -- Park any reused buttons left over when the slot count shrank (hide + keep).
+    -- Skipped while a progressive render is still in flight — FinishBankRender parks
+    -- once all the deferred tabs are placed.
+    if not bankRenderInFlight then
+        ns:ProfileStart("BankRefresh.park")
+        ParkBankRecycleLeftovers()
+        ns:ProfileStop("BankRefresh.park")
+    end
+    ns:ProfileStop("BankRefresh.render")
 
     if isViewingCached or not isBankOpen then
         local totalSlots = 0
@@ -1623,6 +1913,13 @@ function BankFrame:Refresh()
     if isBankOpen and not isViewingCached then
         BankFooter:Update()
     end
+
+    -- Font: no per-render sweep (see FinishBankRender note). Dynamic content
+    -- self-registers; a font-family change re-sweeps the frame via ReapplyAll.
+
+    -- Record what view was rendered so a later persist-across-close reopen can tell
+    -- whether the retained layout still matches the intended view.
+    lastRenderSig = ComputeBankRenderSig()
 end
 
 function BankFrame:RefreshSingleView(bank, bagsToShow, settings, hasSearch, isReadOnly)
@@ -1756,7 +2053,7 @@ function BankFrame:RefreshSingleView(bank, bagsToShow, settings, hasSearch, isRe
     local positions = LayoutEngine:CalculateButtonPositions(allSlots, settings)
 
     for i, slotInfo in ipairs(allSlots) do
-        local button = ItemButton:Acquire(frame.container)
+        local button = AcquireBankButton()
         local slotKey = slotInfo.bagID .. ":" .. slotInfo.slot
 
         if slotInfo.itemData then
@@ -1883,11 +2180,11 @@ function BankFrame:RefreshSplitView(bank, bagsToShow, settings, hasSearch, isRea
         end
         header.text:SetText(section.displayInfo.name or "")
 
-        local fontFile = header.text:GetFont()
+        local _, _, fontFlags = header.text:GetFont()
         if iconSize < Constants.CATEGORY_ICON_SIZE_THRESHOLD then
-            header.text:SetFont(fontFile, Constants.CATEGORY_FONT_SMALL, "")
+            Font:Apply(header.text, Constants.CATEGORY_FONT_SMALL, fontFlags)
         else
-            header.text:SetFont(fontFile, Constants.CATEGORY_FONT_LARGE, "")
+            Font:Apply(header.text, Constants.CATEGORY_FONT_LARGE, fontFlags)
         end
 
         header.line:Show()
@@ -1902,7 +2199,7 @@ function BankFrame:RefreshSplitView(bank, bagsToShow, settings, hasSearch, isRea
 
         for slot = 1, numSlots do
             local itemData = bagData and bagData.slots and bagData.slots[slot]
-            local button = ItemButton:Acquire(frame.container)
+            local button = AcquireBankButton()
             local slotKey = bagID .. ":" .. slot
 
             if itemData then
@@ -2071,83 +2368,37 @@ function BankFrame:RefreshSingleViewWithTabs(bank, settings, hasSearch, isReadOn
         end)
     end
 
-    -- Render tab sections
-    for _, layout in ipairs(tabLayouts) do
-        local section = layout.section
-
-        -- Create tab header
-        local header = AcquireCategoryHeader(frame.container)
-        header:SetWidth(contentWidth)
-        header:ClearAllPoints()
-        header:SetPoint("TOPLEFT", frame.container, "TOPLEFT", 0, layout.headerY)
-
-        -- Style the header
-        header.icon:Hide()
-        header.text:ClearAllPoints()
-        header.text:SetPoint("LEFT", header, "LEFT", 0, 0)
-        header.text:SetText(section.name)
-
-        -- Adjust font size based on icon size
-        local fontFile = header.text:GetFont()
-        if iconSize < Constants.CATEGORY_ICON_SIZE_THRESHOLD then
-            header.text:SetFont(fontFile, Constants.CATEGORY_FONT_SMALL, "")
-        else
-            header.text:SetFont(fontFile, Constants.CATEGORY_FONT_LARGE, "")
-        end
-
-        header.line:Show()
-        header.categoryId = "Tab_" .. section.tabIndex
-        header:EnableMouse(false)
-
-        table.insert(categoryHeaders, header)
-
-        -- Render slots for this tab
-        for i, slotInfo in ipairs(section.slots) do
-            local button = ItemButton:Acquire(frame.container)
-            local slotKey = slotInfo.bagID .. ":" .. slotInfo.slot
-
-            if slotInfo.itemData then
-                ItemButton:SetItem(button, slotInfo.itemData, iconSize, isReadOnly)
-                if hasSearch then
-                    ItemButton:SetSearchState(button, SearchBar:ItemMatchesFilters(frame, slotInfo.itemData))
-                else
-                    ItemButton:ClearSearchState(button)
-                end
-                cachedItemData[slotKey] = slotInfo.itemData.itemID
-                cachedItemCount[slotKey] = slotInfo.itemData.count
-                CacheChargesForSlot(slotKey, slotInfo.bagID, slotInfo.slot)
-            else
-                ItemButton:SetEmpty(button, slotInfo.bagID, slotInfo.slot, iconSize, isReadOnly)
-                if hasSearch then
-                    ItemButton:SetSearchState(button, false)
-                else
-                    ItemButton:ClearSearchState(button)
-                end
-                cachedItemData[slotKey] = nil
-                cachedItemCount[slotKey] = nil
-                cachedItemCharges[slotKey] = nil
-            end
-
-            -- Calculate position within section
-            local col = (i - 1) % columns
-            local row = math.floor((i - 1) / columns)
-            local x = col * (iconSize + spacing)
-            local y = layout.slotsStartY - (row * (iconSize + spacing))
-
-            button.wrapper:ClearAllPoints()
-            button.wrapper:SetPoint("TOPLEFT", frame.container, "TOPLEFT", x, y)
-
-            buttonsBySlot[slotKey] = button
-            table.insert(itemButtons, button)
-
-            if not buttonsByBag[slotInfo.bagID] then
-                buttonsByBag[slotInfo.bagID] = {}
-            end
-            buttonsByBag[slotInfo.bagID][slotInfo.slot] = button
-        end
+    -- Progressive render: place everything in the visible viewport synchronously
+    -- (so the first paint is complete — no pop-in), then defer the off-screen
+    -- remainder to the render driver across the next frames (it fills in invisibly).
+    local ops = BuildBankRenderOps(tabLayouts, iconSize, spacing, columns)
+    local st = {
+        ops = ops,
+        cursor = 1,
+        iconSize = iconSize,
+        spacing = spacing,
+        columns = columns,
+        contentWidth = contentWidth,
+        isReadOnly = isReadOnly,
+        hasSearch = hasSearch,
+    }
+    -- Ops are ordered top-to-bottom; render while still within the viewport (+1 row
+    -- buffer). The first op past the cutoff (and all after it) are off-screen.
+    local visibleCutoff = -(scrollAreaHeight + iconSize + spacing)
+    local n = #ops
+    while st.cursor <= n and ops[st.cursor].y >= visibleCutoff do
+        RenderOneBankOp(ops[st.cursor], st)
+        st.cursor = st.cursor + 1
     end
-
-    layoutCached = true
+    if st.cursor > n then
+        -- Whole view fit on-screen (short bank) — done synchronously.
+        layoutCached = true
+    else
+        ns:ProfileBump("Bank.progressive")  -- deferred the off-screen remainder
+        bankRenderState = st
+        bankRenderInFlight = true
+        bankRenderDriver:Show()
+    end
 end
 
 function BankFrame:RefreshCategoryView(bank, bagsToShow, settings, hasSearch, isReadOnly)
@@ -2246,11 +2497,11 @@ function BankFrame:RefreshCategoryView(bank, bagsToShow, settings, hasSearch, is
         header.text:SetPoint("LEFT", header, "LEFT", 0, 0)
 
         -- Adjust font size based on icon size
-        local fontFile = header.text:GetFont()
+        local _, _, fontFlags = header.text:GetFont()
         if iconSize < Constants.CATEGORY_ICON_SIZE_THRESHOLD then
-            header.text:SetFont(fontFile, Constants.CATEGORY_FONT_SMALL, "")
+            Font:Apply(header.text, Constants.CATEGORY_FONT_SMALL, fontFlags)
         else
-            header.text:SetFont(fontFile, Constants.CATEGORY_FONT_LARGE, "")
+            Font:Apply(header.text, Constants.CATEGORY_FONT_LARGE, fontFlags)
         end
 
         -- Responsive text truncation based on available width
@@ -2413,7 +2664,7 @@ function BankFrame:RefreshCategoryView(bank, bagsToShow, settings, hasSearch, is
     lastButtonByCategory = {}
 
     for index, itemInfo in ipairs(layout.items) do
-        local button = ItemButton:Acquire(frame.container)
+        local button = AcquireBankButton()
         local itemData = itemInfo.item.itemData
         local slotKey = itemData.bagID .. ":" .. itemData.slot
 
@@ -2502,6 +2753,50 @@ RegisterCombatEndCallback = function()
     end, BankFrame)
 end
 
+-- Tear down the retained (held-while-hidden) layout: release buttons + parked
+-- surplus back to the shared pool and clear caches. No-op unless held, so it is
+-- safe to call from other pool consumers (bags/guild bank/mail) on open. Releasing
+-- is SetShown/pool bookkeeping only — combat-safe; it never creates frames.
+function BankFrame:ReleaseHeld()
+    if not bankHeld then return end
+    bankHeld = false
+    bankDirtyWhileHidden = false
+    if not frame then return end
+    CancelBankRender()
+    ItemButton:ReleaseAll(frame.container)
+    bankParked = {}
+    bankRecycle = nil
+    bankRecycleIdx = 0
+    ReleaseAllCategoryHeaders()
+    buttonsBySlot = {}
+    buttonsByBag = {}
+    cachedItemData = {}
+    cachedItemCount = {}
+    cachedItemCharges = {}
+    cachedItemCategory = {}
+    buttonsByItemKey = {}
+    categoryViewItems = {}
+    lastCategoryLayout = nil
+    lastTotalItemCount = 0
+    pseudoItemButtons = {}
+    itemButtons = {}
+    layoutCached = false
+    lastLayoutSettings = nil
+    lastRenderSig = nil
+end
+
+-- True when the frame is hidden but still holds a valid layout matching the
+-- current intended view, so reopen can incrementally update instead of rebuild.
+function BankFrame:CanFastReopen()
+    return bankHeld
+        and layoutCached
+        and not bankDirtyWhileHidden
+        and not viewingCharacter
+        and frame and not frame:IsShown()
+        and lastRenderSig ~= nil
+        and lastRenderSig == ComputeBankRenderSig()
+end
+
 function BankFrame:Toggle()
     LoadComponents()
 
@@ -2511,61 +2806,96 @@ function BankFrame:Toggle()
     end
 
     if frame:IsShown() then
-        frame:Hide()
+        self:Hide()
     else
-        if BankScanner:IsBankOpen() then
-            BankScanner:ScanAllBank()
-        end
-        UpdateFrameAppearance()  -- Set search bar/footer visibility first
-        self:Refresh()           -- Then calculate layout with correct scroll positioning
-        frame:Show()
+        ns:ProfileStart("Bank.Toggle")
+        self:Show()
+        ns:ProfileStop("Bank.Toggle")
     end
 end
 
 function BankFrame:Show()
     LoadComponents()
 
+    -- Free the guild bank's retained buttons (it doesn't coexist with the bank, so
+    -- this just returns its share of the shared ItemButton pool; no-op if it's open
+    -- or not holding).
+    --
+    -- Do NOT release the bags' held buttons here: the bags auto-open *together* with
+    -- the bank, so tearing down their persisted layout would force a full cold
+    -- re-render right as they reopen (the "slow when bags were closed" case). Leaving
+    -- them held lets the bag auto-open take its fast-reopen path. Pool headroom is
+    -- fine (bank + bags fit under the prewarm target), and in-combat pool pressure is
+    -- handled separately by PLAYER_REGEN_DISABLED releasing held buttons.
+    local GuildBankFrameModule = ns:GetModule("GuildBankFrame")
+    if GuildBankFrameModule and GuildBankFrameModule.ReleaseHeld then
+        GuildBankFrameModule:ReleaseHeld()
+    end
+
     if not frame then
         frame = CreateBankFrame()
         Database:RestoreFramePosition(frame, "bankFrame", "CENTER", "CENTER", 0, 0)
     end
 
+    ns:ProfileStart("Bank.Show")
+    -- Decide the fast-reopen path BEFORE scanning. ScanAllBank fires ns.OnBankUpdated,
+    -- and because the bank is still held/hidden at this point that handler sets
+    -- bankDirtyWhileHidden = true — which would make CanFastReopen() return false on
+    -- EVERY reopen, forcing a needless full render. The fast path's IncrementalUpdate
+    -- below reconciles whatever the scan finds, so the scan's own update must not veto it.
+    local canFast = self:CanFastReopen()
     if BankScanner:IsBankOpen() then
         BankScanner:ScanAllBank()
     end
-    UpdateFrameAppearance()  -- Set search bar/footer visibility first
-    self:Refresh()           -- Then calculate layout with correct scroll positioning
-    frame:Show()
+
+    if canFast then
+        -- Smooth reopen: reuse the retained layout and update only changed slots.
+        -- (Bank contents rarely change while you're away; the scan above refreshed
+        -- the cache and IncrementalUpdate reconciles any differences.)
+        bankHeld = false
+        ns:ProfileStart("Bank.fastreopen")
+        UpdateFrameAppearance(true)
+        frame:Show()
+        self:IncrementalUpdate(nil)  -- requires frame shown; near-no-op when unchanged
+        ns:ProfileStop("Bank.fastreopen")
+    else
+        -- First open, or the retained view is stale (view/bank-type/tab changed) —
+        -- drop any held buttons and do a full rebuild.
+        self:ReleaseHeld()
+        bankHeld = false
+        bankDirtyWhileHidden = false
+        UpdateFrameAppearance(true)  -- Refresh below restyles buttons
+        self:Refresh()               -- Then calculate layout with correct scroll positioning
+        frame:Show()
+    end
+    ns:ProfileStop("Bank.Show")
 end
 
 function BankFrame:Hide()
-    if frame then
-        frame:Hide()
-        -- Reset transient search toggle so next open starts collapsed
-        self:ResetSearchToggle()
-        if viewingCharacter then
-            viewingCharacter = nil
-            BankHeader:SetViewingCharacter(nil, nil)
-        end
-        -- Release ALL buttons (item buttons and pseudo-item buttons) to prevent stacking
-        ItemButton:ReleaseAll(frame.container)
-        ReleaseAllCategoryHeaders()
-        -- Clear layout cache so next open does full refresh
-        buttonsBySlot = {}
-        buttonsByBag = {}
-        cachedItemData = {}
-        cachedItemCount = {}
-        cachedItemCharges = {}
-        cachedItemCategory = {}
-        buttonsByItemKey = {}
-        categoryViewItems = {}
-        lastCategoryLayout = nil
-        lastTotalItemCount = 0
-        pseudoItemButtons = {}
-        itemButtons = {}
-        layoutCached = false
-        lastLayoutSettings = nil
+    if not frame then return end
+    ns:ProfileStart("Bank.Hide")
+    CancelBankRender()
+
+    -- Capture before frame:Hide(): the frame's OnHide hook clears the search and
+    -- resets viewingCharacter, both of which would make a retained layout stale.
+    -- A retained layout is only valid for the current character with no active search.
+    local canHold = layoutCached
+        and not viewingCharacter
+        and not SearchBar:HasActiveFilters(frame)
+
+    frame:Hide()
+    -- Reset transient search toggle so next open starts collapsed
+    self:ResetSearchToggle()
+
+    bankHeld = true
+    if canHold then
+        -- Keep buttons + layout so the next open is a smooth incremental update.
+        bankDirtyWhileHidden = false
+    else
+        -- Stale/invalid layout — tear it down so the next open rebuilds cleanly.
+        self:ReleaseHeld()
     end
+    ns:ProfileStop("Bank.Hide")
 end
 
 function BankFrame:IsShown()
@@ -2588,7 +2918,7 @@ function BankFrame:ViewCharacter(fullName, charData)
     viewingCharacter = fullName
     BankHeader:SetViewingCharacter(fullName, charData)
 
-    UpdateFrameAppearance()
+    UpdateFrameAppearance(true)  -- Refresh below restyles buttons
     self:Refresh()
 end
 
@@ -3024,10 +3354,23 @@ end
 
 -- dirtyBags: table of {bagID = true} for bags that were updated
 ns.OnBankUpdated = function(dirtyBags)
+    -- NOTE: we intentionally do NOT set bankDirtyWhileHidden on a content change here.
+    -- Walking up to the banker fires BANKFRAME_OPENED → BAG_UPDATE for the bank bags
+    -- *before* BankFrame:Show runs, so this handler would dirty the held layout on
+    -- EVERY reopen and defeat the fast path entirely. Content changes are reconciled by
+    -- the fast path's IncrementalUpdate(nil) (it re-scans all bank bags and updates only
+    -- changed slots), so a full render isn't needed. Only layout-affecting setting
+    -- changes (OnSettingChanged) and view/bank-type/tab changes (the render signature)
+    -- still force a full rebuild on reopen.
     if not viewingCharacter and frame and frame:IsShown() then
-        -- During combat, defer full refresh to avoid taint on secure buttons
-        -- Incremental updates are safe (visual updates only, SetID is guarded)
-        if InCombatLockdown() then
+        if bankRenderInFlight then
+            -- A progressive render is mid-flight (layoutCached is intentionally false
+            -- until it finishes). Don't restart it on every event — that doubled the
+            -- per-tab-switch render cost. Mark dirty; FinishBankRender re-refreshes once.
+            bankRenderNeedsRerender = true
+        elseif InCombatLockdown() then
+            -- During combat, defer full refresh to avoid taint on secure buttons.
+            -- Incremental updates are safe (visual updates only, SetID is guarded).
             if layoutCached then
                 BankFrame:IncrementalUpdate(dirtyBags)
             end
@@ -3097,10 +3440,17 @@ ns.OnBankOpened = function()
     BankFrame:Show()
 end
 
+local closingBank = false  -- re-entrancy guard for ns.OnBankClosed (see below)
 ns.OnBankClosed = function()
-    if frame and frame:IsShown() then
+    if not frame or closingBank then return end
+    -- Already closed and holding the retained layout — ignore a duplicate/late
+    -- BANKFRAME_CLOSED. ClearInteraction(Banker) re-fires the event a frame later
+    -- (async), after closingBank has reset; this skips that redundant second pass.
+    if bankHeld and not frame:IsShown() then return end
+    closingBank = true
+    -- Save only when the bank was actually open (the scanner has fresh data then).
+    if frame:IsShown() then
         BankScanner:SaveToDatabase()
-        BankFrame:Hide()
     end
 
     -- Hide Blizzard's BankFrame so GetActiveBankType() returns nil,
@@ -3108,9 +3458,23 @@ ns.OnBankClosed = function()
     if ns.IsRetail and _G.BankFrame then
         _G.BankFrame:Hide()
     end
+
+    -- Always run Hide so persist-across-close engages even when the frame was already
+    -- hidden directly. ESC / the close button / UISpecialFrames hide the frame without
+    -- going through BankFrame:Hide, so without this the layout is never retained
+    -- (bankHeld stays false) and every reopen does a full render. Hide is a no-op on an
+    -- already-hidden frame apart from the persist bookkeeping we need here.
+    -- The guard above absorbs any re-entrant BANKFRAME_CLOSED that BankFrame:Hide ->
+    -- frame:Hide() -> OnHide -> ClearInteraction(Banker) might fire back at us.
+    BankFrame:Hide()
+    closingBank = false
 end
 
-UpdateFrameAppearance = function()
+-- skipButtonRestyle: skip the per-button theme/font/alpha loops (they iterate every
+-- active button). Redundant on opens/refreshes — Acquire/SetItem already style each
+-- button — so callers that follow with Refresh pass true. Only the appearance/
+-- hoverBagline SETTING_CHANGED paths (which don't rebuild) need the restyle.
+UpdateFrameAppearance = function(skipButtonRestyle)
     if not frame then return end
 
     local isViewingCached = viewingCharacter ~= nil
@@ -3137,18 +3501,20 @@ UpdateFrameAppearance = function()
 
     BankHeader:SetBackdropAlpha(bgAlpha)
 
-    ItemButton:UpdateSlotAlpha(bgAlpha)
-    ItemButton:ApplyThemeTextures()
-    ItemButton:UpdateFontSize()
-    local TrackedBar = ns:GetModule("TrackedBar")
-    if TrackedBar then
-        TrackedBar:UpdateFontSize()
-        TrackedBar:UpdateSize()
-    end
-    local QuestBar = ns:GetModule("QuestBar")
-    if QuestBar then
-        QuestBar:UpdateFontSize()
-        QuestBar:UpdateSize()
+    if not skipButtonRestyle then
+        ItemButton:UpdateSlotAlpha(bgAlpha)
+        ItemButton:ApplyThemeTextures()
+        ItemButton:UpdateFontSize()
+        local TrackedBar = ns:GetModule("TrackedBar")
+        if TrackedBar then
+            TrackedBar:UpdateFontSize()
+            TrackedBar:UpdateSize()
+        end
+        local QuestBar = ns:GetModule("QuestBar")
+        if QuestBar then
+            QuestBar:UpdateFontSize()
+            QuestBar:UpdateSize()
+        end
     end
 
     local showSearchBar = BankFrame:IsSearchBarVisible()
@@ -3225,6 +3591,12 @@ local resizeSettings = {
 }
 
 local function OnSettingChanged(event, key, value)
+    -- A setting changed while holding a hidden layout invalidates the fast reopen
+    -- (size/columns/view/appearance won't have been applied to the retained buttons).
+    if bankHeld and not (frame and frame:IsShown()) then
+        bankDirtyWhileHidden = true
+    end
+
     if not frame or not frame:IsShown() then return end
 
     -- When changing view type while viewing another character, reset to current character
@@ -3236,7 +3608,7 @@ local function OnSettingChanged(event, key, value)
     if appearanceSettings[key] then
         UpdateFrameAppearance()
     elseif resizeSettings[key] then
-        UpdateFrameAppearance()
+        UpdateFrameAppearance(true)  -- Refresh below restyles buttons
         BankFrame:Refresh()
     elseif key == "hoverBagline" then
         -- Refresh footer bag slot mode (expanded vs collapsed)
@@ -3392,6 +3764,90 @@ if not ns.IsRetail then
     end, BankFrame)
 end
 
+-- GET_ITEM_INFO_RECEIVED fires once per itemID as async item data finishes
+-- loading. Bank items often arrive after BANKFRAME_OPENED returns; their initial
+-- tooltip scan is incomplete and red-coloured "Requires …"/loading text wrongly
+-- marks them as unusable. Repaint affected buttons once data lands so the false
+-- red overlay clears without the user having to close+reopen the bank.
+local pendingItemRefresh = {}
+local itemRefreshTimer
+local itemRefreshDeferred = false
+
+local function ApplyItemInfoRefresh()
+    itemRefreshTimer = nil
+    if not (frame and frame:IsShown()) or viewingCharacter then
+        wipe(pendingItemRefresh)
+        return
+    end
+    if InCombatLockdown() then
+        itemRefreshDeferred = true
+        return
+    end
+    itemRefreshDeferred = false
+
+    local ItemScanner = ns:GetModule("ItemScanner")
+    if not ItemScanner then
+        wipe(pendingItemRefresh)
+        return
+    end
+
+    local iconSize = Database:GetSetting("iconSize")
+    local hasSearch = SearchBar:HasActiveFilters(frame)
+    local bank = BankScanner:GetCachedBank() or {}
+    local isReadOnly = viewingCharacter ~= nil or not BankScanner:IsBankOpen()
+    local repainted = 0
+    for _, button in ipairs(itemButtons) do
+        local oldData = button.itemData
+        if oldData and oldData.itemID and pendingItemRefresh[oldData.itemID]
+            and oldData.bagID and oldData.slot then
+            local newData = ItemScanner:ScanSlot(oldData.bagID, oldData.slot)
+            if newData and newData.itemID == oldData.itemID then
+                local bagData = bank[oldData.bagID]
+                if bagData and bagData.slots then
+                    bagData.slots[oldData.slot] = newData
+                end
+                ItemButton:SetItem(button, newData, iconSize, isReadOnly)
+                if hasSearch then
+                    ItemButton:SetSearchState(button, SearchBar:ItemMatchesFilters(frame, newData))
+                else
+                    ItemButton:ClearSearchState(button)
+                end
+                repainted = repainted + 1
+            end
+        end
+    end
+    wipe(pendingItemRefresh)
+    if repainted > 0 then
+        ns:Debug("BankFrame: GET_ITEM_INFO_RECEIVED repainted", repainted, "buttons")
+    end
+end
+
+local function ScheduleItemRefresh()
+    if itemRefreshTimer then return end
+    itemRefreshTimer = C_Timer.NewTimer(0.15, ApplyItemInfoRefresh)
+end
+
+Events:Register("GET_ITEM_INFO_RECEIVED", function(_, itemID, success)
+    if not success or not itemID then return end
+    if not (frame and frame:IsShown()) or viewingCharacter then return end
+    pendingItemRefresh[itemID] = true
+    ScheduleItemRefresh()
+end, BankFrame)
+
+Events:Register("PLAYER_REGEN_ENABLED", function()
+    if itemRefreshDeferred and next(pendingItemRefresh) then
+        ScheduleItemRefresh()
+    end
+end, "BankFrame.ItemInfoRefresh")
+
+-- Combat start: release the bank's retained (held-while-hidden) buttons so an
+-- in-combat bag open can reuse the shared ItemButton pool without creating new
+-- secure frames (forbidden in combat). Releasing uses SetShown — combat-safe.
+-- The bank is only reopened out of combat, so it simply rebuilds next time.
+Events:Register("PLAYER_REGEN_DISABLED", function()
+    BankFrame:ReleaseHeld()
+end, "BankFrame.CombatPoolRelease")
+
 -- Update item lock state (when picking up/putting down items)
 Events:Register("ITEM_LOCK_CHANGED", function(event, bagID, slotID)
     -- Skip when viewing cached character - lock state is for current character only
@@ -3421,10 +3877,12 @@ end, BankFrame)
 -- Callback for when Retail bank tab changes
 ns.OnRetailBankTabChanged = function(tabIndex)
     if frame and frame:IsShown() then
+        ns:ProfileStart("Bank.tabswitch")
         -- Update side tab selection visuals
         BankFrame:UpdateSideTabSelection()
         -- Refresh the display with the new tab filter
         BankFrame:Refresh()
+        ns:ProfileStop("Bank.tabswitch")
     end
 end
 
@@ -3441,6 +3899,7 @@ end
 -- Callback for when bank type changes (Character Bank vs Warband Bank)
 ns.OnBankTypeChanged = function(bankType)
     if frame and frame:IsShown() then
+        ns:ProfileStart("Bank.typeswitch")
         -- Hide purchase prompt if it was showing
         if showingPurchasePrompt then
             BankFrame:HidePurchasePrompt()
@@ -3478,5 +3937,6 @@ ns.OnBankTypeChanged = function(bankType)
 
         -- Refresh the display with the new bank type's data
         BankFrame:Refresh()
+        ns:ProfileStop("Bank.typeswitch")
     end
 end

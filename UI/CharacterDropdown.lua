@@ -6,6 +6,7 @@ ns:RegisterModule("CharacterDropdown", CharacterDropdown)
 local L = ns.L
 
 local Database = ns:GetModule("Database")
+local Font = ns:GetModule("Font")
 
 local DROPDOWN_WIDTH = 160
 local ROW_HEIGHT = 20
@@ -76,11 +77,13 @@ local function CreateRow(parent, index)
     highlight:SetVertexColor(1, 1, 1, 0.1)
 
     local nameText = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    Font:Override(nameText)
     nameText:SetPoint("LEFT", row, "LEFT", 4, 0)
     nameText:SetJustifyH("LEFT")
     row.nameText = nameText
 
     local statusText = row:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    Font:Override(statusText)
     statusText:SetPoint("RIGHT", row, "RIGHT", -4, 0)
     statusText:SetJustifyH("RIGHT")
     row.statusText = statusText

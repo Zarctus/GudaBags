@@ -6,6 +6,7 @@ ns:RegisterModule("BankFrame.BankHeader", BankHeader)
 local Constants = ns.Constants
 local L = ns.L
 local Database = ns:GetModule("Database")
+local Font = ns:GetModule("Font")
 local HeaderButtonVisibility = ns:GetModule("HeaderButtonVisibility")
 local HeaderViewControls = ns:GetModule("HeaderViewControls")
 local IconButton = ns:GetModule("IconButton")
@@ -96,6 +97,7 @@ local function CreateHeader(parent)
 
     local playerName = UnitName("player")
     local title = titleBar:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    Font:Override(title)
     title:SetPoint("CENTER", titleBar, "CENTER", 0, 0)
     title:SetText(playerName .. L["TITLE_BANK"])
     title:SetTextColor(1, 0.82, 0)

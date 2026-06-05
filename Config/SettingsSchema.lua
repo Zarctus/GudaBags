@@ -21,6 +21,13 @@ function SettingsSchema.GetGeneral()
             end
             return opts
         end)()},
+        { type = "select", key = "fontFamily", label = L["SETTINGS_FONT"], tooltip = L["SETTINGS_FONT_TIP"], options = {
+            { value = "Fonts\\ARIALN.TTF",   label = "Arial Narrow" },
+            { value = "Fonts\\FRIZQT__.TTF", label = "Friz Quadrata" },
+            { value = "Fonts\\MORPHEUS.TTF", label = "Morpheus" },
+            { value = "Fonts\\SKURRI.TTF",   label = "Skurri" },
+            { value = "Fonts\\2002.TTF",     label = "2002" },
+        }},
         { type = "slider", key = "bgAlpha", label = L["SETTINGS_BG_OPACITY"], min = 0, max = 100, step = 5, format = "%" },
         { type = "slider", key = "borderOpacity", label = L["SETTINGS_BORDER_OPACITY"], min = 0, max = 100, step = 5, format = "%" },
         { type = "slider", key = "uiScale", label = L["SETTINGS_UI_SCALE"], tooltip = L["SETTINGS_UI_SCALE_TIP"], min = 50, max = 150, step = 5, format = "%" },
@@ -219,9 +226,10 @@ function SettingsSchema.GetIcons()
             { type = "checkbox", key = "showItemLevel", label = L["SETTINGS_SHOW_ITEM_LEVEL"], tooltip = L["SETTINGS_SHOW_ITEM_LEVEL_TIP"] },
         }},
 
-        -- Row 5 - Charges
+        -- Row 5 - Charges and BoE label
         { type = "row", children = {
-            { type = "checkbox", key = "showCharges", label = L["SETTINGS_SHOW_CHARGES"], tooltip = L["SETTINGS_SHOW_CHARGES_TIP"] },
+            { type = "checkbox", key = "showCharges",  label = L["SETTINGS_SHOW_CHARGES"],   tooltip = L["SETTINGS_SHOW_CHARGES_TIP"] },
+            { type = "checkbox", key = "showBoeLabel", label = L["SETTINGS_SHOW_BOE_LABEL"], tooltip = L["SETTINGS_SHOW_BOE_LABEL_TIP"] },
         }},
     }
 end

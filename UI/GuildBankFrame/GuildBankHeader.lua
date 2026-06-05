@@ -6,6 +6,7 @@ ns:RegisterModule("GuildBankFrame.GuildBankHeader", GuildBankHeader)
 local Constants = ns.Constants
 local L = ns.L
 local Database = ns:GetModule("Database")
+local Font = ns:GetModule("Font")
 local HeaderButtonVisibility = ns:GetModule("HeaderButtonVisibility")
 local IconButton = ns:GetModule("IconButton")
 local ItemButton = ns:GetModule("ItemButton")
@@ -77,6 +78,7 @@ local function CreateHeader(parent)
     -- Guild name as title (will be updated when guild bank opens)
     local guildName = GetGuildInfo("player") or L["TITLE_GUILD_BANK"]
     local title = titleBar:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    Font:Override(title)
     title:SetPoint("CENTER", titleBar, "CENTER", 0, 0)
     title:SetText(guildName .. (L["TITLE_GUILD_BANK"] or "'s Guild Bank"))
     title:SetTextColor(0, 0.8, 0.4)  -- Green-ish color for guild

@@ -96,7 +96,8 @@
         "ContainerFrameCombinedBags",
         "ContainerFrameSettingsManager",
         "BagItemAutoSortButton",
-        "NUM_CONTAINER_FRAMES"
+        "NUM_CONTAINER_FRAMES",
+        "STANDARD_TEXT_FONT"
     ],
     "Lua.type.weakUnionCheck": true,
     "stylua.targetReleaseVersion": "latest"

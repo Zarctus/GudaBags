@@ -1,8 +1,8 @@
-## Interface: 120005, 120001, 110207, 50503, 20505, 11508
+## Interface: 120001, 110207, 50504, 20505, 11508
 ## Title: GudaBags
 ## Notes: Clean, unified bag management for all WoW versions
 ## Author: Vati
-## Version: 1.9.8
+## Version: 1.9.9
 ## SavedVariables: GudaBags_DB
 ## SavedVariablesPerCharacter: GudaBags_CharDB
 ## IconTexture: Interface\AddOns\GudaBags\Assets\bags.png
@@ -31,7 +31,6 @@ Core\Theme.lua
 Core\Masque.lua
 Core\Bindings.lua
 Core\SlashCommands.lua
-Core\DataBroker.lua
 
 # Compatibility Layer
 Compatibility\API.lua
@@ -49,8 +48,6 @@ Core\Rules\TooltipRule.lua
 Core\Rules\PatternRule.lua
 Core\Rules\BooleanRule.lua
 Core\Rules\RecentRule.lua
-Core\Rules\ExpansionRule.lua
-Core\Rules\FavoriteRule.lua
 Core\CategoryManager.lua
 Core\CategoryService.lua
 Core\SearchParser.lua

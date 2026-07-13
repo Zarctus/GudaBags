@@ -478,6 +478,8 @@ L["CHIP_SPECIAL_NOTMYPROF"] = "!Prof"
 L["CHIP_SPECIAL_NOTMYPROF_TIP"] = "Trade goods & recipes not used by your professions"
 L["CHIP_SPECIAL_MYPROF"] = "Prof"
 L["CHIP_SPECIAL_MYPROF_TIP"] = "Trade goods & recipes used by your professions"
+L["CHIP_SPECIAL_OPENABLE"] = "Open"
+L["CHIP_SPECIAL_LEARNABLE"] = "Learn"
 L["CHIP_CLEAR_ALL"] = "Clear all filters"
 L["CHIP_TYPES_DROPDOWN"] = "Types"
 
@@ -518,6 +520,8 @@ L["TOOLTIP_BANK_LOWER"] = "Bank"
 L["TOOLTIP_WARBAND_BANK"] = "Warband Bank"
 L["TOOLTIP_MAIL_LOWER"] = "Mail"
 L["TOOLTIP_EQUIPPED"] = "Equipped"
+L["TOOLTIP_GUILD_BANK"] = "Guild Bank"
+L["TOOLTIP_CURRENCY_HEADER"] = "Owned by"
 L["TOOLTIP_TOTAL"] = "Total"
 L["TOOLTIP_ACCOUNT_GOLD"] = "Account gold:"
 L["TOOLTIP_REALM_GOLD"] = "Realm gold:"
@@ -1095,6 +1099,10 @@ L["TOOLTIP_FLYOUT_PIN_ON"] = "Désépingler cet emplacement"
 L["TOOLTIP_FLYOUT_JUNK_OFF"] = "Marquer comme camelote"
 L["TOOLTIP_FLYOUT_JUNK_ON"] = "Démarquer la camelote"
 L["TOOLTIP_FLYOUT_JUNK_AUTOVENDOR"] = "Sera vendu automatiquement chez le marchand"
+L["CHIP_SPECIAL_OPENABLE"] = "Ouvrir"
+L["CHIP_SPECIAL_LEARNABLE"] = "Apprendre"
+L["TOOLTIP_GUILD_BANK"] = "Banque de guilde"
+L["TOOLTIP_CURRENCY_HEADER"] = "Possédé par"
 
 -- German
 local L = Locales.deDE
@@ -1619,6 +1627,10 @@ L["TOOLTIP_FLYOUT_PIN_ON"] = "Platz lösen"
 L["TOOLTIP_FLYOUT_JUNK_OFF"] = "Als Müll markieren"
 L["TOOLTIP_FLYOUT_JUNK_ON"] = "Müll-Markierung entfernen"
 L["TOOLTIP_FLYOUT_JUNK_AUTOVENDOR"] = "Wird beim Händler automatisch verkauft"
+L["CHIP_SPECIAL_OPENABLE"] = "Öffnen"
+L["CHIP_SPECIAL_LEARNABLE"] = "Lernen"
+L["TOOLTIP_GUILD_BANK"] = "Gildenbank"
+L["TOOLTIP_CURRENCY_HEADER"] = "Im Besitz von"
 
 -- Russian
 local L = Locales.ruRU
@@ -2085,6 +2097,10 @@ L["TOOLTIP_FLYOUT_PIN_ON"] = "Открепить ячейку"
 L["TOOLTIP_FLYOUT_JUNK_OFF"] = "Отметить как хлам"
 L["TOOLTIP_FLYOUT_JUNK_ON"] = "Снять метку хлама"
 L["TOOLTIP_FLYOUT_JUNK_AUTOVENDOR"] = "Будет автоматически продано у торговца"
+L["CHIP_SPECIAL_OPENABLE"] = "Открыть"
+L["CHIP_SPECIAL_LEARNABLE"] = "Изучить"
+L["TOOLTIP_GUILD_BANK"] = "Банк гильдии"
+L["TOOLTIP_CURRENCY_HEADER"] = "Есть у"
 
 -- Brazilian Portuguese
 local L = Locales.ptBR
@@ -2551,6 +2567,10 @@ L["TOOLTIP_FLYOUT_PIN_ON"] = "Desafixar este slot"
 L["TOOLTIP_FLYOUT_JUNK_OFF"] = "Marcar como lixo"
 L["TOOLTIP_FLYOUT_JUNK_ON"] = "Desmarcar como lixo"
 L["TOOLTIP_FLYOUT_JUNK_AUTOVENDOR"] = "Será vendido automaticamente no vendedor"
+L["CHIP_SPECIAL_OPENABLE"] = "Abrir"
+L["CHIP_SPECIAL_LEARNABLE"] = "Aprender"
+L["TOOLTIP_GUILD_BANK"] = "Banco da Guilda"
+L["TOOLTIP_CURRENCY_HEADER"] = "Possuído por"
 
 -- Spanish (Spain)
 local L = Locales.esES
@@ -3017,6 +3037,10 @@ L["TOOLTIP_FLYOUT_PIN_ON"] = "Soltar esta ranura"
 L["TOOLTIP_FLYOUT_JUNK_OFF"] = "Marcar como basura"
 L["TOOLTIP_FLYOUT_JUNK_ON"] = "Quitar marca de basura"
 L["TOOLTIP_FLYOUT_JUNK_AUTOVENDOR"] = "Se venderá automáticamente al vendedor"
+L["CHIP_SPECIAL_OPENABLE"] = "Abrir"
+L["CHIP_SPECIAL_LEARNABLE"] = "Aprender"
+L["TOOLTIP_GUILD_BANK"] = "Banco de hermandad"
+L["TOOLTIP_CURRENCY_HEADER"] = "En posesión de"
 
 -- Spanish (Mexico) - Uses esES translations
 local L = Locales.esMX
@@ -3491,6 +3515,10 @@ L["TOOLTIP_FLYOUT_PIN_ON"] = "取消釘選此欄位"
 L["TOOLTIP_FLYOUT_JUNK_OFF"] = "標記為垃圾"
 L["TOOLTIP_FLYOUT_JUNK_ON"] = "取消標記為垃圾"
 L["TOOLTIP_FLYOUT_JUNK_AUTOVENDOR"] = "將自動售予商人"
+L["CHIP_SPECIAL_OPENABLE"] = "開啟"
+L["CHIP_SPECIAL_LEARNABLE"] = "學習"
+L["TOOLTIP_GUILD_BANK"] = "公會銀行"
+L["TOOLTIP_CURRENCY_HEADER"] = "擁有者"
 
 -- Simplified Chinese
 local L = Locales.zhCN
@@ -3958,6 +3986,10 @@ L["TOOLTIP_FLYOUT_PIN_ON"] = "取消钉选此栏位"
 L["TOOLTIP_FLYOUT_JUNK_OFF"] = "标记为垃圾"
 L["TOOLTIP_FLYOUT_JUNK_ON"] = "取消标记为垃圾"
 L["TOOLTIP_FLYOUT_JUNK_AUTOVENDOR"] = "将自动售给商人"
+L["CHIP_SPECIAL_OPENABLE"] = "开启"
+L["CHIP_SPECIAL_LEARNABLE"] = "学习"
+L["TOOLTIP_GUILD_BANK"] = "公会银行"
+L["TOOLTIP_CURRENCY_HEADER"] = "拥有者"
 
 -- Korean
 local L = Locales.koKR
@@ -4355,6 +4387,10 @@ L["TOOLTIP_FLYOUT_PIN_ON"] = "고정 해제"
 L["TOOLTIP_FLYOUT_JUNK_OFF"] = "쓰레기로 표시"
 L["TOOLTIP_FLYOUT_JUNK_ON"] = "쓰레기 표시 해제"
 L["TOOLTIP_FLYOUT_JUNK_AUTOVENDOR"] = "상인에게 자동 판매됩니다"
+L["CHIP_SPECIAL_OPENABLE"] = "개봉"
+L["CHIP_SPECIAL_LEARNABLE"] = "학습"
+L["TOOLTIP_GUILD_BANK"] = "길드 은행"
+L["TOOLTIP_CURRENCY_HEADER"] = "보유 캐릭터"
 
 -- Italian
 local L = Locales.itIT
@@ -4752,3 +4788,7 @@ L["TOOLTIP_FLYOUT_PIN_ON"] = "Sblocca questo slot"
 L["TOOLTIP_FLYOUT_JUNK_OFF"] = "Segna come spazzatura"
 L["TOOLTIP_FLYOUT_JUNK_ON"] = "Rimuovi marchio spazzatura"
 L["TOOLTIP_FLYOUT_JUNK_AUTOVENDOR"] = "Sarà venduto automaticamente al mercante"
+L["CHIP_SPECIAL_OPENABLE"] = "Aprire"
+L["CHIP_SPECIAL_LEARNABLE"] = "Imparare"
+L["TOOLTIP_GUILD_BANK"] = "Banca di Gilda"
+L["TOOLTIP_CURRENCY_HEADER"] = "Posseduto da"

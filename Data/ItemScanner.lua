@@ -30,6 +30,12 @@ local strfind = string.find
 local strlower = string.lower
 local mathabs = math.abs
 
+-- Blizzard's placeholder shown (in red) while an item's data round-trips from
+-- the server. A live SetBagItem can render this for many/all slots right after
+-- a cache wipe + bulk re-scan; without this guard the red text falsely marks
+-- every item unusable. Cached so we can compare it cheaply per tooltip line.
+local RETRIEVING_ITEM_INFO = RETRIEVING_ITEM_INFO
+
 -- Tooltip result caching to avoid repeated expensive scans
 -- Cache by itemLink since the same item has the same properties
 local tooltipCache = {}
@@ -95,12 +101,12 @@ end
 
 -- Scan tooltip once and extract all needed information
 -- itemQuality: pass quality to skip hasSpecialProperties check for non-junk items
-local function ScanTooltipForItem(bagID, slot, itemType, itemID, itemLink, itemQuality)
+local function ScanTooltipForItem(bagID, slot, itemType, itemID, itemLink, itemQuality, itemLoaded)
     local cacheKey = GetCacheKey(itemLink, itemID)
     local cached = GetCachedTooltipResult(cacheKey)
     if cached then
         ns:ProfileBump("tooltip.hit")
-        return cached.isUsable, cached.isQuestItem, cached.isQuestStarter, cached.hasSpecialProperties, cached.hasDuration
+        return cached.isUsable, cached.isQuestItem, cached.isQuestStarter, cached.hasSpecialProperties, cached.hasDuration, cached.isOpenable
     end
 
     -- Item data not yet round-tripped from the server: the tooltip would be
@@ -112,7 +118,15 @@ local function ScanTooltipForItem(bagID, slot, itemType, itemID, itemLink, itemQ
         if C_Item.RequestLoadItemDataByID then
             C_Item.RequestLoadItemDataByID(itemID)
         end
-        return true, false, false, false, false
+        return true, false, false, false, false, false
+    end
+
+    -- GetItemInfo returned no name for this slot, so the item isn't resolved
+    -- yet even if IsItemDataCachedByID reports its static data cached (that API
+    -- doesn't reflect the live per-instance tooltip). Scanning now risks a red
+    -- "Retrieving item information" line marking it unusable — defer, no cache.
+    if itemLoaded == false then
+        return true, false, false, false, false, false
     end
 
     local isUsable = true
@@ -120,6 +134,7 @@ local function ScanTooltipForItem(bagID, slot, itemType, itemID, itemLink, itemQ
     local isQuestStarter = false
     local hasSpecialProperties = false
     local hasDuration = false
+    local isOpenable = false
 
     -- Only check special properties for gray (0) or white (1) quality items
     -- These are the only ones where junk detection matters
@@ -147,7 +162,7 @@ local function ScanTooltipForItem(bagID, slot, itemType, itemID, itemLink, itemQ
     -- (quest-type/custom-quest detection above still applies); result is NOT cached
     -- so re-enabling restores full detection on the next scan.
     if ns.suspectDisabled and ns.suspectDisabled.tooltipscan then
-        return isUsable, isQuestItem, isQuestStarter, hasSpecialProperties, hasDuration
+        return isUsable, isQuestItem, isQuestStarter, hasSpecialProperties, hasDuration, isOpenable
     end
 
     ns:ProfileBump("tooltip.miss")
@@ -163,7 +178,28 @@ local function ScanTooltipForItem(bagID, slot, itemType, itemID, itemLink, itemQ
             for _, line in ipairs(data.lines) do
                 local text = line.leftText
 
+                -- The slot rendered Blizzard's loading placeholder: the tooltip
+                -- is incomplete, so any red text is noise. Bail without caching
+                -- (isUsable stays true) — a later scan re-resolves once loaded.
+                if text and text == RETRIEVING_ITEM_INFO then
+                    return true, isQuestItem, isQuestStarter, false, false, false
+                end
+
                 if text then
+                    -- Openable loot container (chest/cache/box/lockbox): Blizzard adds
+                    -- the localized ITEM_OPENABLE line ("<Right Click to Open>"). This
+                    -- excludes equippable bags, which never show it.
+                    if not isOpenable and ITEM_OPENABLE and text == ITEM_OPENABLE then
+                        isOpenable = true
+                    end
+
+                    -- Check for red text (unusable) - skip durability lines
+                    if IsRedColor(r, g, b) then
+                        if not durabilityPattern or not string.find(text, durabilityPattern) then
+                            isUsable = false
+                        end
+                    end
+
                     -- Check for quest item indicators (respect ignore list)
                     if not isQuestIgnored then
                         if text == ITEM_BIND_QUEST or strfind(text, "Quest Item", 1, true) then
@@ -282,9 +318,10 @@ local function ScanTooltipForItem(bagID, slot, itemType, itemID, itemLink, itemQ
         isQuestStarter = isQuestStarter,
         hasSpecialProperties = hasSpecialProperties,
         hasDuration = hasDuration,
+        isOpenable = isOpenable,
     })
 
-    return isUsable, isQuestItem, isQuestStarter, hasSpecialProperties, hasDuration
+    return isUsable, isQuestItem, isQuestStarter, hasSpecialProperties, hasDuration, isOpenable
 end
 
 -- Get crafting quality tier (1-5) for Retail profession items, or nil.
@@ -359,6 +396,7 @@ function ItemScanner:ScanSlotFast(bagID, slot)
             isQuestStarter = cached.isQuestStarter,
             hasSpecialProperties = cached.hasSpecialProperties,
             hasDuration = cached.hasDuration,
+            isOpenable = cached.isOpenable,
             craftingQualityAtlas = GetCraftingQualityAtlas(itemLink),
         }
     end
@@ -380,6 +418,9 @@ function ItemScanner:ScanSlot(bagID, slot)
     end
 
     local itemName, _, itemQuality, itemLevel, itemMinLevel, itemType, itemSubType, maxStack, equipSlot, itemTexture, sellPrice, classID, subClassID, bindType, expacID = GetItemInfo(itemLink)
+    -- Capture load state before the fallback overwrites itemName below: a nil
+    -- name means the item hasn't resolved, so the usability scan can't be trusted.
+    local itemLoaded = itemName ~= nil
     -- GetItemInfo can return nil if item data isn't cached yet
     if not itemName then
         -- Fallback to basic info from container API
@@ -401,7 +442,7 @@ function ItemScanner:ScanSlot(bagID, slot)
 
     -- Single optimized tooltip scan for all properties
     -- Pass quality so we only check hasSpecialProperties for gray/white items
-    local isUsable, isQuestItem, isQuestStarter, hasSpecialProperties, hasDuration = ScanTooltipForItem(bagID, slot, itemType, itemInfo.itemID, itemLink, quality)
+    local isUsable, isQuestItem, isQuestStarter, hasSpecialProperties, hasDuration, isOpenable = ScanTooltipForItem(bagID, slot, itemType, itemInfo.itemID, itemLink, quality, itemLoaded)
 
     return {
         slot = slot,
@@ -427,6 +468,7 @@ function ItemScanner:ScanSlot(bagID, slot)
         isQuestStarter = isQuestStarter,
         hasSpecialProperties = hasSpecialProperties,
         hasDuration = hasDuration,
+        isOpenable = isOpenable,
         craftingQualityAtlas = GetCraftingQualityAtlas(itemLink),
     }
 end
@@ -510,9 +552,24 @@ if Events then
         ItemScanner:ClearTooltipCache()
     end, ItemScanner)
 
-    -- Equipment changes can affect stats and thus usability
+    -- Equipment changes can affect stats and thus usability. In combat this
+    -- fires on weapon/trinket swaps; wiping + bulk re-scanning then races the
+    -- server's loading tooltips and can flash every item red. Defer the wipe to
+    -- PLAYER_REGEN_ENABLED, when the open-bag repaint re-resolves usability.
+    local equipmentCacheDirty = false
     Events:Register("PLAYER_EQUIPMENT_CHANGED", function()
+        if InCombatLockdown() then
+            equipmentCacheDirty = true
+            return
+        end
         ItemScanner:ClearTooltipCache()
+    end, ItemScanner)
+
+    Events:Register("PLAYER_REGEN_ENABLED", function()
+        if equipmentCacheDirty then
+            equipmentCacheDirty = false
+            ItemScanner:ClearTooltipCache()
+        end
     end, ItemScanner)
 
     -- Drop the entries we may have populated while item data was still loading

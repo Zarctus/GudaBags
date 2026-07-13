@@ -1025,12 +1025,42 @@ local function CreateButton(parent)
             -- Initialize shift state tracking for tooltip refresh
             self.lastShiftState = IsShiftKeyDown()
 
+            -- A "live slot" is a real, currently-accessible container slot whose
+            -- button IDs map to bagID/slot (set in SetItem), so Blizzard's secure
+            -- handler resolves the correct item. Read-only/cached and guild-bank
+            -- (IDs forced to 0) and keyring (bagID -2, hyperlink path) are NOT
+            -- live slots — they need ShowForItem's SetHyperlink/SetItemByID.
+            -- Bank slots are also excluded: Blizzard's ContainerFrameItemButton_OnEnter
+            -- does not resolve the Classic main bank container (bagID -1), so it would
+            -- leave the item body empty while our SetBagItem hook still adds the
+            -- inventory counts — making blizzardPopulated wrongly true. Bank items are
+            -- never shown at a merchant, so routing them through ShowForItem cannot
+            -- reintroduce the sell-price money-frame taint the live-slot path guards.
+            local liveSlot = self.itemData and self.itemData.bagID and self.itemData.slot
+                and not self.isReadOnly
+                and not self.itemData.isGuildBank
+                and self.itemData.bagID ~= -2
+                and not Tooltip:IsBankSlot(self.itemData.bagID)
+                and not self.isEmptySlotButton and not self.isDropTargetButton
+                and not self.itemData.isEmptySlots
+
             -- Call Blizzard's handler for sell cursor, inspect cursor, etc.
             -- Skip for pseudo-items (Empty/Soul/DropTarget) which don't have real bag slots
+            local blizzardPopulated = false
             if self.itemData and self.itemData.bagID and not self.isEmptySlotButton and not self.isDropTargetButton and not self.itemData.isEmptySlots then
                 -- ContainerFrameItemButton_OnEnter may not exist on retail
                 if ContainerFrameItemButton_OnEnter then
                     ContainerFrameItemButton_OnEnter(self)
+                    -- For live slots Blizzard's handler already populated GameTooltip
+                    -- (item info + sell-price money frame). Re-driving it below with
+                    -- our own SetBagItem stores the sell price a second time and
+                    -- taints GameTooltip's money frame ("secret number value" in
+                    -- MoneyFrame_Update). Our inventory counts come from the
+                    -- hooksecurefunc on SetBagItem (UI/Tooltip.lua); the track hint
+                    -- is appended below, so the tooltip stays complete.
+                    if liveSlot then
+                        blizzardPopulated = GameTooltip:IsOwned(self) and (GameTooltip:NumLines() or 0) > 0
+                    end
                 end
             end
 
@@ -1041,6 +1071,10 @@ local function CreateButton(parent)
                 local L = ns.L
                 GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
                 GameTooltip:SetText(L["DROP_HERE_TO_ASSIGN"], 1, 1, 1)
+                GameTooltip:Show()
+            elseif blizzardPopulated then
+                -- Blizzard owns the tooltip; only append our GudaBags track hint.
+                Tooltip:AddTrackHint(self)
                 GameTooltip:Show()
             elseif not self.isEmptySlotButton and not (self.itemData and self.itemData.isEmptySlots) then
                 Tooltip:ShowForItem(self)
@@ -1134,9 +1168,15 @@ local function CreateButton(parent)
             local shiftDown = IsShiftKeyDown()
             if self.lastShiftState ~= shiftDown then
                 self.lastShiftState = shiftDown
-                -- Refresh tooltip when shift state changes (for stack price vs single price)
-                if self.itemData and not self.isEmptySlotButton and not self.isDropTargetButton and not self.itemData.isEmptySlots then
-                    Tooltip:ShowForItem(self)
+                -- Refresh tooltip when shift state changes (for stack price vs single price).
+                -- Replay OnEnter so the refresh uses the same path as the initial hover
+                -- (Blizzard-driven for live slots) instead of a second insecure SetBagItem,
+                -- which would re-taint GameTooltip's money frame. Skip with a held cursor
+                -- (see the OnUpdate replay note below re: CursorUpdate desaturation).
+                if self.itemData and not self.isEmptySlotButton and not self.isDropTargetButton
+                    and not self.itemData.isEmptySlots and not GetCursorInfo() then
+                    local onEnter = self:GetScript("OnEnter")
+                    if onEnter then onEnter(self) end
                 end
             end
         end

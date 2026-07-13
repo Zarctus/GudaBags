@@ -17,6 +17,8 @@ end
 local Currency = {}
 ns:RegisterModule("Footer.Currency", Currency)
 
+local Tooltip = ns:GetModule("Tooltip")
+
 local containerFrame = nil
 local tokenButtons = {}
 local MAX_TOKENS = 8
@@ -97,6 +99,12 @@ local function ShowTokenTooltip(self)
             GameTooltip:AddLine(" ")
             GameTooltip:AddDoubleLine("Quantity:", BreakUpLargeNumbers(self.currencyCount or 0), 0.8, 0.8, 0.8, 1, 1, 1)
         end
+    end
+
+    -- Cross-character "Owned by" breakdown. We build this tooltip manually (no
+    -- Set*Currency call fires), so add the section directly and skip the dup guard.
+    if Tooltip and Tooltip.AddCurrencySection then
+        Tooltip:AddCurrencySection(GameTooltip, self.currencyID, true)
     end
 
     GameTooltip:Show()

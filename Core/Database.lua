@@ -595,6 +595,55 @@ function Database:GetMoney(fullName)
     return 0
 end
 
+-------------------------------------------------
+-- Currencies (account-wide alt counts; MoP/Retail only)
+-------------------------------------------------
+
+-- currencies: { [currencyID] = quantity } for the current character
+function Database:SaveCurrencies(currencies)
+    local charData = self:GetCurrentCharacter()
+    if not charData then return end
+    charData.currencies = currencies
+end
+
+-- Count a currency across all characters. Returns: totalCount, characterCounts
+-- (array of {name, class, race, sex, quantity, isCurrent}, current char first then alpha).
+function Database:CountCurrencyAcrossCharacters(currencyID)
+    if not currencyID then return 0, {} end
+
+    local currentFullName = GetPlayerFullName()
+    local characterCounts = {}
+    local totalCount = 0
+
+    for fullName, charData in pairs(GudaBags_DB.characters) do
+        local cur = charData.currencies
+        -- Numeric SavedVariables keys deserialize as strings after a reload, so
+        -- accept either the numeric or the string form of the currencyID.
+        local qty = cur and (cur[currencyID] or cur[tostring(currencyID)]) or 0
+        if qty > 0 then
+            table.insert(characterCounts, {
+                fullName = fullName,
+                name = charData.name,
+                class = charData.class,
+                race = charData.race,
+                sex = charData.sex,
+                quantity = qty,
+                isCurrent = (fullName == currentFullName),
+            })
+            totalCount = totalCount + qty
+        end
+    end
+
+    table.sort(characterCounts, function(a, b)
+        if a.isCurrent ~= b.isCurrent then
+            return a.isCurrent
+        end
+        return (a.name or "") < (b.name or "")
+    end)
+
+    return totalCount, characterCounts
+end
+
 function Database:GetAllCharacters(sameFactionOnly, sameRealmOnly)
     local characters = {}
     local currentFaction = UnitFactionGroup("player")
@@ -742,6 +791,22 @@ function Database:CountItemAcrossCharacters(itemID)
         totalCount = totalCount + warbandCount
     end
 
+    -- Count guild banks (account-wide, stored per guild by name). Each guild's
+    -- tabs each expose a .slots table, which CountItemsInContainers handles.
+    local guildBankCounts = {}
+    if GudaBags_DB.guildBanks then
+        for guildName, guildBankData in pairs(GudaBags_DB.guildBanks) do
+            if type(guildBankData) == "table" and guildBankData.tabs then
+                local gbCount = CountItemsInContainers(guildBankData.tabs, itemID)
+                if gbCount > 0 then
+                    table.insert(guildBankCounts, { guildName = guildName, count = gbCount })
+                    totalCount = totalCount + gbCount
+                end
+            end
+        end
+        table.sort(guildBankCounts, function(a, b) return a.guildName < b.guildName end)
+    end
+
     table.sort(characterCounts, function(a, b)
         if a.isCurrent ~= b.isCurrent then
             return a.isCurrent
@@ -749,7 +814,7 @@ function Database:CountItemAcrossCharacters(itemID)
         return a.name < b.name
     end)
 
-    return totalCount, characterCounts, warbandCount
+    return totalCount, characterCounts, warbandCount, guildBankCounts
 end
 
 -------------------------------------------------

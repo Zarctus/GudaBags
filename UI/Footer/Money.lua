@@ -40,46 +40,11 @@ local function FormatMoney(amount)
     return result
 end
 
-local TOOLTIP_FONT_SIZE = 11
-
--- GameTooltip reuses the same font-string objects for every tooltip. A raw
--- SetFont here detaches each line's font object, so we record the originals and
--- reattach them when the money tooltip is dismissed (RestoreTooltipFonts).
--- Otherwise the size-11 override would bleed onto the next item/unit tooltip.
-local savedMoneyFonts = {}
-
-local function SetTooltipSmallFont()
-    wipe(savedMoneyFonts)
-    local fontName, _, fontFlags = GameFontNormal:GetFont()
-    for i = 1, GameTooltip:NumLines() do
-        for _, side in ipairs({ "Left", "Right" }) do
-            local fs = _G["GameTooltipText" .. side .. i]
-            if fs then
-                local curPath, curSize, curFlags = fs:GetFont()
-                savedMoneyFonts[#savedMoneyFonts + 1] = {
-                    fs = fs,
-                    obj = fs:GetFontObject(),
-                    path = curPath, size = curSize, flags = curFlags,
-                }
-                fs:SetFont(fontName, TOOLTIP_FONT_SIZE, fontFlags)
-            end
-        end
-    end
-end
-
--- Reattach the original font objects (or raw font) to the lines we overrode so
--- subsequent (non-GudaBags) tooltips render at their default size/font.
-local function RestoreTooltipFonts()
-    for i = 1, #savedMoneyFonts do
-        local saved = savedMoneyFonts[i]
-        if saved.obj then
-            saved.fs:SetFontObject(saved.obj)
-        elseif saved.size then
-            saved.fs:SetFont(saved.path, saved.size, saved.flags)
-        end
-    end
-    wipe(savedMoneyFonts)
-end
+-- NOTE: The gold tooltip used to shrink GameTooltip's lines to size 11 via a
+-- raw SetFont on the shared GameTooltipTextLeft/Right font strings, restored on
+-- leave. Mutating those shared (Blizzard-owned) font objects from insecure code
+-- is a taint vector, so it was removed — the tooltip now renders at the default
+-- size. (See docs/RULES.md and the MoneyFrame "secret number value" taint fix.)
 
 -- Filter out gold-blacklisted characters from a character list
 local function FilterBlacklisted(chars)
@@ -173,7 +138,6 @@ local function ShowMoneyTooltip(frame)
     GameTooltip:AddLine(" ")
     GameTooltip:AddLine(L["TOOLTIP_RIGHT_CLICK_GOLD"], 0.5, 0.5, 0.5)
 
-    SetTooltipSmallFont()
     GameTooltip:Show()
 end
 
@@ -291,7 +255,6 @@ function Money:Init(parent)
 
     moneyFrame:SetScript("OnLeave", function()
         GameTooltip:Hide()
-        RestoreTooltipFonts()
     end)
 
     moneyFrame:SetScript("OnMouseUp", function(self, button)
@@ -311,7 +274,6 @@ function Money:Init(parent)
             end)
             coinButton:SetScript("OnLeave", function()
                 GameTooltip:Hide()
-                RestoreTooltipFonts()
             end)
             coinButton:SetScript("OnClick", function(self, button)
                 if button == "RightButton" then

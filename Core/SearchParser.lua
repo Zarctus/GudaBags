@@ -311,7 +311,8 @@ function SearchParser:ParseSearchInput(text)
 
         -- Check standalone keywords first
         if tokenLower == "boe" or tokenLower == "bop" or tokenLower == "btw" or tokenLower == "quest"
-            or tokenLower == "new" or tokenLower == "usable" or tokenLower == "junk" then
+            or tokenLower == "new" or tokenLower == "usable" or tokenLower == "junk"
+            or tokenLower == "openable" or tokenLower == "learnable" then
             table.insert(result.keywords, tokenLower)
             handled = true
         end
@@ -539,6 +540,16 @@ function SearchParser:MatchKeyword(keyword, itemData, context)
 
     elseif keyword == "junk" then
         return (itemData.quality or 0) == 0
+
+    elseif keyword == "openable" then
+        -- Loot containers (chest/cache/box/lockbox) flagged at scan time via the
+        -- ITEM_OPENABLE tooltip line. Excludes equippable bags.
+        return itemData.isOpenable == true
+
+    elseif keyword == "learnable" then
+        -- Recipe item class (recipes/patterns/plans/formulae/schematics/manuals).
+        -- Uses classID (locale-independent) rather than the localized itemType string.
+        return itemData.classID == 9
     end
 
     return false
